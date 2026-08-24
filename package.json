@@ -1,0 +1,18 @@
+{
+  "name": "portal-rdv",
+  "version": "1.0.0",
+  "description": "Portal de Relatorios de Despesas de Viagem - DISO Comercio de Alimentos",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node servidor.js",
+    "criar-usuarios": "node src/criar-usuarios.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.72.1",
+    "exceljs": "^4.4.0"
+  }
+}

@@ -1,0 +1,25 @@
+# Configuracao do Render. Ao criar o servico via "Blueprint", ele le este arquivo.
+#
+# ATENCAO: o disco (disk) e recurso pago. No plano gratuito do Render nao existe
+# disco persistente, e sem ele o banco e os anexos somem a cada reinicio - o mesmo
+# problema que inviabilizou o Vercel.
+
+services:
+  - type: web
+    name: portal-rdv
+    runtime: docker
+    plan: starter
+    region: oregon
+    healthCheckPath: /
+    envVars:
+      - key: DADOS_DIR
+        value: /dados
+      - key: PORT
+        value: 3000
+      # A chave da API pode entrar aqui ou pela tela de Configuracoes do portal.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+    disk:
+      name: dados
+      mountPath: /dados
+      sizeGB: 5

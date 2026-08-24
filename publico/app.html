@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c4e80">
+<title>Meu RDV — Portal RDV</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icone.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/estilo.css">
+</head>
+<body>
+
+<header class="topo">
+  <h1>Portal RDV</h1>
+  <div class="quem">
+    <div id="meu-nome"></div>
+    <button class="link" id="botao-sair" style="margin-top:4px">Sair</button>
+  </div>
+</header>
+
+<main class="conteudo">
+  <div id="recado"></div>
+
+  <div class="cartao">
+    <h2>Mês de referência</h2>
+    <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap">
+      <div style="flex:1; min-width:160px">
+        <input type="month" id="mes" style="margin-bottom:0">
+      </div>
+      <div id="selo-status"></div>
+    </div>
+    <div id="painel-status" style="margin-top:14px"></div>
+  </div>
+
+  <div class="abas">
+    <button data-aba="lancamentos" class="ativa">Lançamentos</button>
+    <button data-aba="comprovantes">Comprovantes</button>
+    <button data-aba="conferencia">Conferência</button>
+    <button data-aba="historico">Histórico</button>
+  </div>
+
+  <!-- ------------------------------------------------------ lancamentos -->
+  <section id="aba-lancamentos">
+    <div class="cartao">
+      <h2>Resumo do mês</h2>
+      <div class="numeros" id="numeros"></div>
+    </div>
+
+    <div class="cartao">
+      <h2>Dia a dia</h2>
+      <p class="sub">
+        Preencha só os dias que você rodou. O total e o valor são calculados sozinhos —
+        você não precisa somar nada.
+      </p>
+      <label style="display:flex; align-items:center; gap:8px; font-weight:500">
+        <input type="checkbox" id="esconder-vazios" style="width:auto; margin:0" checked>
+        Esconder fins de semana e dias em branco
+      </label>
+      <div id="grade"></div>
+    </div>
+
+    <div class="cartao">
+      <h2>Observação</h2>
+      <p class="sub">Algo que o conferente precisa saber? Segundo veículo, home office, viagem longa.</p>
+      <textarea id="observacao" placeholder="Opcional"></textarea>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------- comprovantes -->
+  <section id="aba-comprovantes" class="esconde">
+    <div class="cartao">
+      <h2>Nota de abastecimento</h2>
+      <p class="sub">
+        Obrigatória. Sem ela o relatório é reprovado mesmo com todo o resto certo.
+        Pode ser a DANFE, o cupom fiscal ou a foto da nota.
+      </p>
+      <div class="solta" data-tipo="danfe">Toque para escolher, ou arraste o arquivo aqui</div>
+      <div id="lista-danfe" style="margin-top:12px"></div>
+    </div>
+
+    <div class="cartao">
+      <h2>Pedágio e estacionamento</h2>
+      <p class="sub">
+        O extrato da tag (Sem Parar, ConectCar, Veloe, Tag Itaú, C6, Ultrapasse) e os
+        cupons avulsos. A conferência soma tudo e compara com o que você lançou.
+      </p>
+      <div class="solta" data-tipo="pedagio">Toque para escolher, ou arraste os arquivos aqui</div>
+      <div id="lista-pedagio" style="margin-top:12px"></div>
+    </div>
+
+    <div class="cartao">
+      <h2>Fotos do odômetro</h2>
+      <p class="sub">
+        A foto do painel na <strong>segunda de manhã</strong> e na <strong>sexta à noite</strong>
+        de cada semana. Tire direto pelo celular.
+      </p>
+      <div class="solta" data-tipo="odometro">Toque para tirar a foto ou escolher da galeria</div>
+      <div id="lista-odometro" style="margin-top:12px"></div>
+    </div>
+
+    <div class="cartao">
+      <h2>Outros documentos</h2>
+      <p class="sub">Qualquer outra coisa que ajude a explicar o relatório.</p>
+      <div class="solta" data-tipo="outro">Toque para escolher, ou arraste aqui</div>
+      <div id="lista-outro" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------ conferencia -->
+  <section id="aba-conferencia" class="esconde">
+    <div class="cartao">
+      <h2>O que a conferência automática já vê</h2>
+      <p class="sub">
+        Isso roda enquanto você preenche, antes de enviar. O que estiver em vermelho
+        trava o envio; o que estiver em amarelo é só um alerta.
+      </p>
+      <div id="achados"></div>
+    </div>
+
+    <div class="cartao" id="cartao-parecer" style="display:none">
+      <h2>Resultado da conferência</h2>
+      <div id="parecer"></div>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------- historico -->
+  <section id="aba-historico" class="esconde">
+    <div class="cartao">
+      <h2>Meus relatórios</h2>
+      <div class="rolagem"><div id="historico"></div></div>
+    </div>
+  </section>
+</main>
+
+<div class="rodape-fixo" id="rodape">
+  <div class="resumo" id="resumo-rodape"></div>
+  <button id="botao-salvar" class="secundario">Salvar</button>
+  <button id="botao-enviar">Enviar</button>
+</div>
+
+<input type="file" id="seletor" multiple class="esconde">
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

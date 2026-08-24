@@ -1,0 +1,7 @@
+node_modules
+dados
+*.log
+.git
+.gitignore
+LEIA-ME.md
+iniciar.cmd

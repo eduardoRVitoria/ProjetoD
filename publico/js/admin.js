@@ -1,0 +1,548 @@
+// Tela do administrador: painel do mes, conferencia com IA, colaboradores e ajustes.
+
+import {
+  api, mostrarRecado, escapar, brl, numeroBr, dataBr, dataHoraBr,
+  tamanhoBr, mesAtual, sair, ROTULO_ANEXO,
+} from '/js/comum.js';
+
+const $ = (id) => document.getElementById(id);
+
+let mes = mesAtual();
+let painel = null;
+
+// ------------------------------------------------------------------- inicio
+
+try {
+  const dados = await api('/api/eu');
+  $('meu-nome').textContent = dados.usuario.nome;
+} catch {
+  location.href = '/';
+}
+
+$('mes').value = mes;
+$('botao-sair').addEventListener('click', sair);
+$('mes').addEventListener('change', () => {
+  mes = $('mes').value;
+  carregarPainel();
+});
+$('botao-conferir-todos').addEventListener('click', () => conferirPendentes(false));
+$('botao-demo').addEventListener('click', () => conferirPendentes(true));
+$('botao-exportar').addEventListener('click', () => {
+  location.href = `/api/admin/exportar?mes=${mes}`;
+});
+$('botao-criar-usuario').addEventListener('click', criarUsuario);
+$('botao-salvar-km').addEventListener('click', salvarKm);
+$('botao-salvar-chave').addEventListener('click', salvarChave);
+$('botao-limpar-chave').addEventListener('click', limparChave);
+
+for (const b of document.querySelectorAll('.abas button')) {
+  b.addEventListener('click', () => {
+    for (const o of document.querySelectorAll('.abas button')) {
+      o.classList.toggle('ativa', o === b);
+    }
+    for (const s of document.querySelectorAll('main > section')) {
+      s.classList.toggle('esconde', s.id !== `aba-${b.dataset.aba}`);
+    }
+    if (b.dataset.aba === 'usuarios') carregarUsuarios();
+    if (b.dataset.aba === 'config') carregarConfig();
+    window.scrollTo({ top: 0 });
+  });
+}
+
+await carregarPainel();
+
+// ------------------------------------------------------------------- painel
+
+async function carregarPainel() {
+  $('tabela').innerHTML = `<p class="carregando">Carregando...</p>`;
+  try {
+    painel = await api(`/api/admin/painel?mes=${mes}`);
+  } catch (e) {
+    return mostrarRecado('recado', e.message, 'erro');
+  }
+
+  $('status-ia').innerHTML = painel.ia_disponivel
+    ? ''
+    : `<div class="aviso atencao">Sem chave de API configurada. A conferência roda só com as
+       regras automáticas (datas, km, somas, × valor do km). Os comprovantes não são lidos.
+       Configure em <strong>Configurações</strong>.</div>`;
+
+  const c = painel.contagem;
+  const total = Object.values(c).reduce((s, n) => s + n, 0);
+  $('contagem').innerHTML = `
+    <div class="numero destaque">
+      <div class="rotulo">Recebidos</div><div class="valor">${total}</div>
+    </div>
+    <div class="numero">
+      <div class="rotulo">Aguardando</div><div class="valor">${(c.ENVIADO || 0) + (c.CONFERINDO || 0)}</div>
+    </div>
+    <div class="numero">
+      <div class="rotulo">Aprovados</div><div class="valor" style="color:var(--verde)">${c.CERTA || 0}</div>
+    </div>
+    <div class="numero">
+      <div class="rotulo">Só falta DANFE</div><div class="valor" style="color:var(--amarelo)">${c.SO_FALTA_DANFE || 0}</div>
+    </div>
+    <div class="numero">
+      <div class="rotulo">Reprovados</div><div class="valor" style="color:var(--vermelho)">${c.ERRADA || 0}</div>
+    </div>
+    <div class="numero">
+      <div class="rotulo">Não enviaram</div><div class="valor">${painel.nao_enviaram.length}</div>
+    </div>`;
+
+  desenharTabela();
+
+  $('nao-enviaram').innerHTML = painel.nao_enviaram.length
+    ? painel.nao_enviaram
+        .map((u) => `<div class="anexo"><span class="nome">${escapar(u.nome)}</span>
+             <span class="peso">${escapar(u.login)}</span></div>`)
+        .join('')
+    : `<p class="sub" style="margin:0">Todo mundo já enviou.</p>`;
+}
+
+function desenharTabela() {
+  const lista = painel.relatorios;
+  if (!lista.length) {
+    $('tabela').innerHTML = `<p class="sub">Nenhum relatório enviado para ${escapar(
+      painel.mes_extenso,
+    )}.</p>`;
+    return;
+  }
+
+  $('tabela').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Status</th><th>Colaborador</th><th class="num">Km</th><th class="num">Valor km</th>
+        <th class="num">Declarado</th><th class="num">Comprovado</th><th class="num">Diferença</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+        ${lista.map(linhaTabela).join('')}
+      </tbody>
+    </table>`;
+
+  for (const b of $('tabela').querySelectorAll('[data-ver]')) {
+    b.addEventListener('click', () => abrirDetalhe(Number(b.dataset.ver)));
+  }
+  for (const b of $('tabela').querySelectorAll('[data-conferir]')) {
+    b.addEventListener('click', () => conferirUm(Number(b.dataset.conferir), b));
+  }
+}
+
+function linhaTabela(r) {
+  const dif =
+    r.diferenca == null
+      ? '—'
+      : `<span style="color:${
+          Math.abs(r.diferenca) < 0.01 ? 'var(--verde)' : 'var(--vermelho)'
+        }">${brl(r.diferenca)}</span>`;
+
+  const pendente = r.status === 'ENVIADO' || r.status === 'CONFERINDO';
+
+  return `<tr>
+    <td><span class="selo ${r.status}">${escapar(r.rotulo_status)}</span></td>
+    <td>${escapar(r.nome)}</td>
+    <td class="num">${numeroBr(r.total_km)}</td>
+    <td class="num">${brl(r.valor_km)}</td>
+    <td class="num">${brl(r.declarado)}</td>
+    <td class="num">${r.comprovado == null ? '—' : brl(r.comprovado)}</td>
+    <td class="num">${dif}</td>
+    <td style="white-space:nowrap">
+      <button class="secundario pequeno" data-ver="${r.id}">Abrir</button>
+      ${pendente ? `<button class="pequeno" data-conferir="${r.id}">Conferir</button>` : ''}
+    </td>
+  </tr>`;
+}
+
+// -------------------------------------------------------------- conferencia
+
+async function conferirUm(id, botao, demo = false) {
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent = 'Conferindo...';
+  }
+  try {
+    const r = await api('/api/admin/conferir', {
+      metodo: 'POST',
+      corpo: { relatorio_id: id, demo },
+    });
+    mostrarRecado('recado', `Conferido: ${r.rotulo_status}.${r.aviso ? ' ' + r.aviso : ''}`,
+      demo ? 'atencao' : r.status === 'CERTA' ? 'ok' : r.status === 'SO_FALTA_DANFE' ? 'atencao' : 'erro');
+    await carregarPainel();
+  } catch (e) {
+    mostrarRecado('recado', e.message, 'erro');
+    if (botao) {
+      botao.disabled = false;
+      botao.textContent = 'Conferir';
+    }
+  }
+}
+
+async function conferirPendentes(demo = false) {
+  const pendentes = (painel?.relatorios || []).filter(
+    (r) => r.status === 'ENVIADO' || r.status === 'CONFERINDO',
+  );
+  if (!pendentes.length) {
+    return mostrarRecado('recado', 'Não há relatório pendente de conferência neste mês.', 'info');
+  }
+
+  const pergunta = demo
+    ? `MODO DEMONSTRAÇÃO — ${pendentes.length} relatório(s).\n\n` +
+      'Nenhum comprovante será lido e nenhum crédito será gasto. ' +
+      'O parecer é simulado e serve só para testar a tela.\n\nContinuar?'
+    : `Conferir ${pendentes.length} relatório(s) com IA agora?` +
+      (painel.ia_disponivel
+        ? ' Isso consome créditos da API.'
+        : ' (Sem chave: só as regras automáticas.)');
+
+  if (!confirm(pergunta)) return;
+
+  const botao = demo ? $('botao-demo') : $('botao-conferir-todos');
+  const rotuloOriginal = botao.textContent;
+  botao.disabled = true;
+  let feitos = 0;
+  const falhas = [];
+
+  for (const r of pendentes) {
+    botao.textContent = `Conferindo ${feitos + 1} de ${pendentes.length}...`;
+    try {
+      await api('/api/admin/conferir', {
+        metodo: 'POST',
+        corpo: { relatorio_id: r.id, demo },
+      });
+      feitos++;
+    } catch (e) {
+      falhas.push(`${r.nome}: ${e.message}`);
+    }
+  }
+
+  botao.disabled = false;
+  botao.textContent = rotuloOriginal;
+  mostrarRecado(
+    'recado',
+    `${feitos} de ${pendentes.length} conferido(s).` +
+      (falhas.length ? ` Falhas: ${falhas.join(' | ')}` : ''),
+    falhas.length ? 'atencao' : 'ok',
+  );
+  await carregarPainel();
+}
+
+// ----------------------------------------------------------------- detalhe
+
+async function abrirDetalhe(id) {
+  let d;
+  try {
+    d = await api(`/api/admin/relatorio?id=${id}`);
+  } catch (e) {
+    return mostrarRecado('recado', e.message, 'erro');
+  }
+
+  const r = d.relatorio;
+  const fundo = document.createElement('div');
+  fundo.className = 'fundo-modal';
+  fundo.innerHTML = `
+    <div class="modal">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px">
+        <h2 style="margin:0; flex:1">${escapar(r.nome)}</h2>
+        <button class="secundario pequeno" id="fechar">Fechar</button>
+      </div>
+      <p class="sub">
+        ${escapar(r.mes_extenso)} ·
+        <span class="selo ${r.status}">${escapar(r.rotulo_status)}</span>
+        ${r.placas ? ` · placas: ${escapar(r.placas)}` : ' · sem placa declarada'}
+      </p>
+
+      <div class="numeros" style="margin-bottom:16px">
+        <div class="numero"><div class="rotulo">Total de km</div>
+          <div class="valor">${numeroBr(r.total_km)}</div></div>
+        <div class="numero destaque"><div class="rotulo">Valor do km</div>
+          <div class="valor">${brl(r.valor_km)}</div></div>
+        <div class="numero"><div class="rotulo">Ped.+estac. declarado</div>
+          <div class="valor">${brl(r.pedagio_declarado + r.estac_declarado)}</div></div>
+        <div class="numero"><div class="rotulo">Comprovado</div>
+          <div class="valor">${r.pedagio_comprovado == null ? '—' : brl(r.pedagio_comprovado)}</div></div>
+      </div>
+
+      ${r.observacao ? `<div class="aviso info"><strong>Observação do colaborador:</strong><br>${escapar(r.observacao)}</div>` : ''}
+
+      ${blocoAchados(r)}
+      ${blocoParecer(r)}
+
+      <h2 style="margin-top:20px">Comprovantes (${d.anexos.length})</h2>
+      ${
+        d.anexos.length
+          ? d.anexos
+              .map(
+                (a) => `<div class="anexo">
+                  <span class="peso">${escapar(ROTULO_ANEXO[a.tipo] || a.tipo)}</span>
+                  <span class="nome"><a href="/api/anexo/${a.id}" target="_blank" rel="noopener">${escapar(
+                    a.nome_original,
+                  )}</a></span>
+                  <span class="peso">${tamanhoBr(a.tamanho)}</span>
+                </div>`,
+              )
+              .join('')
+          : '<p class="sub">Nenhum comprovante anexado.</p>'
+      }
+
+      <h2 style="margin-top:20px">Lançamentos (${d.linhas.length} dias)</h2>
+      <div class="rolagem">
+        <table>
+          <thead><tr>
+            <th>Data</th><th class="num">Km ini</th><th class="num">Km fim</th>
+            <th class="num">Rodou</th><th>Itinerário</th><th class="num">Pedágio</th><th class="num">Estac.</th>
+          </tr></thead>
+          <tbody>
+            ${d.linhas
+              .map(
+                (l) => `<tr>
+              <td>${dataBr(l.data)}</td>
+              <td class="num">${numeroBr(l.km_inicial)}</td>
+              <td class="num">${numeroBr(l.km_final)}</td>
+              <td class="num">${numeroBr(l.km_final - l.km_inicial)}</td>
+              <td>${escapar(l.itinerario || '—')}</td>
+              <td class="num">${l.pedagio ? brl(l.pedagio) : '—'}</td>
+              <td class="num">${l.estacionamento ? brl(l.estacionamento) : '—'}</td>
+            </tr>`,
+              )
+              .join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 style="margin-top:20px">Decidir</h2>
+      <div id="recado-decisao"></div>
+      <label for="d-fazer">O que o colaborador precisa fazer</label>
+      <textarea id="d-fazer">${escapar(r.o_que_fazer || '')}</textarea>
+      <div class="linha-botoes">
+        <button data-status="CERTA" style="background:var(--verde)">Aprovar</button>
+        <button data-status="SO_FALTA_DANFE" style="background:var(--amarelo)">Só falta DANFE</button>
+        <button data-status="ERRADA" class="perigo">Reprovar</button>
+        ${
+          r.status === 'ENVIADO' || r.status === 'CONFERINDO'
+            ? `<button class="secundario" id="conferir-daqui">Conferir com IA</button>`
+            : ''
+        }
+      </div>
+    </div>`;
+
+  document.body.appendChild(fundo);
+
+  const fechar = () => fundo.remove();
+  fundo.querySelector('#fechar').addEventListener('click', fechar);
+  fundo.addEventListener('click', (ev) => {
+    if (ev.target === fundo) fechar();
+  });
+
+  fundo.querySelector('#conferir-daqui')?.addEventListener('click', async (ev) => {
+    ev.target.disabled = true;
+    ev.target.textContent = 'Conferindo...';
+    fechar();
+    await conferirUm(id, null);
+  });
+
+  for (const b of fundo.querySelectorAll('[data-status]')) {
+    b.addEventListener('click', async () => {
+      try {
+        await api('/api/admin/decidir', {
+          metodo: 'POST',
+          corpo: {
+            relatorio_id: id,
+            status: b.dataset.status,
+            o_que_fazer: fundo.querySelector('#d-fazer').value,
+          },
+        });
+        fechar();
+        mostrarRecado('recado', 'Decisão registrada.', 'ok');
+        await carregarPainel();
+      } catch (e) {
+        mostrarRecado('recado-decisao', e.message, 'erro');
+      }
+    });
+  }
+}
+
+function blocoAchados(r) {
+  if (!r.achados?.length) return '';
+  return `<h2 style="margin-top:4px">O que foi encontrado</h2>
+    ${r.achados
+      .map(
+        (a) => `<div class="achado ${a.gravidade}">
+          <span class="icone">${a.gravidade === 'erro' ? '✕' : '!'}</span>
+          <span>${escapar(a.mensagem)}</span></div>`,
+      )
+      .join('')}`;
+}
+
+function blocoParecer(p) {
+  const ia = p.parecer_ia;
+  if (!ia) return '';
+  const ignorados = ia.itens_ignorados || [];
+  return `
+    <h2 style="margin-top:20px">Leitura dos comprovantes pela IA</h2>
+    ${
+      ia.simulado
+        ? `<div class="aviso erro"><strong>PARECER SIMULADO — modo demonstração.</strong><br>
+           Nenhum comprovante foi aberto ou lido. Estes números são inventados e servem só
+           para testar a tela. Não use para aprovar ou reprovar de verdade.</div>`
+        : ''
+    }
+    <div class="aviso info">${escapar(ia.resumo || '')}</div>
+    <div class="numeros" style="margin-bottom:12px">
+      <div class="numero"><div class="rotulo">Pedágio comprovado</div>
+        <div class="valor">${brl(ia.pedagio_comprovado)}</div></div>
+      <div class="numero"><div class="rotulo">Nota de abastecimento</div>
+        <div class="valor" style="font-size:16px; color:${
+          ia.tem_danfe_de_abastecimento ? 'var(--verde)' : 'var(--vermelho)'
+        }">${ia.tem_danfe_de_abastecimento ? 'Enviada' : 'Não enviada'}</div></div>
+      <div class="numero"><div class="rotulo">Odômetro</div>
+        <div class="valor" style="font-size:16px">${escapar(
+          { sim: 'Confere', nao: 'Não confere', parcial: 'Confere em parte', sem_foto: 'Sem foto' }[
+            ia.odometro?.confere_com_o_rdv
+          ] || '—',
+        )}</div></div>
+    </div>
+    ${
+      ia.odometro?.observacao
+        ? `<p class="sub">Odômetro: ${escapar(ia.odometro.observacao)}</p>`
+        : ''
+    }
+    ${
+      ignorados.length
+        ? `<p class="sub"><strong>Itens do extrato que não entraram na soma:</strong> ${ignorados
+            .map((i) => `${escapar(i.descricao)} (${brl(i.valor)})`)
+            .join(', ')}</p>`
+        : ''
+    }`;
+}
+
+// ---------------------------------------------------------------- usuarios
+
+async function carregarUsuarios() {
+  try {
+    const lista = await api('/api/admin/usuarios');
+    $('lista-usuarios').innerHTML = `
+      <table>
+        <thead><tr>
+          <th>Nome</th><th>Login</th><th>Perfil</th><th>Placas</th><th>Situação</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${lista
+            .map(
+              (u) => `<tr>
+            <td>${escapar(u.nome)}</td>
+            <td>${escapar(u.login)}</td>
+            <td>${u.papel === 'admin' ? 'Administrador' : 'Colaborador'}</td>
+            <td>${escapar(u.placas || '—')}</td>
+            <td>${u.ativo ? 'Ativo' : 'Desativado'}</td>
+            <td style="white-space:nowrap">
+              <button class="secundario pequeno" data-senha="${u.id}">Nova senha</button>
+              <button class="secundario pequeno" data-ativo="${u.id}" data-valor="${
+                u.ativo ? 0 : 1
+              }">${u.ativo ? 'Desativar' : 'Reativar'}</button>
+            </td>
+          </tr>`,
+            )
+            .join('')}
+        </tbody>
+      </table>`;
+
+    for (const b of $('lista-usuarios').querySelectorAll('[data-senha]')) {
+      b.addEventListener('click', async () => {
+        const senha = prompt('Senha provisória para essa pessoa (mínimo 6 caracteres):');
+        if (!senha) return;
+        try {
+          await api('/api/admin/usuario-senha', {
+            metodo: 'POST',
+            corpo: { usuario_id: Number(b.dataset.senha), senha },
+          });
+          mostrarRecado('recado-usuario', 'Senha trocada. Passe a nova senha para a pessoa.', 'ok');
+        } catch (e) {
+          mostrarRecado('recado-usuario', e.message, 'erro');
+        }
+      });
+    }
+
+    for (const b of $('lista-usuarios').querySelectorAll('[data-ativo]')) {
+      b.addEventListener('click', async () => {
+        await api('/api/admin/usuario-ativo', {
+          metodo: 'POST',
+          corpo: { usuario_id: Number(b.dataset.ativo), ativo: Number(b.dataset.valor) },
+        });
+        carregarUsuarios();
+      });
+    }
+  } catch (e) {
+    mostrarRecado('recado-usuario', e.message, 'erro');
+  }
+}
+
+async function criarUsuario() {
+  const corpo = {
+    nome: $('u-nome').value.trim(),
+    login: $('u-login').value.trim(),
+    senha: $('u-senha').value,
+    email: $('u-email').value.trim() || null,
+    placas: $('u-placas').value.trim() || null,
+    papel: $('u-papel').value,
+  };
+  try {
+    await api('/api/admin/usuarios', { metodo: 'POST', corpo });
+    mostrarRecado(
+      'recado-usuario',
+      `${corpo.nome} cadastrado. Passe o login "${corpo.login}" e a senha provisória para a pessoa.`,
+      'ok',
+    );
+    for (const id of ['u-nome', 'u-login', 'u-senha', 'u-email', 'u-placas']) $(id).value = '';
+    carregarUsuarios();
+  } catch (e) {
+    mostrarRecado('recado-usuario', e.message, 'erro');
+  }
+}
+
+// ------------------------------------------------------------------ config
+
+async function carregarConfig() {
+  try {
+    const c = await api('/api/admin/config');
+    $('c-km').value = c.valor_km;
+    $('estado-chave').innerHTML = c.chave_por_ambiente
+      ? `<div class="aviso ok">Usando a chave da variável de ambiente ANTHROPIC_API_KEY.</div>`
+      : c.chave_api_resumo
+        ? `<div class="aviso ok">Chave configurada: <code>${escapar(c.chave_api_resumo)}</code></div>`
+        : `<div class="aviso atencao">Nenhuma chave configurada — a IA está desligada.</div>`;
+  } catch (e) {
+    mostrarRecado('recado-config', e.message, 'erro');
+  }
+}
+
+async function salvarKm() {
+  try {
+    await api('/api/admin/config', { metodo: 'POST', corpo: { valor_km: $('c-km').value } });
+    mostrarRecado('recado-config', 'Valor do km salvo.', 'ok');
+    carregarPainel();
+  } catch (e) {
+    mostrarRecado('recado-config', e.message, 'erro');
+  }
+}
+
+async function salvarChave() {
+  const chave = $('c-chave').value.trim();
+  if (!chave) return mostrarRecado('recado-config', 'Cole a chave antes de salvar.', 'erro');
+  try {
+    await api('/api/admin/config', { metodo: 'POST', corpo: { chave_api: chave } });
+    $('c-chave').value = '';
+    mostrarRecado('recado-config', 'Chave salva. A conferência com IA está ligada.', 'ok');
+    carregarConfig();
+    carregarPainel();
+  } catch (e) {
+    mostrarRecado('recado-config', e.message, 'erro');
+  }
+}
+
+async function limparChave() {
+  if (!confirm('Remover a chave? A conferência com IA deixa de funcionar.')) return;
+  await api('/api/admin/config', { metodo: 'POST', corpo: { limpar_chave: true } });
+  mostrarRecado('recado-config', 'Chave removida.', 'info');
+  carregarConfig();
+  carregarPainel();
+}

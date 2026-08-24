@@ -1,0 +1,20 @@
+{
+  "name": "Portal RDV — DISO",
+  "short_name": "RDV",
+  "description": "Envio e conferência dos Relatórios de Despesas de Viagem.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f6f9",
+  "theme_color": "#1c4e80",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/icone.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c4e80">
+<title>Conferência — Portal RDV</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icone.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/estilo.css">
+</head>
+<body>
+
+<header class="topo">
+  <h1>Portal RDV · Conferência</h1>
+  <div class="quem">
+    <div id="meu-nome"></div>
+    <button class="link" id="botao-sair" style="margin-top:4px">Sair</button>
+  </div>
+</header>
+
+<main class="conteudo">
+  <div id="recado"></div>
+
+  <div class="abas">
+    <button data-aba="painel" class="ativa">Painel do mês</button>
+    <button data-aba="usuarios">Colaboradores</button>
+    <button data-aba="config">Configurações</button>
+  </div>
+
+  <!-- ----------------------------------------------------------- painel -->
+  <section id="aba-painel">
+    <div class="cartao">
+      <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap">
+        <div style="flex:1; min-width:150px">
+          <label for="mes">Mês de referência</label>
+          <input type="month" id="mes" style="margin-bottom:0">
+        </div>
+        <button id="botao-conferir-todos">Conferir os pendentes com IA</button>
+        <button class="secundario" id="botao-demo">Testar em modo demonstração</button>
+        <button class="secundario" id="botao-exportar">Baixar planilha</button>
+      </div>
+      <div id="status-ia" style="margin-top:14px"></div>
+      <div class="numeros" id="contagem" style="margin-top:14px"></div>
+    </div>
+
+    <div class="cartao">
+      <h2>Relatórios recebidos</h2>
+      <div class="rolagem"><div id="tabela"></div></div>
+    </div>
+
+    <div class="cartao">
+      <h2>Ainda não enviaram</h2>
+      <div id="nao-enviaram"></div>
+    </div>
+  </section>
+
+  <!-- --------------------------------------------------------- usuarios -->
+  <section id="aba-usuarios" class="esconde">
+    <div class="cartao">
+      <h2>Novo colaborador</h2>
+      <div id="recado-usuario"></div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px">
+        <div>
+          <label for="u-nome">Nome completo</label>
+          <input type="text" id="u-nome" placeholder="Como aparece no RDV">
+        </div>
+        <div>
+          <label for="u-login">Usuário (login)</label>
+          <input type="text" id="u-login" autocapitalize="none" placeholder="ex.: joao.silva">
+        </div>
+        <div>
+          <label for="u-senha">Senha provisória</label>
+          <input type="text" id="u-senha" placeholder="mínimo 6 caracteres">
+        </div>
+        <div>
+          <label for="u-email">E-mail (opcional)</label>
+          <input type="email" id="u-email">
+        </div>
+        <div>
+          <label for="u-placas">Placas do veículo (opcional)</label>
+          <input type="text" id="u-placas" placeholder="ABC1D23, XYZ4E56">
+        </div>
+        <div>
+          <label for="u-papel">Perfil</label>
+          <select id="u-papel">
+            <option value="colaborador">Colaborador</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+      </div>
+      <button id="botao-criar-usuario">Cadastrar</button>
+    </div>
+
+    <div class="cartao">
+      <h2>Cadastrados</h2>
+      <div class="rolagem"><div id="lista-usuarios"></div></div>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------------- config -->
+  <section id="aba-config" class="esconde">
+    <div class="cartao">
+      <h2>Valor pago por quilômetro</h2>
+      <p class="sub">É o que multiplica o total de km para chegar no valor a reembolsar.</p>
+      <div id="recado-config"></div>
+      <label for="c-km">Valor por km (R$)</label>
+      <input type="number" id="c-km" step="0.01" min="0.01" style="max-width:200px">
+      <button id="botao-salvar-km">Salvar</button>
+    </div>
+
+    <div class="cartao">
+      <h2>Conferência com IA</h2>
+      <p class="sub">
+        A IA lê os comprovantes anexados: soma o extrato de pedágio, confirma se a nota de
+        abastecimento é real e compara as fotos de odômetro com o km declarado.
+        Precisa de uma chave de API da Anthropic.
+      </p>
+      <div id="estado-chave"></div>
+      <label for="c-chave">Chave da API</label>
+      <input type="password" id="c-chave" placeholder="sk-ant-..." autocomplete="off">
+      <div class="linha-botoes">
+        <button id="botao-salvar-chave">Salvar chave</button>
+        <button class="secundario" id="botao-limpar-chave">Remover chave</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script type="module" src="/js/admin.js"></script>
+</body>
+</html>

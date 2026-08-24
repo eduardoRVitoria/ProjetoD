@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c4e80">
+<title>Portal RDV — DISO</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icone.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icone.svg">
+<link rel="stylesheet" href="/css/estilo.css">
+<style>
+  .abertura {
+    min-height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .caixa { width: 100%; max-width: 380px; }
+  .marca-topo { text-align: center; margin-bottom: 28px; }
+  .marca-topo .logo {
+    width: 64px; height: 64px; margin: 0 auto 14px; display: block;
+  }
+  .marca-topo h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -.3px; }
+  .marca-topo p { margin: 0; color: var(--texto-fraco); font-size: 14px; }
+  .rodape-login {
+    text-align: center; margin-top: 20px; font-size: 12px; color: var(--texto-fraco);
+  }
+</style>
+</head>
+<body>
+
+<div class="abertura">
+  <div class="caixa">
+    <div class="marca-topo">
+      <svg class="logo" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect width="64" height="64" rx="16" fill="#1c4e80"/>
+        <path d="M14 40h36M20 40V26l6-8h13l6 8v14" stroke="#fff" stroke-width="3.2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="24" cy="44" r="4.5" fill="#1c4e80" stroke="#fff" stroke-width="3.2"/>
+        <circle cx="42" cy="44" r="4.5" fill="#1c4e80" stroke="#fff" stroke-width="3.2"/>
+      </svg>
+      <h1>Portal RDV</h1>
+      <p>Relatórios de Despesas de Viagem</p>
+    </div>
+
+    <div class="cartao">
+      <div id="recado"></div>
+      <form id="formulario">
+        <label for="login">Usuário</label>
+        <input id="login" name="login" type="text" autocomplete="username"
+               autocapitalize="none" spellcheck="false" required>
+
+        <label for="senha">Senha</label>
+        <input id="senha" name="senha" type="password" autocomplete="current-password" required>
+
+        <button type="submit" style="width:100%" id="botao">Entrar</button>
+      </form>
+    </div>
+
+    <p class="rodape-login">DISO Comércio de Alimentos</p>
+  </div>
+</div>
+
+<script type="module">
+import { api, mostrarRecado } from '/js/comum.js';
+
+const form = document.getElementById('formulario');
+const botao = document.getElementById('botao');
+
+// Se ja tem sessao aberta, pula direto pra dentro.
+try {
+  const eu = await api('/api/eu');
+  irPraDentro(eu.usuario);
+} catch { /* sem sessao, mostra o login mesmo */ }
+
+function irPraDentro(usuario) {
+  location.href = usuario.papel === 'admin' ? '/admin.html' : '/app.html';
+}
+
+form.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  botao.disabled = true;
+  botao.textContent = 'Entrando...';
+  try {
+    const r = await api('/api/entrar', {
+      metodo: 'POST',
+      corpo: {
+        login: document.getElementById('login').value,
+        senha: document.getElementById('senha').value,
+      },
+    });
+    irPraDentro(r.usuario);
+  } catch (e) {
+    mostrarRecado('recado', e.message, 'erro');
+    botao.disabled = false;
+    botao.textContent = 'Entrar';
+    document.getElementById('senha').select();
+  }
+});
+</script>
+</body>
+</html>
