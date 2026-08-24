@@ -18,6 +18,7 @@ import { conferirComIa, iaDisponivel } from './ia.js';
 import { conferirEmDemo } from './ia-demo.js';
 import { gerarPlanilha } from './planilha.js';
 import { enviarBackup, restaurarBackup, resumoDosDados } from './backup.js';
+import { extrairDoRdv } from './extrair.js';
 import { nomeDoFeriado, fimDeSemana, diaDaSemana } from './feriados.js';
 import {
   responderJson,
@@ -33,7 +34,7 @@ import {
   ROTULO_STATUS,
 } from './util.js';
 
-const TIPOS_DE_ANEXO = new Set(['pedagio', 'danfe', 'odometro', 'outro']);
+const TIPOS_DE_ANEXO = new Set(['rdv', 'pedagio', 'danfe', 'odometro', 'outro']);
 const EDITAVEL = new Set(['RASCUNHO', 'ERRADA', 'SO_FALTA_DANFE']);
 
 // ---------------------------------------------------------------- despachante
@@ -54,6 +55,7 @@ export async function tratarApi(req, res, url, usuario, seguro) {
 
   if (rota === '/api/relatorio' && metodo === 'GET') return pegarRelatorio(req, res, url, usuario);
   if (rota === '/api/relatorio' && metodo === 'PUT') return salvarRelatorio(req, res, usuario);
+  if (rota === '/api/relatorio/ler-rdv' && metodo === 'POST') return lerRdv(req, res, usuario);
   if (rota === '/api/relatorio/enviar' && metodo === 'POST') return enviarRelatorio(req, res, usuario);
   if (rota === '/api/meus-relatorios' && metodo === 'GET') return meusRelatorios(res, usuario);
 
@@ -200,6 +202,7 @@ function pegarRelatorio(req, res, url, usuario) {
       rotulo_status: ROTULO_STATUS[rel.status],
       editavel: EDITAVEL.has(rel.status),
       achados: rel.achados ? JSON.parse(rel.achados) : null,
+      extraido: rel.extraido ? JSON.parse(rel.extraido) : null,
     },
     grade: gradeDoMes(mes, linhas),
     anexos,
@@ -274,6 +277,126 @@ async function salvarRelatorio(req, res, usuario) {
   }
 }
 
+// Le o arquivo do RDV com a IA e preenche as linhas a partir dele.
+// O colaborador nao digita dia a dia: ele anexa o relatorio que ja produz hoje.
+async function lerRdv(req, res, usuario) {
+  const { mes } = await lerJson(req);
+  if (!mesValido(mes)) return erro(res, 'Mes invalido.');
+
+  const rel = acharOuCriar(usuario.id, mes);
+  if (!EDITAVEL.has(rel.status)) {
+    return erro(res, `Esse relatorio esta como "${ROTULO_STATUS[rel.status]}" e nao pode ser relido.`);
+  }
+
+  const arquivos = db
+    .prepare("SELECT * FROM anexos WHERE relatorio_id = ? AND tipo = 'rdv' ORDER BY id")
+    .all(rel.id);
+
+  if (!arquivos.length) {
+    return erro(res, 'Anexe primeiro o arquivo do seu RDV (PDF ou foto).');
+  }
+
+  let extraido;
+  try {
+    const saida = await extrairDoRdv(arquivos, mes);
+    extraido = saida.extraido;
+  } catch (e) {
+    return erro(res, e.message, 502);
+  }
+
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM linhas WHERE relatorio_id = ?').run(rel.id);
+
+    const inserir = db.prepare(
+      `INSERT INTO linhas (relatorio_id, data, km_inicial, km_final, itinerario, pedagio, estacionamento, ordem)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    let ordem = 0;
+    for (const l of extraido.linhas) {
+      inserir.run(
+        rel.id,
+        l.data,
+        l.km_inicial,
+        l.km_final,
+        l.itinerario,
+        l.pedagio,
+        l.estacionamento,
+        ordem++,
+      );
+    }
+
+    // Guarda tambem o que o documento declarava, para a conferencia comparar.
+    db.prepare(
+      `UPDATE relatorios SET extraido = ?, extraido_em = ? WHERE id = ?`,
+    ).run(JSON.stringify(extraido), agora(), rel.id);
+
+    const linhas = linhasDo(rel.id);
+    const anexos = anexosDo(rel.id);
+    const atualizado = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id);
+    const r = conferir(atualizado, linhas, anexos, valorDoKm());
+
+    db.prepare(
+      `UPDATE relatorios SET total_km = ?, valor_km = ?, pedagio_declarado = ?, estac_declarado = ? WHERE id = ?`,
+    ).run(r.totalKm, r.valorKm, r.pedagioDeclarado, r.estacDeclarado, rel.id);
+
+    db.exec('COMMIT');
+
+    // Se o documento trouxe placa e a pessoa ainda nao tem, aproveita.
+    if (extraido.placas && !usuario.placas) {
+      db.prepare('UPDATE usuarios SET placas = ? WHERE id = ?').run(extraido.placas, usuario.id);
+    }
+
+    responderJson(res, {
+      ok: true,
+      extraido,
+      previa: conferir(
+        db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id),
+        linhas,
+        anexos,
+        valorDoKm(),
+      ),
+      grade: gradeDoMes(mes, linhas),
+      aviso: avisoDaLeitura(extraido, usuario),
+    });
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
+function avisoDaLeitura(extraido, usuario) {
+  const partes = [`Foram lidos ${extraido.linhas.length} dia(s) do seu relatorio.`];
+
+  if (extraido.confianca !== 'alta') {
+    partes.push('A leitura teve pontos duvidosos - confira os dias abaixo antes de enviar.');
+  }
+
+  // O dono do RDV e o nome dentro do arquivo. Se nao bater, e provavel que a
+  // pessoa tenha anexado o relatorio de outra.
+  const limpar = (s) =>
+    String(s || '')
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLowerCase()
+      .replace(/[^a-z ]/g, '')
+      .split(/\s+/)
+      .filter(Boolean);
+
+  const noArquivo = limpar(extraido.nome_no_relatorio);
+  const doLogin = limpar(usuario.nome);
+  if (noArquivo.length && doLogin.length) {
+    const emComum = noArquivo.filter((p) => doLogin.includes(p)).length;
+    if (emComum === 0) {
+      partes.push(
+        `ATENCAO: o nome no arquivo e "${extraido.nome_no_relatorio}", diferente do seu cadastro (${usuario.nome}). Confira se anexou o relatorio certo.`,
+      );
+    }
+  }
+
+  return partes.join(' ');
+}
+
 async function enviarRelatorio(req, res, usuario) {
   const { mes } = await lerJson(req);
   if (!mesValido(mes)) return erro(res, 'Mes invalido.');
@@ -285,18 +408,23 @@ async function enviarRelatorio(req, res, usuario) {
   if (!EDITAVEL.has(rel.status)) return erro(res, 'Esse relatorio ja foi enviado.');
 
   const linhas = linhasDo(rel.id);
-  if (linhas.length === 0) return erro(res, 'Preencha pelo menos um dia antes de enviar.');
+  if (linhas.length === 0) {
+    return erro(
+      res,
+      'Anexe o arquivo do seu RDV e toque em "Ler meu relatorio" antes de enviar.',
+    );
+  }
 
   const anexos = anexosDo(rel.id);
   const r = conferir(rel, linhas, anexos, valorDoKm());
 
   // Bloqueios duros: coisas que a pessoa consegue resolver sozinha antes de enviar.
+  // A soma de km e o valor NAO entram aqui: com o RDV vindo de PDF, a divergencia
+  // e do documento dela, e quem decide o que fazer com isso e a conferencia.
   const bloqueios = r.achados.filter(
     (a) =>
       a.gravidade === 'erro' &&
-      ['data_fim_de_semana', 'km_invertido', 'itinerario_vazio', 'soma_km', 'valor_km', 'pedagio_sem_comprovante'].includes(
-        a.codigo,
-      ),
+      ['km_invertido', 'sem_linhas', 'leitura_incerta', 'pedagio_sem_comprovante'].includes(a.codigo),
   );
   if (bloqueios.length > 0) {
     return responderJson(

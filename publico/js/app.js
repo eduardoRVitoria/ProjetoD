@@ -40,6 +40,23 @@ for (const b of document.querySelectorAll('.abas button')) {
 }
 
 $('esconder-vazios').addEventListener('change', desenharGrade);
+$('botao-ler').addEventListener('click', lerRdv);
+
+// Escape para quando a leitura falhar ou a IA estiver desligada: a pessoa
+// preenche a grade na mao, como antes. Melhor que travar o envio do mes.
+let modoManual = false;
+$('botao-manual').addEventListener('click', () => {
+  modoManual = true;
+  $('cartao-lido').style.display = '';
+  $('cartao-lido').querySelector('h2').textContent = '2. Preencha os dias';
+  desenharGrade();
+  mostrarRecado(
+    'recado-leitura',
+    'Modo manual. Preencha os dias que voce rodou — o total e o valor são calculados sozinhos.',
+    'info',
+  );
+  $('cartao-lido').scrollIntoView({ behavior: 'smooth' });
+});
 $('botao-salvar').addEventListener('click', () => salvar(true));
 $('botao-enviar').addEventListener('click', enviar);
 $('observacao').addEventListener('input', () => marcarSujo());
@@ -83,7 +100,101 @@ function desenharTudo() {
   desenharAnexos();
   desenharAchados();
   desenharParecer();
+  desenharComparacao();
   atualizarRodape();
+  // O bloco de dias aparece depois da leitura, no modo manual, ou quando ja
+  // existe lancamento gravado (relatorio que voltou para correcao).
+  const temLinhas = estado.grade.some(
+    (d) => d.km_inicial || d.km_final || d.itinerario || d.pedagio || d.estacionamento,
+  );
+  $('cartao-lido').style.display =
+    estado.relatorio.extraido || modoManual || temLinhas ? '' : 'none';
+
+  $('botao-ler').textContent = estado.relatorio.extraido ? 'Ler de novo' : 'Ler meu relatório';
+}
+
+// ------------------------------------------------------------- leitura do PDF
+
+async function lerRdv() {
+  const temArquivo = estado.anexos.some((a) => a.tipo === 'rdv');
+  if (!temArquivo) {
+    return mostrarRecado('recado-leitura', 'Anexe primeiro o arquivo do seu RDV.', 'erro');
+  }
+
+  const botao = $('botao-ler');
+  botao.disabled = true;
+  botao.textContent = 'Lendo o relatório...';
+  mostrarRecado('recado-leitura', 'Lendo o seu relatório. Isso leva alguns segundos.', 'info');
+
+  try {
+    const r = await api('/api/relatorio/ler-rdv', { metodo: 'POST', corpo: { mes } });
+    estado.grade = r.grade;
+    estado.previa = r.previa;
+    estado.relatorio.extraido = r.extraido;
+    sujo = false;
+    desenharTudo();
+
+    const tipo =
+      r.extraido.confianca === 'alta' && !/ATENCAO/.test(r.aviso) ? 'ok' : 'atencao';
+    mostrarRecado('recado-leitura', r.aviso, tipo);
+  } catch (e) {
+    mostrarRecado('recado-leitura', e.message, 'erro');
+  } finally {
+    botao.disabled = false;
+    botao.textContent = estado.relatorio.extraido ? 'Ler de novo' : 'Ler meu relatório';
+  }
+}
+
+// Mostra o que o documento declarava contra o que a soma dos dias da.
+function desenharComparacao() {
+  const ex = estado.relatorio.extraido;
+  const alvo = $('comparacao');
+  if (!ex) {
+    alvo.innerHTML = '';
+    return;
+  }
+
+  const decl = ex.totais_declarados || {};
+  const p = estado.previa;
+  const linhas = [];
+
+  const par = (rotulo, declarado, calculado, formatar) => {
+    if (declarado == null) return;
+    const bate = Math.abs(Number(declarado) - Number(calculado)) < 0.01;
+    linhas.push(`
+      <tr>
+        <td>${rotulo}</td>
+        <td class="num">${formatar(declarado)}</td>
+        <td class="num">${formatar(calculado)}</td>
+        <td class="num" style="color:${bate ? 'var(--verde)' : 'var(--vermelho)'}; font-weight:700">
+          ${bate ? 'confere' : formatar(Number(calculado) - Number(declarado))}
+        </td>
+      </tr>`);
+  };
+
+  par('Total de km', decl.total_km, p.totalKm, numeroBr);
+  par('Valor do km', decl.valor_km, p.valorKm, brl);
+  par('Pedágio', decl.pedagio, p.pedagioDeclarado, brl);
+  par('Estacionamento', decl.estacionamento, p.estacDeclarado, brl);
+
+  if (!linhas.length) {
+    alvo.innerHTML = `<p class="sub" style="margin:0">O documento não trouxe um quadro de
+      totais para comparar. A conferência usa a soma dos dias lidos.</p>`;
+    return;
+  }
+
+  alvo.innerHTML = `
+    <div class="rolagem">
+      <table>
+        <thead><tr>
+          <th>Comparação</th>
+          <th class="num">O que está no seu RDV</th>
+          <th class="num">Soma dos dias</th>
+          <th class="num">Diferença</th>
+        </tr></thead>
+        <tbody>${linhas.join('')}</tbody>
+      </table>
+    </div>`;
 }
 
 // ------------------------------------------------------------------ status
@@ -234,13 +345,14 @@ function recalcularLocal() {
   estado.previa.pedagioDeclarado = Number(ped.toFixed(2));
   estado.previa.estacDeclarado = Number(est.toFixed(2));
   desenharNumeros();
+  desenharComparacao();
   atualizarRodape();
 }
 
 // ------------------------------------------------------------------ anexos
 
 function desenharAnexos() {
-  for (const tipo of ['danfe', 'pedagio', 'odometro', 'outro']) {
+  for (const tipo of ['rdv', 'danfe', 'pedagio', 'odometro', 'outro']) {
     const lista = estado.anexos.filter((a) => a.tipo === tipo);
     const alvo = $(`lista-${tipo}`);
     if (!alvo) continue;

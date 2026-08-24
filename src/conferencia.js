@@ -137,26 +137,69 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9) {
   );
   const valorKm = Number((totalKm * vlrKm).toFixed(2));
 
-  if (!perto(totalKm, Number(rel.total_km), 0.5)) {
+  // Quando o RDV veio de PDF, o total que vale para a comparacao e o que a
+  // PESSOA escreveu no documento, nao o que o sistema gravou. E aqui que o erro
+  // de conta aparece - ele nao e mais evitado na origem, entao tem que ser pego.
+  const doPdf = rel.extraido ? JSON.parse(rel.extraido) : null;
+  const declaradoKm = doPdf?.totais_declarados?.total_km ?? Number(rel.total_km);
+  const declaradoValor = doPdf?.totais_declarados?.valor_km ?? Number(rel.valor_km);
+
+  if (declaradoKm != null && !perto(totalKm, Number(declaradoKm), 0.5)) {
+    const dif = totalKm - Number(declaradoKm);
     achados.push(
       achado(
         'erro',
         'soma_km',
-        `A soma das linhas da ${totalKm} km, mas o relatorio declara ${rel.total_km} km.`,
+        `A soma dos dias da ${totalKm} km, mas o relatorio declara ${declaradoKm} km. ` +
+          `Diferenca de ${dif > 0 ? '+' : ''}${dif.toFixed(0)} km.`,
       ),
     );
   }
 
-  if (!perto(valorKm, Number(rel.valor_km))) {
+  if (declaradoValor != null && !perto(valorKm, Number(declaradoValor))) {
     achados.push(
       achado(
         'erro',
         'valor_km',
         `${totalKm} km x ${brl(vlrKm)} = ${brl(valorKm)}, mas o relatorio declara ${brl(
-          Number(rel.valor_km),
+          Number(declaradoValor),
         )}.`,
       ),
     );
+  }
+
+  // A leitura do documento pode ter falhado - isso precisa aparecer, senao a
+  // conferencia julga em cima de dado que ninguem conferiu.
+  if (doPdf) {
+    if (doPdf.confianca === 'baixa') {
+      achados.push(
+        achado(
+          'erro',
+          'leitura_incerta',
+          'A leitura do arquivo do RDV ficou incerta. Confira os dias extraidos antes de aprovar, ou peca o relatorio em PDF legivel.',
+        ),
+      );
+    } else if (doPdf.confianca === 'media') {
+      achados.push(
+        achado(
+          'aviso',
+          'leitura_parcial',
+          'A leitura do arquivo do RDV teve pontos duvidosos. Vale conferir os dias extraidos.',
+        ),
+      );
+    }
+    for (const p of doPdf.problemas_de_leitura || []) {
+      achados.push(achado('aviso', 'leitura_problema', p));
+    }
+    if (linhas.length === 0) {
+      achados.push(
+        achado(
+          'erro',
+          'sem_linhas',
+          'Nenhum lancamento foi encontrado no arquivo do RDV. Confira se anexou o relatorio certo.',
+        ),
+      );
+    }
   }
 
   // ------------------------------------------------- 5. pedagio/estacionamento

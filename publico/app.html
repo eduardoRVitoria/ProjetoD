@@ -34,7 +34,7 @@
   </div>
 
   <div class="abas">
-    <button data-aba="lancamentos" class="ativa">Lançamentos</button>
+    <button data-aba="lancamentos" class="ativa">Meu relatório</button>
     <button data-aba="comprovantes">Comprovantes</button>
     <button data-aba="conferencia">Conferência</button>
     <button data-aba="historico">Histórico</button>
@@ -43,19 +43,31 @@
   <!-- ------------------------------------------------------ lancamentos -->
   <section id="aba-lancamentos">
     <div class="cartao">
-      <h2>Resumo do mês</h2>
-      <div class="numeros" id="numeros"></div>
+      <h2>1. Envie o seu RDV</h2>
+      <p class="sub">
+        Anexe o relatório do jeito que você já faz — o PDF, a planilha impressa em PDF
+        ou uma foto nítida. Não precisa digitar nada: o sistema lê a tabela sozinho.
+      </p>
+      <div class="solta" data-tipo="rdv">Toque para escolher o arquivo do seu RDV</div>
+      <div id="lista-rdv" style="margin-top:12px"></div>
+      <div class="linha-botoes" style="margin-top:14px">
+        <button id="botao-ler">Ler meu relatório</button>
+        <button class="secundario" id="botao-manual">Preencher na mão</button>
+      </div>
+      <div id="recado-leitura" style="margin-top:12px"></div>
     </div>
 
-    <div class="cartao">
-      <h2>Dia a dia</h2>
+    <div class="cartao" id="cartao-lido" style="display:none">
+      <h2>2. Confira o que foi lido</h2>
       <p class="sub">
-        Preencha só os dias que você rodou. O total e o valor são calculados sozinhos —
-        você não precisa somar nada.
+        Estes são os dias que o sistema encontrou no seu relatório. Se algum número saiu
+        errado na leitura, corrija aqui — o que vale para a conferência é o que está nesta tela.
       </p>
-      <label style="display:flex; align-items:center; gap:8px; font-weight:500">
+      <div class="numeros" id="numeros"></div>
+      <div id="comparacao" style="margin-top:14px"></div>
+      <label style="display:flex; align-items:center; gap:8px; font-weight:500; margin-top:16px">
         <input type="checkbox" id="esconder-vazios" style="width:auto; margin:0" checked>
-        Esconder fins de semana e dias em branco
+        Mostrar só os dias que têm lançamento
       </label>
       <div id="grade"></div>
     </div>

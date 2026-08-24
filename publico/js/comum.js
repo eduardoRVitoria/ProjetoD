@@ -92,6 +92,7 @@ export async function sair() {
 }
 
 export const ROTULO_ANEXO = {
+  rdv: 'Relatório (RDV)',
   pedagio: 'Pedágio / estacionamento',
   danfe: 'Nota de abastecimento',
   odometro: 'Foto do odômetro',

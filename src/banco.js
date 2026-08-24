@@ -106,6 +106,11 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     // null = derivar dos anexos; 1/0 = resposta explicita (usado na importacao)
     db.exec('ALTER TABLE relatorios ADD COLUMN mandou_danfe INTEGER');
   }
+  if (!colunas.has('extraido')) {
+    // JSON do que a IA leu no PDF do RDV: linhas, totais declarados e problemas
+    db.exec('ALTER TABLE relatorios ADD COLUMN extraido TEXT');
+    db.exec('ALTER TABLE relatorios ADD COLUMN extraido_em TEXT');
+  }
 }
 
 // ---------------------------------------------------------------- configuracao
