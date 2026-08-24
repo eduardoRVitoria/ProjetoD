@@ -45,15 +45,29 @@ REGRAS DE TRANSCRICAO
 5. Itinerario: copie o texto como esta. Se estiver vazio, devolva string vazia -
    nao invente trajeto, nao deduza a partir da quilometragem.
 
-6. Pedagio e estacionamento: so o que estiver lancado naquela linha do relatorio.
-   Se o documento tiver uma coluna unica de "despesas", coloque em pedagio e
-   avise em problemas_de_leitura.
+6. Pedagio e estacionamento POR DIA: a maioria dos formularios NAO tem essas
+   colunas por dia - traz so um valor agregado no quadro de resumo. Quando nao
+   houver coluna por dia, deixe pedagio e estacionamento em 0 em todas as linhas
+   e registre o total no campo agregado (item 7). Isso e o normal, nao e erro:
+   nao precisa avisar em problemas_de_leitura.
 
-7. TOTAIS DECLARADOS: transcreva os totais que o PROPRIO DOCUMENTO apresenta
-   (normalmente num quadro destacado ao lado ou no rodape) - total de km, valor
-   do km, pedagio e estacionamento. Nao some voce mesmo: queremos saber o que a
-   pessoa declarou, justamente para comparar depois com a soma correta.
-   Se um total nao aparecer no documento, devolva null naquele campo.
+7. TOTAIS DECLARADOS: transcreva os totais que o PROPRIO DOCUMENTO apresenta,
+   normalmente num quadro destacado ao lado ou no rodape. Nao some voce mesmo:
+   queremos saber o que a PESSOA declarou, justamente para comparar depois com a
+   soma correta. Devolva null no campo que o documento nao trouxer.
+
+   ATENCAO A ESTES DOIS, QUE SE CONFUNDEM:
+   - taxa_por_km: o valor pago POR QUILOMETRO. E um numero pequeno, tipicamente
+     0,90. Costuma aparecer no cabecalho da coluna.
+   - valor_total_km: o valor EM REAIS a receber pelos quilometros rodados, ou
+     seja, total de km vezes a taxa. E um numero grande, na casa dos milhares.
+     Se o quadro mostrar "TOTAL KM 3.339" e "R$ 3.005,10", entao total_km e 3339
+     e valor_total_km e 3005.10 - nunca 0,90.
+
+   - pedagio_estacionamento: o total de pedagio mais estacionamento. Muitos
+     formularios trazem os dois somados numa linha so ("PEDAGIO + ESTACIONAMENTO
+     R$ 944,64") - nesse caso devolva o valor somado aqui mesmo, e nao tente
+     separar. Separar sem base no documento e inventar dado.
 
 8. O nome do colaborador e o nome DENTRO do documento, nunca quem enviou.
 
@@ -101,12 +115,26 @@ const FERRAMENTA = {
         type: 'object',
         description: 'Os totais que o proprio documento apresenta. null onde o documento nao trouxer.',
         properties: {
-          total_km: { type: ['number', 'null'] },
-          valor_km: { type: ['number', 'null'] },
-          pedagio: { type: ['number', 'null'] },
-          estacionamento: { type: ['number', 'null'] },
+          total_km: {
+            type: ['number', 'null'],
+            description: 'Total de quilometros declarado no quadro de resumo.',
+          },
+          taxa_por_km: {
+            type: ['number', 'null'],
+            description: 'Valor pago por quilometro. Numero pequeno, tipicamente 0.90.',
+          },
+          valor_total_km: {
+            type: ['number', 'null'],
+            description:
+              'Valor em reais a receber pelos km (total_km x taxa). Numero grande, na casa dos milhares. NUNCA e a taxa.',
+          },
+          pedagio_estacionamento: {
+            type: ['number', 'null'],
+            description:
+              'Total de pedagio + estacionamento declarado. Se o documento traz os dois somados numa linha so, devolva o valor somado.',
+          },
         },
-        required: ['total_km', 'valor_km', 'pedagio', 'estacionamento'],
+        required: ['total_km', 'taxa_por_km', 'valor_total_km', 'pedagio_estacionamento'],
         additionalProperties: false,
       },
       confianca: {
@@ -230,8 +258,17 @@ export async function extrairDoRdv(anexosDoRdv, mesEsperado) {
   return { extraido: normalizar(dados, mesEsperado), uso: resposta.usage };
 }
 
-// Limpa o que veio: datas fora do mes, numeros invalidos, linhas vazias.
+// Limpa o que veio. O mes que vale e o DO DOCUMENTO, nao o que estava
+// selecionado na tela: descartar as linhas por causa de um seletor errado
+// esvaziaria o relatorio inteiro em silencio.
 function normalizar(d, mesEsperado) {
+  const mesDoDoc = /^\d{4}-\d{2}$/.test(String(d.mes_referencia || ''))
+    ? String(d.mes_referencia)
+    : null;
+
+  // Sem mes no documento, cai no da tela.
+  const mesQueVale = mesDoDoc || mesEsperado;
+
   const linhas = [];
   const foraDoMes = [];
 
@@ -247,7 +284,7 @@ function normalizar(d, mesEsperado) {
 
     if (ki === 0 && kf === 0 && ped === 0 && est === 0 && !itin) continue;
 
-    if (!data.startsWith(mesEsperado)) {
+    if (!data.startsWith(mesQueVale)) {
       foraDoMes.push(data);
       continue;
     }
@@ -260,23 +297,26 @@ function normalizar(d, mesEsperado) {
   const problemas = [...(d.problemas_de_leitura || [])];
   if (foraDoMes.length) {
     problemas.push(
-      `O documento traz ${foraDoMes.length} lancamento(s) fora de ${mesEsperado} (${foraDoMes
+      `O documento traz ${foraDoMes.length} lancamento(s) fora de ${mesQueVale} (${foraDoMes
         .slice(0, 5)
         .join(', ')}) - foram descartados.`,
     );
   }
 
   const t = d.totais_declarados || {};
+  const valor = (v) => (v == null ? null : num(v));
+
   return {
     nome_no_relatorio: String(d.nome_no_relatorio || '').trim(),
-    mes_referencia: String(d.mes_referencia || '').slice(0, 7),
+    mes_referencia: mesQueVale,
+    mes_do_documento: mesDoDoc,
     placas: String(d.placas || '').trim(),
     linhas,
     totais_declarados: {
-      total_km: t.total_km == null ? null : num(t.total_km),
-      valor_km: t.valor_km == null ? null : num(t.valor_km),
-      pedagio: t.pedagio == null ? null : num(t.pedagio),
-      estacionamento: t.estacionamento == null ? null : num(t.estacionamento),
+      total_km: valor(t.total_km),
+      taxa_por_km: valor(t.taxa_por_km),
+      valor_total_km: valor(t.valor_total_km),
+      pedagio_estacionamento: valor(t.pedagio_estacionamento),
     },
     confianca: ['alta', 'media', 'baixa'].includes(d.confianca) ? d.confianca : 'baixa',
     problemas_de_leitura: problemas,

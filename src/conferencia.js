@@ -14,6 +14,22 @@ function achado(gravidade, codigo, mensagem, data = null) {
   return { gravidade, codigo, mensagem, data };
 }
 
+// Itinerarios que explicam legitimamente um dia com 0 km.
+const SEM_DESLOCAMENTO =
+  /home\s*office|feriado|folga|ferias|f[eé]rias|atestado|licen[cç]a|falta|treinamento\s+online|reuni[aã]o\s+online|escrit[oó]rio|sem\s+visita/i;
+
+// Os dois dias sao uteis e consecutivos? Se houver fim de semana ou feriado no
+// meio, o carro rodou por conta propria e a diferenca de hodometro e esperada.
+function diasSeguidos(dataAnterior, dataAtual) {
+  const a = new Date(`${dataAnterior}T12:00:00Z`);
+  const b = new Date(`${dataAtual}T12:00:00Z`);
+  for (let d = new Date(a.getTime() + 86400_000); d < b; d = new Date(d.getTime() + 86400_000)) {
+    const iso = d.toISOString().slice(0, 10);
+    if (fimDeSemana(iso) || nomeDoFeriado(iso)) return false;
+  }
+  return true;
+}
+
 /**
  * Confere um relatorio inteiro.
  * @param {object} rel     linha da tabela relatorios
@@ -83,7 +99,10 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9) {
       );
     }
 
-    if (kf === ki && itin && !fimDeSemana(l.data)) {
+    // "0 km com itinerario" so e suspeito quando o itinerario descreve trajeto.
+    // HOME OFFICE, FERIADO, FOLGA e afins com 0 km estao certos - avisar seria
+    // ruido em cima de quem preencheu direito.
+    if (kf === ki && itin && !fimDeSemana(l.data) && !SEM_DESLOCAMENTO.test(itin)) {
       achados.push(
         achado(
           'aviso',
@@ -113,16 +132,21 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9) {
           at.data,
         ),
       );
-    } else if (inicio > fimAnterior) {
+    } else if (inicio > fimAnterior && diasSeguidos(ant.data, at.data)) {
       // Rodou entre um lancamento e outro sem declarar. Tolera 1 km de
       // arredondamento de painel.
+      //
+      // So vale quando os dois dias sao consecutivos em dia util: se houver fim
+      // de semana ou feriado no meio, a diferenca e uso particular do carro -
+      // que e justamente o que NAO deve ser lancado. Sem esse filtro, toda
+      // segunda-feira de todo mundo viraria um aviso falso.
       const lacuna = inicio - fimAnterior;
       if (lacuna > 1) {
         achados.push(
           achado(
             'aviso',
             'hodometro_lacuna',
-            `${dataBr(at.data)}: o KM inicial (${inicio}) esta ${lacuna} km acima do KM final do dia anterior (${fimAnterior}). Esses ${lacuna} km rodaram sem estar lancados.`,
+            `${dataBr(at.data)}: o KM inicial (${inicio}) esta ${lacuna} km acima do KM final do dia util anterior (${fimAnterior}). Esses ${lacuna} km rodaram sem estar lancados.`,
             at.data,
           ),
         );
@@ -142,7 +166,7 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9) {
   // de conta aparece - ele nao e mais evitado na origem, entao tem que ser pego.
   const doPdf = rel.extraido ? JSON.parse(rel.extraido) : null;
   const declaradoKm = doPdf?.totais_declarados?.total_km ?? Number(rel.total_km);
-  const declaradoValor = doPdf?.totais_declarados?.valor_km ?? Number(rel.valor_km);
+  const declaradoValor = doPdf?.totais_declarados?.valor_total_km ?? Number(rel.valor_km);
 
   if (declaradoKm != null && !perto(totalKm, Number(declaradoKm), 0.5)) {
     const dif = totalKm - Number(declaradoKm);
@@ -205,7 +229,14 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9) {
   // ------------------------------------------------- 5. pedagio/estacionamento
   const pedagioLinhas = linhas.reduce((s, l) => s + Number(l.pedagio || 0), 0);
   const estacLinhas = linhas.reduce((s, l) => s + Number(l.estacionamento || 0), 0);
-  const declarado = Number((pedagioLinhas + estacLinhas).toFixed(2));
+
+  // O formulario de RDV normalmente nao tem coluna de pedagio por dia - traz so
+  // "PEDAGIO + ESTACIONAMENTO" no quadro de resumo. Quando for esse o caso, o
+  // valor declarado e o do quadro, nao a soma (que seria zero).
+  const agregadoDoPdf = doPdf?.totais_declarados?.pedagio_estacionamento;
+  const somaDasLinhas = Number((pedagioLinhas + estacLinhas).toFixed(2));
+  const declarado =
+    somaDasLinhas > 0 ? somaDasLinhas : Number((agregadoDoPdf ?? 0).toFixed(2));
 
   const temComprovantePedagio = anexos.some((a) => a.tipo === 'pedagio');
   if (declarado > 0 && !temComprovantePedagio) {

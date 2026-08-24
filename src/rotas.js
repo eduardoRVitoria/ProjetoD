@@ -304,6 +304,22 @@ async function lerRdv(req, res, usuario) {
     return erro(res, e.message, 502);
   }
 
+  // O relatorio e de outro mes. Recusar e melhor que arquivar julho dentro de
+  // setembro ou esvaziar tudo porque o seletor estava errado.
+  if (extraido.mes_do_documento && extraido.mes_do_documento !== mes) {
+    return responderJson(
+      res,
+      {
+        erro:
+          `Este arquivo e o relatorio de ${mesPorExtenso(extraido.mes_do_documento)}, ` +
+          `mas voce esta no mes de ${mesPorExtenso(mes)}. ` +
+          'Troque o mes no topo da tela e leia de novo, ou anexe o relatorio do mes certo.',
+        mes_do_documento: extraido.mes_do_documento,
+      },
+      400,
+    );
+  }
+
   db.exec('BEGIN');
   try {
     db.prepare('DELETE FROM linhas WHERE relatorio_id = ?').run(rel.id);
