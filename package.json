@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.72.1",
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "node-forge": "^1.4.0"
   }
 }

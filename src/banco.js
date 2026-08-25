@@ -111,7 +111,19 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     db.exec('ALTER TABLE relatorios ADD COLUMN extraido TEXT');
     db.exec('ALTER TABLE relatorios ADD COLUMN extraido_em TEXT');
   }
+  if (!colunas.has('assinatura')) {
+    // JSON da verificacao da assinatura digital do PDF do RDV
+    db.exec('ALTER TABLE relatorios ADD COLUMN assinatura TEXT');
+  }
+
+  const colUsuarios = new Set(db.prepare('PRAGMA table_info(usuarios)').all().map((c) => c.name));
+  if (!colUsuarios.has('empresa')) {
+    db.exec("ALTER TABLE usuarios ADD COLUMN empresa TEXT NOT NULL DEFAULT 'DISO'");
+  }
 }
+
+// As duas empresas do grupo.
+export const EMPRESAS = ['DISO', 'DSO'];
 
 // ---------------------------------------------------------------- configuracao
 

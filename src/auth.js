@@ -18,14 +18,16 @@ export function senhaConfere(senha, hashGravado, salt) {
   return crypto.timingSafeEqual(a, b);
 }
 
-export function criarUsuario({ login, nome, email = null, papel = 'colaborador', senha, placas = null }) {
+export function criarUsuario({
+  login, nome, email = null, papel = 'colaborador', senha, placas = null, empresa = 'DISO',
+}) {
   const { hash, salt } = gerarHash(senha);
   const info = db
     .prepare(
-      `INSERT INTO usuarios (login, nome, email, papel, senha_hash, senha_salt, trocar_senha, placas, criado_em)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      `INSERT INTO usuarios (login, nome, email, papel, senha_hash, senha_salt, trocar_senha, placas, empresa, criado_em)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
     )
-    .run(login.trim().toLowerCase(), nome.trim(), email, papel, hash, salt, placas, agora());
+    .run(login.trim().toLowerCase(), nome.trim(), email, papel, hash, salt, placas, empresa, agora());
   return Number(info.lastInsertRowid);
 }
 

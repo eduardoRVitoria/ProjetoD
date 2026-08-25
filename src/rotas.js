@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { db, agora, valorDoKm, lerConfig, gravarConfig, PASTA_ANEXOS } from './banco.js';
+import { db, agora, valorDoKm, lerConfig, gravarConfig, PASTA_ANEXOS, EMPRESAS } from './banco.js';
 import {
   autenticar,
   abrirSessao,
@@ -19,6 +19,8 @@ import { conferirEmDemo } from './ia-demo.js';
 import { gerarPlanilha } from './planilha.js';
 import { enviarBackup, restaurarBackup, resumoDosDados } from './backup.js';
 import { extrairDoRdv } from './extrair.js';
+import { verificarAssinatura, achadosDaAssinatura } from './assinatura.js';
+import { galeriaDe, enviarPacote } from './galeria.js';
 import { nomeDoFeriado, fimDeSemana, diaDaSemana } from './feriados.js';
 import {
   responderJson,
@@ -71,10 +73,13 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/relatorio' && metodo === 'GET') return relatorioDetalhe(res, url);
     if (rota === '/api/admin/conferir' && metodo === 'POST') return conferirUm(req, res, usuario);
     if (rota === '/api/admin/decidir' && metodo === 'POST') return decidir(req, res, usuario);
+    if (rota === '/api/admin/galeria' && metodo === 'GET') return verGaleria(res, url);
+    if (rota === '/api/admin/pacote' && metodo === 'GET') return baixarPacote(res, url);
     if (rota === '/api/admin/usuarios' && metodo === 'GET') return listarUsuarios(res);
     if (rota === '/api/admin/usuarios' && metodo === 'POST') return novoUsuario(req, res);
     if (rota === '/api/admin/usuario-senha' && metodo === 'POST') return resetarSenha(req, res);
     if (rota === '/api/admin/usuario-ativo' && metodo === 'POST') return ativarUsuario(req, res);
+    if (rota === '/api/admin/usuario-empresa' && metodo === 'POST') return mudarEmpresa(req, res);
     if (rota === '/api/admin/config' && metodo === 'GET') return pegarConfig(res);
     if (rota === '/api/admin/config' && metodo === 'POST') return salvarConfig(req, res);
     if (rota === '/api/admin/exportar' && metodo === 'GET') return exportarCsv(res, url);
@@ -640,6 +645,8 @@ function relatorioDetalhe(res, url) {
       mes_extenso: mesPorExtenso(rel.mes_ref),
       achados: rel.achados ? JSON.parse(rel.achados) : null,
       parecer_ia: rel.parecer_ia ? JSON.parse(rel.parecer_ia) : null,
+      assinatura: rel.assinatura ? JSON.parse(rel.assinatura) : null,
+      extraido: rel.extraido ? JSON.parse(rel.extraido) : null,
     },
     linhas: linhasDo(rel.id),
     anexos: anexosDo(rel.id),
@@ -657,7 +664,25 @@ async function conferirUm(req, res, admin) {
   const anexos = db.prepare('SELECT * FROM anexos WHERE relatorio_id = ?').all(rel.id);
   const vlrKm = valorDoKm();
 
+  // Relatorio sem dia a dia (os importados da conferencia manual) nao pode
+  // passar pelas regras: elas somariam zero e reprovariam todo mundo,
+  // apagando o veredito que ja existia. Ou se le o PDF primeiro, ou se decide
+  // na mao pelo botao de aprovar/reprovar.
+  if (linhas.length === 0) {
+    return erro(
+      res,
+      'Este relatorio nao tem os lancamentos dia a dia (veio da conferencia antiga). ' +
+        'Use "Ler o RDV" para extrair do arquivo, ou decida na mao pelos botoes abaixo.',
+      409,
+    );
+  }
+
   const porRegra = conferir(rel, linhas, anexos, vlrKm);
+
+  // Assinatura digital do RDV: quem assinou, quando, e se o arquivo foi
+  // alterado depois. Roda local, sem custo e sem depender da IA.
+  const daAssinatura = conferirAssinatura(rel, anexos, usuario);
+  porRegra.achados.push(...daAssinatura.achados);
 
   let parecer = null;
   let avisoIa = null;
@@ -771,31 +796,103 @@ async function subirBackup(req, res) {
   }
 }
 
+// Verifica a assinatura digital do(s) arquivo(s) de RDV anexados.
+function conferirAssinatura(rel, anexos, usuario) {
+  const arquivos = anexos.filter(
+    (a) => a.tipo === 'rdv' && /\.pdf$/i.test(a.nome_original || ''),
+  );
+  if (!arquivos.length) return { achados: [], resultado: null };
+
+  const achados = [];
+  const resultados = [];
+
+  for (const a of arquivos) {
+    const caminho = path.join(PASTA_ANEXOS, a.arquivo);
+    if (!fs.existsSync(caminho)) continue;
+    try {
+      const r = verificarAssinatura(fs.readFileSync(caminho));
+      resultados.push({ arquivo: a.nome_original, ...r });
+      achados.push(...achadosDaAssinatura(r, usuario.nome));
+    } catch (e) {
+      achados.push({
+        gravidade: 'aviso',
+        codigo: 'assinatura_erro',
+        mensagem: `Nao foi possivel verificar a assinatura de "${a.nome_original}": ${e.message}`,
+        data: null,
+      });
+    }
+  }
+
+  if (resultados.length) {
+    db.prepare('UPDATE relatorios SET assinatura = ? WHERE id = ?').run(
+      JSON.stringify(resultados),
+      rel.id,
+    );
+  }
+
+  return { achados, resultado: resultados };
+}
+
+function verGaleria(res, url) {
+  const id = Number(url.searchParams.get('usuario_id'));
+  const g = galeriaDe(id);
+  if (!g) return erro(res, 'Colaborador nao encontrado.', 404);
+  responderJson(res, g);
+}
+
+function baixarPacote(res, url) {
+  const id = Number(url.searchParams.get('usuario_id'));
+  const mes = url.searchParams.get('mes');
+  if (mes && !mesValido(mes)) return erro(res, 'Mes invalido.');
+  if (!enviarPacote(res, id, mes || null)) {
+    return erro(res, 'Colaborador nao encontrado.', 404);
+  }
+}
+
 function listarUsuarios(res) {
   responderJson(
     res,
     db
       .prepare(
-        `SELECT id, login, nome, email, papel, placas, ativo, trocar_senha, criado_em
-           FROM usuarios ORDER BY papel DESC, nome`,
+        `SELECT u.id, u.login, u.nome, u.email, u.papel, u.empresa, u.placas, u.ativo,
+                u.trocar_senha, u.criado_em,
+                (SELECT COUNT(*) FROM anexos a
+                   JOIN relatorios r ON r.id = a.relatorio_id
+                  WHERE r.usuario_id = u.id) AS anexos,
+                (SELECT COUNT(*) FROM relatorios r WHERE r.usuario_id = u.id) AS relatorios
+           FROM usuarios u ORDER BY u.papel DESC, u.empresa, u.nome`,
       )
       .all(),
   );
 }
 
 async function novoUsuario(req, res) {
-  const { login, nome, email, papel = 'colaborador', senha, placas } = await lerJson(req);
+  const {
+    login, nome, email, papel = 'colaborador', senha, placas, empresa = 'DISO',
+  } = await lerJson(req);
   if (!login || !nome || !senha) return erro(res, 'Login, nome e senha sao obrigatorios.');
   if (String(senha).length < 6) return erro(res, 'A senha precisa ter pelo menos 6 caracteres.');
   if (!['colaborador', 'admin'].includes(papel)) return erro(res, 'Papel invalido.');
+  if (!EMPRESAS.includes(empresa)) {
+    return erro(res, `Empresa invalida. Use ${EMPRESAS.join(' ou ')}.`);
+  }
 
   try {
-    const id = criarUsuario({ login, nome, email, papel, senha, placas });
+    const id = criarUsuario({ login, nome, email, papel, senha, placas, empresa });
     responderJson(res, { ok: true, id });
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) return erro(res, 'Ja existe um usuario com esse login.');
     throw e;
   }
+}
+
+async function mudarEmpresa(req, res) {
+  const { usuario_id, empresa } = await lerJson(req);
+  if (!EMPRESAS.includes(empresa)) {
+    return erro(res, `Empresa invalida. Use ${EMPRESAS.join(' ou ')}.`);
+  }
+  db.prepare('UPDATE usuarios SET empresa = ? WHERE id = ?').run(empresa, Number(usuario_id));
+  responderJson(res, { ok: true });
 }
 
 async function resetarSenha(req, res) {

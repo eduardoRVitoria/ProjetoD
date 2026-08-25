@@ -264,6 +264,7 @@ async function abrirDetalhe(id) {
 
       ${r.observacao ? `<div class="aviso info"><strong>Observação do colaborador:</strong><br>${escapar(r.observacao)}</div>` : ''}
 
+      ${blocoAssinatura(r)}
       ${blocoAchados(r)}
       ${blocoParecer(r)}
 
@@ -361,6 +362,45 @@ async function abrirDetalhe(id) {
   }
 }
 
+function blocoAssinatura(r) {
+  if (!r.assinatura?.length) return '';
+
+  const cartoes = r.assinatura
+    .map((arq) => {
+      if (!arq.assinado) {
+        return `<div class="aviso atencao">
+          <strong>${escapar(arq.arquivo)}</strong><br>Sem assinatura digital.</div>`;
+      }
+      return arq.assinaturas
+        .map((a) => {
+          if (a.erro) {
+            return `<div class="aviso atencao"><strong>${escapar(arq.arquivo)}</strong><br>${escapar(a.erro)}</div>`;
+          }
+          const alterado = a.integridade === 'alterado';
+          const incerto = a.integridade === 'nao_verificavel';
+          const cor = alterado ? 'erro' : incerto ? 'atencao' : 'ok';
+          const selo = alterado
+            ? 'ALTERADO DEPOIS DE ASSINADO'
+            : incerto
+              ? 'INTEGRIDADE NÃO CONFIRMADA'
+              : 'DOCUMENTO ÍNTEGRO';
+          return `
+            <div class="aviso ${cor}">
+              <strong>${selo}</strong><br>
+              Assinado por <strong>${escapar(a.signatario || 'não identificado')}</strong>
+              ${a.cpf ? ` (CPF ${escapar(a.cpf)})` : ''}
+              ${a.assinado_em ? ` em ${dataHoraBr(a.assinado_em)}` : ''}<br>
+              Emissor: ${escapar(a.emissor || 'desconhecido')}
+              ${a.gov ? ' — certificado ICP-Brasil / gov.br' : ' — <strong>fora da ICP-Brasil</strong>'}
+            </div>`;
+        })
+        .join('');
+    })
+    .join('');
+
+  return `<h2 style="margin-top:4px">Assinatura digital</h2>${cartoes}`;
+}
+
 function blocoAchados(r) {
   if (!r.achados?.length) return '';
   return `<h2 style="margin-top:4px">O que foi encontrado</h2>
@@ -423,18 +463,33 @@ async function carregarUsuarios() {
     $('lista-usuarios').innerHTML = `
       <table>
         <thead><tr>
-          <th>Nome</th><th>Login</th><th>Perfil</th><th>Placas</th><th>Situação</th><th></th>
+          <th>Nome</th><th>Empresa</th><th>Login</th><th>Placas</th>
+          <th class="num">Arquivos</th><th>Situação</th><th></th>
         </tr></thead>
         <tbody>
           ${lista
             .map(
               (u) => `<tr>
-            <td>${escapar(u.nome)}</td>
+            <td>${escapar(u.nome)}${
+              u.papel === 'admin' ? ' <span class="selo RASCUNHO">admin</span>' : ''
+            }</td>
+            <td>
+              <select data-empresa="${u.id}" style="margin:0; padding:5px 8px; font-size:13px; width:auto">
+                <option value="DISO"${u.empresa === 'DISO' ? ' selected' : ''}>DISO</option>
+                <option value="DSO"${u.empresa === 'DSO' ? ' selected' : ''}>DSO</option>
+              </select>
+            </td>
             <td>${escapar(u.login)}</td>
-            <td>${u.papel === 'admin' ? 'Administrador' : 'Colaborador'}</td>
             <td>${escapar(u.placas || '—')}</td>
+            <td class="num">${u.anexos}</td>
             <td>${u.ativo ? 'Ativo' : 'Desativado'}</td>
             <td style="white-space:nowrap">
+              ${
+                u.papel === 'colaborador'
+                  ? `<button class="pequeno" data-galeria="${u.id}">Galeria</button>
+                     <button class="secundario pequeno" data-pacote="${u.id}" title="Baixa uma pasta com tudo deste colaborador">Baixar pasta</button>`
+                  : ''
+              }
               <button class="secundario pequeno" data-senha="${u.id}">Nova senha</button>
               <button class="secundario pequeno" data-ativo="${u.id}" data-valor="${
                 u.ativo ? 0 : 1
@@ -445,6 +500,30 @@ async function carregarUsuarios() {
             .join('')}
         </tbody>
       </table>`;
+
+    for (const s of $('lista-usuarios').querySelectorAll('[data-empresa]')) {
+      s.addEventListener('change', async () => {
+        try {
+          await api('/api/admin/usuario-empresa', {
+            metodo: 'POST',
+            corpo: { usuario_id: Number(s.dataset.empresa), empresa: s.value },
+          });
+          mostrarRecado('recado-usuario', `Empresa alterada para ${s.value}.`, 'ok');
+        } catch (e) {
+          mostrarRecado('recado-usuario', e.message, 'erro');
+        }
+      });
+    }
+
+    for (const b of $('lista-usuarios').querySelectorAll('[data-galeria]')) {
+      b.addEventListener('click', () => abrirGaleria(Number(b.dataset.galeria)));
+    }
+
+    for (const b of $('lista-usuarios').querySelectorAll('[data-pacote]')) {
+      b.addEventListener('click', () => {
+        location.href = `/api/admin/pacote?usuario_id=${b.dataset.pacote}`;
+      });
+    }
 
     for (const b of $('lista-usuarios').querySelectorAll('[data-senha]')) {
       b.addEventListener('click', async () => {
@@ -476,6 +555,128 @@ async function carregarUsuarios() {
   }
 }
 
+// ---------------------------------------------------------------- galeria
+
+async function abrirGaleria(usuarioId) {
+  let g;
+  try {
+    g = await api(`/api/admin/galeria?usuario_id=${usuarioId}`);
+  } catch (e) {
+    return mostrarRecado('recado-usuario', e.message, 'erro');
+  }
+
+  const fundo = document.createElement('div');
+  fundo.className = 'fundo-modal';
+  fundo.innerHTML = `
+    <div class="modal">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px">
+        <h2 style="margin:0; flex:1">${escapar(g.usuario.nome)}</h2>
+        <button class="secundario pequeno" id="fechar-galeria">Fechar</button>
+      </div>
+      <p class="sub">
+        ${escapar(g.usuario.empresa)} · ${escapar(g.usuario.login)}
+        ${g.usuario.placas ? ` · placas: ${escapar(g.usuario.placas)}` : ''}
+      </p>
+
+      <div class="numeros" style="margin-bottom:16px">
+        <div class="numero"><div class="rotulo">Meses</div><div class="valor">${g.resumo.meses}</div></div>
+        <div class="numero destaque"><div class="rotulo">Arquivos</div><div class="valor">${g.resumo.anexos}</div></div>
+        <div class="numero"><div class="rotulo">RDVs</div><div class="valor">${g.resumo.rdvs}</div></div>
+        <div class="numero"><div class="rotulo">Odômetros</div><div class="valor">${g.resumo.odometros}</div></div>
+        <div class="numero"><div class="rotulo">Comprovantes</div><div class="valor">${g.resumo.comprovantes}</div></div>
+      </div>
+
+      <div class="linha-botoes" style="margin-bottom:18px">
+        <button id="baixar-tudo">Baixar pasta com tudo</button>
+      </div>
+
+      ${
+        g.meses.length
+          ? g.meses.map(blocoDoMes).join('')
+          : '<p class="sub">Este colaborador ainda não enviou nada.</p>'
+      }
+    </div>`;
+
+  document.body.appendChild(fundo);
+
+  const fechar = () => fundo.remove();
+  fundo.querySelector('#fechar-galeria').addEventListener('click', fechar);
+  fundo.addEventListener('click', (ev) => {
+    if (ev.target === fundo) fechar();
+  });
+  fundo.querySelector('#baixar-tudo').addEventListener('click', () => {
+    location.href = `/api/admin/pacote?usuario_id=${usuarioId}`;
+  });
+  for (const b of fundo.querySelectorAll('[data-baixar-mes]')) {
+    b.addEventListener('click', () => {
+      location.href = `/api/admin/pacote?usuario_id=${usuarioId}&mes=${b.dataset.baixarMes}`;
+    });
+  }
+}
+
+function blocoDoMes(m) {
+  return `
+    <div class="cartao" style="background:var(--superficie-2)">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px">
+        <h2 style="margin:0; flex:1; text-transform:none; font-size:16px; color:var(--texto)">
+          ${escapar(m.mes_extenso)}
+        </h2>
+        <span class="selo ${m.status}">${escapar(m.status)}</span>
+        <button class="secundario pequeno" data-baixar-mes="${m.mes}">Baixar este mês</button>
+      </div>
+
+      ${grupo('Relatório (RDV)', m.rdv)}
+      ${
+        m.odometro_por_dia.length
+          ? `<h2 style="font-size:12px; margin:14px 0 8px">Odômetro — ${m.odometro.length} foto(s)</h2>
+             ${m.odometro_por_dia.map(blocoDoDia).join('')}`
+          : ''
+      }
+      ${grupo('Pedágio e estacionamento', m.pedagio)}
+      ${grupo('Nota de abastecimento', m.danfe)}
+      ${grupo('Outros documentos', m.outro)}
+    </div>`;
+}
+
+function blocoDoDia({ dia, fotos }) {
+  return `
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px; font-weight:700; color:var(--texto-fraco); margin-bottom:6px">
+        ${dataBr(dia)} — ${fotos.length} foto(s)
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        ${fotos.map(miniatura).join('')}
+      </div>
+    </div>`;
+}
+
+function miniatura(f) {
+  return `
+    <a href="/api/anexo/${f.id}" target="_blank" rel="noopener"
+       title="${escapar(f.nome)} — ${tamanhoBr(f.tamanho)}"
+       style="display:block; width:92px; height:92px; border-radius:8px; overflow:hidden;
+              border:1px solid var(--borda); background:var(--superficie)">
+      <img src="/api/anexo/${f.id}" alt="${escapar(f.nome)}" loading="lazy"
+           style="width:100%; height:100%; object-fit:cover">
+    </a>`;
+}
+
+function grupo(titulo, itens) {
+  if (!itens?.length) return '';
+  return `
+    <h2 style="font-size:12px; margin:14px 0 8px">${titulo} — ${itens.length}</h2>
+    ${itens
+      .map(
+        (f) => `<div class="anexo" style="background:var(--superficie)">
+          <span class="nome"><a href="/api/anexo/${f.id}" target="_blank" rel="noopener">${escapar(
+            f.nome,
+          )}</a></span>
+          <span class="peso">${tamanhoBr(f.tamanho)}</span>
+        </div>`,
+      )
+      .join('')}`;
+}
+
 async function criarUsuario() {
   const corpo = {
     nome: $('u-nome').value.trim(),
@@ -484,6 +685,7 @@ async function criarUsuario() {
     email: $('u-email').value.trim() || null,
     placas: $('u-placas').value.trim() || null,
     papel: $('u-papel').value,
+    empresa: $('u-empresa').value,
   };
   try {
     await api('/api/admin/usuarios', { metodo: 'POST', corpo });
