@@ -131,16 +131,25 @@ export const EMPRESAS = ['DISO', 'DSO'];
 // A funcao entra junto da empresa e vira a sigla: DISO (V), DSO (P).
 // As funcoes administrativas ja trazem a empresa no nome, entao aparecem
 // inteiras no cracha em vez de virar "DISO (Adm DISO)".
-export const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor', 'Adm DISO', 'Adm DSO'];
+export const FUNCOES = [
+  'Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO', 'Adm DSO',
+];
 
-export const SIGLA_FUNCAO = { Vendedor: 'V', Promotor: 'P', Supervisor: 'S' };
+export const SIGLA_FUNCAO = {
+  Vendedor: 'V',
+  Promotor: 'P',
+  Supervisor: 'S',
+  'Adm Promotor': 'AP',
+};
 
 // Funcao administrativa manda na empresa: "Adm DSO" nao pode ficar na DISO.
 export const empresaDaFuncao = (funcao) =>
   funcao === 'Adm DISO' ? 'DISO' : funcao === 'Adm DSO' ? 'DSO' : null;
 
+// "Adm DISO" e "Adm DSO" ja dizem a empresa, entao aparecem inteiras.
+// As demais viram sigla ao lado da empresa: DISO (V), DSO (AP).
 export const cracha = (empresa, funcao) => {
-  if (String(funcao || '').startsWith('Adm ')) return funcao;
+  if (empresaDaFuncao(funcao)) return funcao;
   return `${empresa} (${SIGLA_FUNCAO[funcao] || funcao?.[0] || '?'})`;
 };
 

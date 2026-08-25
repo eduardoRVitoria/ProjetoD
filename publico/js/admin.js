@@ -481,7 +481,7 @@ async function carregarUsuarios() {
             </td>
             <td>
               <select data-funcao="${u.id}" style="margin:0; padding:5px 8px; font-size:13px; width:auto">
-                ${['Vendedor', 'Promotor', 'Supervisor', 'Adm DISO', 'Adm DSO']
+                ${['Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO', 'Adm DSO']
                   .map(
                     (f) =>
                       `<option value="${f}"${u.funcao === f ? ' selected' : ''}>${f}</option>`,
