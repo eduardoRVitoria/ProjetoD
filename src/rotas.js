@@ -3,7 +3,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { db, agora, valorDoKm, lerConfig, gravarConfig, PASTA_ANEXOS, EMPRESAS } from './banco.js';
+import {
+  db, agora, valorDoKm, lerConfig, gravarConfig, PASTA_ANEXOS,
+  EMPRESAS, FUNCOES, cracha,
+} from './banco.js';
 import {
   autenticar,
   abrirSessao,
@@ -854,21 +857,23 @@ function listarUsuarios(res) {
     res,
     db
       .prepare(
-        `SELECT u.id, u.login, u.nome, u.email, u.papel, u.empresa, u.placas, u.ativo,
+        `SELECT u.id, u.login, u.nome, u.email, u.papel, u.empresa, u.funcao, u.placas, u.ativo,
                 u.trocar_senha, u.criado_em,
                 (SELECT COUNT(*) FROM anexos a
                    JOIN relatorios r ON r.id = a.relatorio_id
                   WHERE r.usuario_id = u.id) AS anexos,
                 (SELECT COUNT(*) FROM relatorios r WHERE r.usuario_id = u.id) AS relatorios
-           FROM usuarios u ORDER BY u.papel DESC, u.empresa, u.nome`,
+           FROM usuarios u ORDER BY u.papel DESC, u.empresa, u.funcao, u.nome`,
       )
-      .all(),
+      .all()
+      .map((u) => ({ ...u, cracha: cracha(u.empresa, u.funcao) })),
   );
 }
 
 async function novoUsuario(req, res) {
   const {
-    login, nome, email, papel = 'colaborador', senha, placas, empresa = 'DISO',
+    login, nome, email, papel = 'colaborador', senha, placas,
+    empresa = 'DISO', funcao = 'Vendedor',
   } = await lerJson(req);
   if (!login || !nome || !senha) return erro(res, 'Login, nome e senha sao obrigatorios.');
   if (String(senha).length < 6) return erro(res, 'A senha precisa ter pelo menos 6 caracteres.');
@@ -876,9 +881,12 @@ async function novoUsuario(req, res) {
   if (!EMPRESAS.includes(empresa)) {
     return erro(res, `Empresa invalida. Use ${EMPRESAS.join(' ou ')}.`);
   }
+  if (!FUNCOES.includes(funcao)) {
+    return erro(res, `Funcao invalida. Use ${FUNCOES.join(', ')}.`);
+  }
 
   try {
-    const id = criarUsuario({ login, nome, email, papel, senha, placas, empresa });
+    const id = criarUsuario({ login, nome, email, papel, senha, placas, empresa, funcao });
     responderJson(res, { ok: true, id });
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) return erro(res, 'Ja existe um usuario com esse login.');
@@ -887,12 +895,24 @@ async function novoUsuario(req, res) {
 }
 
 async function mudarEmpresa(req, res) {
-  const { usuario_id, empresa } = await lerJson(req);
-  if (!EMPRESAS.includes(empresa)) {
-    return erro(res, `Empresa invalida. Use ${EMPRESAS.join(' ou ')}.`);
+  const { usuario_id, empresa, funcao } = await lerJson(req);
+
+  if (empresa != null) {
+    if (!EMPRESAS.includes(empresa)) {
+      return erro(res, `Empresa invalida. Use ${EMPRESAS.join(' ou ')}.`);
+    }
+    db.prepare('UPDATE usuarios SET empresa = ? WHERE id = ?').run(empresa, Number(usuario_id));
   }
-  db.prepare('UPDATE usuarios SET empresa = ? WHERE id = ?').run(empresa, Number(usuario_id));
-  responderJson(res, { ok: true });
+
+  if (funcao != null) {
+    if (!FUNCOES.includes(funcao)) {
+      return erro(res, `Funcao invalida. Use ${FUNCOES.join(', ')}.`);
+    }
+    db.prepare('UPDATE usuarios SET funcao = ? WHERE id = ?').run(funcao, Number(usuario_id));
+  }
+
+  const u = db.prepare('SELECT empresa, funcao FROM usuarios WHERE id = ?').get(Number(usuario_id));
+  responderJson(res, { ok: true, cracha: u ? cracha(u.empresa, u.funcao) : null });
 }
 
 async function resetarSenha(req, res) {

@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import archiver from 'archiver';
-import { db, PASTA_ANEXOS } from './banco.js';
+import { db, PASTA_ANEXOS, cracha } from './banco.js';
 import { mesPorExtenso } from './util.js';
 
 const PASTA_DO_TIPO = {
@@ -39,10 +39,11 @@ function anexosDoColaborador(usuarioId, mes = null) {
 
 /** Monta a galeria agrupada para a tela. */
 export function galeriaDe(usuarioId) {
-  const usuario = db
-    .prepare('SELECT id, nome, login, empresa, placas FROM usuarios WHERE id = ?')
+  const bruto = db
+    .prepare('SELECT id, nome, login, empresa, funcao, placas FROM usuarios WHERE id = ?')
     .get(usuarioId);
-  if (!usuario) return null;
+  if (!bruto) return null;
+  const usuario = { ...bruto, cracha: cracha(bruto.empresa, bruto.funcao) };
 
   const anexos = anexosDoColaborador(usuarioId);
   const porMes = new Map();

@@ -463,7 +463,7 @@ async function carregarUsuarios() {
     $('lista-usuarios').innerHTML = `
       <table>
         <thead><tr>
-          <th>Nome</th><th>Empresa</th><th>Login</th><th>Placas</th>
+          <th>Nome</th><th>Empresa</th><th>Função</th><th>Login</th><th>Placas</th>
           <th class="num">Arquivos</th><th>Situação</th><th></th>
         </tr></thead>
         <tbody>
@@ -477,6 +477,16 @@ async function carregarUsuarios() {
               <select data-empresa="${u.id}" style="margin:0; padding:5px 8px; font-size:13px; width:auto">
                 <option value="DISO"${u.empresa === 'DISO' ? ' selected' : ''}>DISO</option>
                 <option value="DSO"${u.empresa === 'DSO' ? ' selected' : ''}>DSO</option>
+              </select>
+            </td>
+            <td>
+              <select data-funcao="${u.id}" style="margin:0; padding:5px 8px; font-size:13px; width:auto">
+                ${['Vendedor', 'Promotor', 'Supervisor']
+                  .map(
+                    (f) =>
+                      `<option value="${f}"${u.funcao === f ? ' selected' : ''}>${f}</option>`,
+                  )
+                  .join('')}
               </select>
             </td>
             <td>${escapar(u.login)}</td>
@@ -501,18 +511,23 @@ async function carregarUsuarios() {
         </tbody>
       </table>`;
 
+    const salvarCracha = async (elemento, campo) => {
+      try {
+        const r = await api('/api/admin/usuario-empresa', {
+          metodo: 'POST',
+          corpo: { usuario_id: Number(elemento.dataset[campo]), [campo]: elemento.value },
+        });
+        mostrarRecado('recado-usuario', `Atualizado para ${r.cracha}.`, 'ok');
+      } catch (e) {
+        mostrarRecado('recado-usuario', e.message, 'erro');
+      }
+    };
+
     for (const s of $('lista-usuarios').querySelectorAll('[data-empresa]')) {
-      s.addEventListener('change', async () => {
-        try {
-          await api('/api/admin/usuario-empresa', {
-            metodo: 'POST',
-            corpo: { usuario_id: Number(s.dataset.empresa), empresa: s.value },
-          });
-          mostrarRecado('recado-usuario', `Empresa alterada para ${s.value}.`, 'ok');
-        } catch (e) {
-          mostrarRecado('recado-usuario', e.message, 'erro');
-        }
-      });
+      s.addEventListener('change', () => salvarCracha(s, 'empresa'));
+    }
+    for (const s of $('lista-usuarios').querySelectorAll('[data-funcao]')) {
+      s.addEventListener('change', () => salvarCracha(s, 'funcao'));
     }
 
     for (const b of $('lista-usuarios').querySelectorAll('[data-galeria]')) {
@@ -574,7 +589,8 @@ async function abrirGaleria(usuarioId) {
         <button class="secundario pequeno" id="fechar-galeria">Fechar</button>
       </div>
       <p class="sub">
-        ${escapar(g.usuario.empresa)} · ${escapar(g.usuario.login)}
+        ${escapar(g.usuario.cracha || g.usuario.empresa)} · ${escapar(g.usuario.funcao || '')}
+        · ${escapar(g.usuario.login)}
         ${g.usuario.placas ? ` · placas: ${escapar(g.usuario.placas)}` : ''}
       </p>
 
@@ -686,6 +702,7 @@ async function criarUsuario() {
     placas: $('u-placas').value.trim() || null,
     papel: $('u-papel').value,
     empresa: $('u-empresa').value,
+    funcao: $('u-funcao').value,
   };
   try {
     await api('/api/admin/usuarios', { metodo: 'POST', corpo });

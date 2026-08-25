@@ -120,10 +120,21 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
   if (!colUsuarios.has('empresa')) {
     db.exec("ALTER TABLE usuarios ADD COLUMN empresa TEXT NOT NULL DEFAULT 'DISO'");
   }
+  if (!colUsuarios.has('funcao')) {
+    db.exec("ALTER TABLE usuarios ADD COLUMN funcao TEXT NOT NULL DEFAULT 'Vendedor'");
+  }
 }
 
 // As duas empresas do grupo.
 export const EMPRESAS = ['DISO', 'DSO'];
+
+// A funcao entra junto da empresa e vira a sigla: DISO (V), DSO (P).
+export const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor'];
+
+export const SIGLA_FUNCAO = { Vendedor: 'V', Promotor: 'P', Supervisor: 'S' };
+
+export const cracha = (empresa, funcao) =>
+  `${empresa} (${SIGLA_FUNCAO[funcao] || funcao?.[0] || '?'})`;
 
 // ---------------------------------------------------------------- configuracao
 
