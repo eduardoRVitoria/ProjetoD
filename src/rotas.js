@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {
   db, agora, valorDoKm, lerConfig, gravarConfig, PASTA_ANEXOS,
-  EMPRESAS, FUNCOES, cracha,
+  EMPRESAS, FUNCOES, cracha, empresaDaFuncao,
 } from './banco.js';
 import {
   autenticar,
@@ -885,8 +885,13 @@ async function novoUsuario(req, res) {
     return erro(res, `Funcao invalida. Use ${FUNCOES.join(', ')}.`);
   }
 
+  // "Adm DISO" / "Adm DSO" ja dizem a empresa - nao deixa ficar cruzado.
+  const empresaFinal = empresaDaFuncao(funcao) || empresa;
+
   try {
-    const id = criarUsuario({ login, nome, email, papel, senha, placas, empresa, funcao });
+    const id = criarUsuario({
+      login, nome, email, papel, senha, placas, empresa: empresaFinal, funcao,
+    });
     responderJson(res, { ok: true, id });
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) return erro(res, 'Ja existe um usuario com esse login.');
@@ -909,6 +914,12 @@ async function mudarEmpresa(req, res) {
       return erro(res, `Funcao invalida. Use ${FUNCOES.join(', ')}.`);
     }
     db.prepare('UPDATE usuarios SET funcao = ? WHERE id = ?').run(funcao, Number(usuario_id));
+
+    // Escolher "Adm DSO" move a pessoa para a DSO, senao o cadastro fica cruzado.
+    const daFuncao = empresaDaFuncao(funcao);
+    if (daFuncao) {
+      db.prepare('UPDATE usuarios SET empresa = ? WHERE id = ?').run(daFuncao, Number(usuario_id));
+    }
   }
 
   const u = db.prepare('SELECT empresa, funcao FROM usuarios WHERE id = ?').get(Number(usuario_id));

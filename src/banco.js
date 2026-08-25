@@ -129,12 +129,20 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
 export const EMPRESAS = ['DISO', 'DSO'];
 
 // A funcao entra junto da empresa e vira a sigla: DISO (V), DSO (P).
-export const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor'];
+// As funcoes administrativas ja trazem a empresa no nome, entao aparecem
+// inteiras no cracha em vez de virar "DISO (Adm DISO)".
+export const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor', 'Adm DISO', 'Adm DSO'];
 
 export const SIGLA_FUNCAO = { Vendedor: 'V', Promotor: 'P', Supervisor: 'S' };
 
-export const cracha = (empresa, funcao) =>
-  `${empresa} (${SIGLA_FUNCAO[funcao] || funcao?.[0] || '?'})`;
+// Funcao administrativa manda na empresa: "Adm DSO" nao pode ficar na DISO.
+export const empresaDaFuncao = (funcao) =>
+  funcao === 'Adm DISO' ? 'DISO' : funcao === 'Adm DSO' ? 'DSO' : null;
+
+export const cracha = (empresa, funcao) => {
+  if (String(funcao || '').startsWith('Adm ')) return funcao;
+  return `${empresa} (${SIGLA_FUNCAO[funcao] || funcao?.[0] || '?'})`;
+};
 
 // ---------------------------------------------------------------- configuracao
 
