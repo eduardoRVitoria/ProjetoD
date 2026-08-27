@@ -1174,10 +1174,22 @@ async function excluirUsuario(req, res, quemPediu) {
     );
   }
 
+  // A trava e para nao ficar ninguem podendo administrar. Conta admin E super:
+  // apagar o ultimo admin comum e seguro se ainda existe um super.
   if (alvo.papel === 'admin' || alvo.papel === 'super') {
-    const admins = db
-      .prepare("SELECT COUNT(*) AS n FROM usuarios WHERE papel = 'admin' AND ativo = 1").get().n;
-    if (admins <= 1) return erro(res, 'Nao da para excluir o unico administrador.');
+    const mandam = db
+      .prepare("SELECT COUNT(*) AS n FROM usuarios WHERE papel IN ('admin','super') AND ativo = 1")
+      .get().n;
+    if (mandam <= 1) return erro(res, 'Nao da para excluir o unico administrador.');
+
+    // E nunca pode sobrar zero super.
+    if (alvo.papel === 'super') {
+      const supers = db
+        .prepare("SELECT COUNT(*) AS n FROM usuarios WHERE papel = 'super' AND ativo = 1").get().n;
+      if (supers <= 1) {
+        return erro(res, 'Nao da para excluir o unico usuario que ve tudo.');
+      }
+    }
   }
 
   const relatorios = db

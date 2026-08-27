@@ -31,13 +31,16 @@ const MIMES = {
 // --------------------------------------------------------- primeiro acesso
 
 function garantirAdmin() {
-  const qtd = db.prepare("SELECT COUNT(*) AS n FROM usuarios WHERE papel = 'admin'").get().n;
+  const qtd = db
+    .prepare("SELECT COUNT(*) AS n FROM usuarios WHERE papel IN ('admin', 'super')").get().n;
   if (qtd > 0) return null;
   const senha = 'rdv2026';
   criarUsuario({
     login: 'admin',
     nome: 'Eduardo Ramos',
-    papel: 'admin',
+    papel: 'super',
+    funcao: 'Adm DSO',
+    empresa: 'DSO',
     senha,
   });
   return senha;

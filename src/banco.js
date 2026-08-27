@@ -128,6 +128,19 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     db.exec('ALTER TABLE anexos ADD COLUMN data_leitura TEXT');
   }
 
+  // Eduardo Ramos e Victor Sarmento sao os unicos que veem e fazem tudo.
+  // Fica aqui, e nao num script solto, para valer sozinho a cada publicacao -
+  // inclusive se alguem for recadastrado depois.
+  const SUPERS = ['EDUARDO RAMOS', 'VICTOR SARMENTO'];
+  const semAcento = (s) =>
+    String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toUpperCase();
+
+  for (const u of db.prepare("SELECT id, nome, papel FROM usuarios WHERE papel <> 'super'").all()) {
+    if (SUPERS.includes(semAcento(u.nome))) {
+      db.prepare("UPDATE usuarios SET papel = 'super' WHERE id = ?").run(u.id);
+    }
+  }
+
   const colUsuarios = new Set(db.prepare('PRAGMA table_info(usuarios)').all().map((c) => c.name));
   if (!colUsuarios.has('empresa')) {
     db.exec("ALTER TABLE usuarios ADD COLUMN empresa TEXT NOT NULL DEFAULT 'DISO'");
