@@ -7,6 +7,15 @@ import {
 
 const $ = (id) => document.getElementById(id);
 
+// ATENCAO: todo `const`/`let` de topo tem que ficar ACIMA dos `await` deste
+// arquivo. O `await` pausa a avaliacao do modulo; uma constante declarada
+// depois ainda nao existe quando a inicializacao roda, e o erro que sai
+// ("Cannot access X before initialization") derruba a tela inteira.
+const seletor = $('seletor');
+let tipoEmUso = null;
+let modoManual = false;
+let relogio = null;
+
 let eu = null;
 let mes = mesAtual();
 let estado = null; // { relatorio, grade, anexos, previa }
@@ -44,7 +53,6 @@ $('botao-ler').addEventListener('click', lerRdv);
 
 // Escape para quando a leitura falhar ou a IA estiver desligada: a pessoa
 // preenche a grade na mao, como antes. Melhor que travar o envio do mes.
-let modoManual = false;
 $('botao-manual').addEventListener('click', () => {
   modoManual = true;
   $('cartao-lido').style.display = '';
@@ -63,7 +71,6 @@ $('observacao').addEventListener('input', () => marcarSujo());
 $('justificativa').addEventListener('input', () => marcarSujo());
 
 // Salva sozinho quando a pessoa para de digitar.
-let relogio = null;
 function marcarSujo() {
   sujo = true;
   atualizarRodape();
@@ -199,10 +206,10 @@ function desenharComparacao() {
       </tr>`);
   };
 
+  // Os nomes vem do esquema de extracao em src/extrair.js.
   par('Total de km', decl.total_km, p.totalKm, numeroBr);
-  par('Valor do km', decl.valor_km, p.valorKm, brl);
-  par('Pedágio', decl.pedagio, p.pedagioDeclarado, brl);
-  par('Estacionamento', decl.estacionamento, p.estacDeclarado, brl);
+  par('Valor do km', decl.valor_total_km, p.valorKm, brl);
+  par('Pedágio + estacionamento', decl.pedagio_estacionamento, p.totalDeclarado, brl);
 
   if (!linhas.length) {
     alvo.innerHTML = `<p class="sub" style="margin:0">O documento não trouxe um quadro de
@@ -411,9 +418,6 @@ function desenharAnexos() {
     }
   }
 }
-
-const seletor = $('seletor');
-let tipoEmUso = null;
 
 for (const zona of document.querySelectorAll('.solta')) {
   zona.addEventListener('click', () => {

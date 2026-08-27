@@ -17,8 +17,31 @@ const filtro = (id, padrao = '') => {
 };
 const ligar = (id, evento, fn) => $(id)?.addEventListener(evento, fn);
 
+// Normaliza para busca: sem acento, minusculo.
+const chave = (s) =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+
+// As tres frentes. Um vendedor e um Adm DISO nao tem nada a ver um com o outro,
+// entao nao faz sentido aparecerem na mesma lista.
+const SECOES = [
+  { titulo: 'Vendedores e promotores', funcoes: ['Vendedor', 'Promotor'] },
+  { titulo: 'Supervisores', funcoes: ['Supervisor'] },
+  { titulo: 'Administrativo', funcoes: ['Adm Promotor', 'Adm DISO', 'Adm DSO'] },
+];
+
+const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO', 'Adm DSO'];
+
+// ATENCAO: tudo que for `const`/`let` e usado durante a inicializacao precisa
+// ficar ACIMA dos `await` de topo de modulo. O `await` pausa a avaliacao do
+// modulo, entao uma constante declarada depois ainda nao existe quando o
+// carregarPainel() roda - e o erro que sai e "Cannot access X before
+// initialization", que derruba o modulo inteiro e todas as abas junto.
 let mes = mesAtual();
 let painel = null;
+let usuarios = [];
 
 // ------------------------------------------------------------------- inicio
 
@@ -81,7 +104,19 @@ for (const b of document.querySelectorAll('.abas button')) {
   });
 }
 
-await carregarPainel();
+// Sem `await` aqui de proposito: se o carregamento do painel falhar, o erro
+// nao pode impedir o modulo de terminar de inicializar - senao as outras abas
+// morrem junto. Foi exatamente o que aconteceu quando o desenho da tabela
+// estourou: a aba Colaboradores passou a dar "Cannot access 'usuarios' before
+// initialization", porque o modulo nunca chegou ao fim.
+carregarPainel().catch((e) => {
+  console.error('falha ao carregar o painel', e);
+  const t = $('tabela');
+  if (t) {
+    t.innerHTML = `<div class="aviso erro">Não foi possível carregar o painel deste mês.
+      Recarregue a página. Se continuar, me mostre esta mensagem: ${escapar(e.message || e)}</div>`;
+  }
+});
 
 // ------------------------------------------------------------------- painel
 
@@ -130,13 +165,6 @@ async function carregarPainel() {
         .join('')
     : `<p class="sub" style="margin:0">Todo mundo já enviou.</p>`;
 }
-
-// Normaliza para busca: sem acento, minusculo.
-const chave = (s) =>
-  String(s || '')
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase();
 
 function desenharTabela() {
   const todos = painel.relatorios;
@@ -541,8 +569,6 @@ function blocoParecer(p) {
 
 // ---------------------------------------------------------------- usuarios
 
-let usuarios = [];
-
 async function carregarUsuarios() {
   try {
     usuarios = await api('/api/admin/usuarios');
@@ -551,8 +577,6 @@ async function carregarUsuarios() {
     mostrarRecado('recado-usuario', e.message, 'erro');
   }
 }
-
-const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO', 'Adm DSO'];
 
 function desenharUsuarios() {
   if (!usuarios.length) return;
@@ -599,14 +623,6 @@ function desenharUsuarios() {
 
   ligarBotoesDeUsuario();
 }
-
-// As tres frentes. Um vendedor e um Adm DISO nao tem nada a ver um com o outro,
-// entao nao faz sentido aparecerem na mesma lista.
-const SECOES = [
-  { titulo: 'Vendedores e promotores', funcoes: ['Vendedor', 'Promotor'] },
-  { titulo: 'Supervisores', funcoes: ['Supervisor'] },
-  { titulo: 'Administrativo', funcoes: ['Adm Promotor', 'Adm DISO', 'Adm DSO'] },
-];
 
 function janelaDaEmpresa(empresa, pessoas) {
   const ativos = pessoas.filter((u) => u.ativo).length;
