@@ -244,6 +244,10 @@ tr.de-DSO  td:first-child { box-shadow: inset 4px 0 0 #6b3080; }
 .secao:first-of-type { margin-top: 12px; }
 .secao .n { color: var(--marca); }
 
+/* Linha de quem foi desativado: continua legivel, so com o nome riscado. */
+tr.inativo td:first-child { text-decoration: line-through; text-decoration-thickness: 1px; }
+tr.inativo td:first-child .emp { text-decoration: none; }
+
 .grupo-empresa td {
   background: var(--superficie-2);
   font-weight: 800;

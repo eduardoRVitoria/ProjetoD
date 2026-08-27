@@ -645,7 +645,9 @@ function tabelaDeUsuarios(lista) {
 
 function linhaUsuario(u) {
   const ehAdmin = u.papel === 'admin';
-  return `<tr class="de-${escapar(u.empresa || 'DISO')}"${u.ativo ? '' : ' style="opacity:.55"'}>
+  // Desativado fica MARCADO, nao apagado: com 42 pessoas desativadas, esmaecer
+  // a linha fazia parecer que elas nao estavam na tela.
+  return `<tr class="de-${escapar(u.empresa || 'DISO')}${u.ativo ? '' : ' inativo'}">
     <td>
       ${escapar(u.nome)}${ehAdmin ? ' <span class="selo RASCUNHO">admin</span>' : ''}<br>
       <span class="emp ${escapar(u.empresa || 'DISO')}">${escapar(u.cracha || '')}</span>
@@ -666,7 +668,11 @@ function linhaUsuario(u) {
     <td>${escapar(u.login)}</td>
     <td>${escapar(u.placas || '—')}</td>
     <td class="num">${u.anexos}</td>
-    <td>${u.ativo ? 'Ativo' : 'Desativado'}</td>
+    <td>${
+      u.ativo
+        ? '<span class="selo CERTA">Ativo</span>'
+        : '<span class="selo ERRADA">Desativado</span>'
+    }</td>
     <td style="white-space:nowrap">
       ${
         u.papel === 'colaborador'
