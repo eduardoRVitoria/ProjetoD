@@ -46,6 +46,36 @@
 
     <div class="cartao">
       <h2>Relatórios recebidos</h2>
+      <div class="filtros">
+        <input type="search" id="f-busca" placeholder="Buscar por nome ou login...">
+        <select id="f-status">
+          <option value="">Todos os status</option>
+          <option value="ENVIADO">Aguardando conferência</option>
+          <option value="CERTA">Aprovados</option>
+          <option value="SO_FALTA_DANFE">Só falta DANFE</option>
+          <option value="ERRADA">Reprovados</option>
+        </select>
+        <select id="f-empresa">
+          <option value="">Todas as empresas</option>
+          <option value="DISO">DISO</option>
+          <option value="DSO">DSO</option>
+        </select>
+        <select id="f-funcao">
+          <option value="">Todas as funções</option>
+          <option value="Vendedor">Vendedor</option>
+          <option value="Promotor">Promotor</option>
+          <option value="Supervisor">Supervisor</option>
+          <option value="Adm Promotor">Adm Promotor</option>
+          <option value="Adm DISO">Adm DISO</option>
+          <option value="Adm DSO">Adm DSO</option>
+        </select>
+        <label style="display:flex; align-items:center; gap:6px; font-weight:500; margin:0">
+          <input type="checkbox" id="f-agrupar" style="width:auto; margin:0" checked>
+          Separar por empresa
+        </label>
+        <button class="secundario" id="f-limpar">Limpar</button>
+        <span class="contagem" id="f-contagem"></span>
+      </div>
       <div class="rolagem"><div id="tabela"></div></div>
     </div>
 
@@ -112,6 +142,34 @@
 
     <div class="cartao">
       <h2>Cadastrados</h2>
+      <div class="filtros">
+        <input type="search" id="fu-busca" placeholder="Buscar por nome, login ou placa...">
+        <select id="fu-empresa">
+          <option value="">Todas as empresas</option>
+          <option value="DISO">DISO</option>
+          <option value="DSO">DSO</option>
+        </select>
+        <select id="fu-funcao">
+          <option value="">Todas as funções</option>
+          <option value="Vendedor">Vendedor</option>
+          <option value="Promotor">Promotor</option>
+          <option value="Supervisor">Supervisor</option>
+          <option value="Adm Promotor">Adm Promotor</option>
+          <option value="Adm DISO">Adm DISO</option>
+          <option value="Adm DSO">Adm DSO</option>
+        </select>
+        <select id="fu-situacao">
+          <option value="">Ativos e desativados</option>
+          <option value="1">Só ativos</option>
+          <option value="0">Só desativados</option>
+        </select>
+        <label style="display:flex; align-items:center; gap:6px; font-weight:500; margin:0">
+          <input type="checkbox" id="fu-agrupar" style="width:auto; margin:0" checked>
+          Separar por empresa
+        </label>
+        <button class="secundario" id="fu-limpar">Limpar</button>
+        <span class="contagem" id="fu-contagem"></span>
+      </div>
       <div class="rolagem"><div id="lista-usuarios"></div></div>
     </div>
   </section>

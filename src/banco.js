@@ -115,6 +115,10 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     // JSON da verificacao da assinatura digital do PDF do RDV
     db.exec('ALTER TABLE relatorios ADD COLUMN assinatura TEXT');
   }
+  if (!colunas.has('justificativa')) {
+    // Explicacao do colaborador quando o mes vem mais caro que o anterior
+    db.exec('ALTER TABLE relatorios ADD COLUMN justificativa TEXT');
+  }
 
   const colUsuarios = new Set(db.prepare('PRAGMA table_info(usuarios)').all().map((c) => c.name));
   if (!colUsuarios.has('empresa')) {
@@ -184,3 +188,6 @@ export function chaveDaApi() {
 }
 
 export const agora = () => new Date().toISOString();
+
+// Quanto o mes pode subir em relacao ao anterior sem precisar de explicacao.
+export const MARGEM_AUMENTO = 200;

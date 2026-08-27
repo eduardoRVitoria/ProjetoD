@@ -60,6 +60,7 @@ $('botao-manual').addEventListener('click', () => {
 $('botao-salvar').addEventListener('click', () => salvar(true));
 $('botao-enviar').addEventListener('click', enviar);
 $('observacao').addEventListener('input', () => marcarSujo());
+$('justificativa').addEventListener('input', () => marcarSujo());
 
 // Salva sozinho quando a pessoa para de digitar.
 let relogio = null;
@@ -101,6 +102,7 @@ function desenharTudo() {
   desenharAchados();
   desenharParecer();
   desenharComparacao();
+  desenharJustificativa();
   atualizarRodape();
   // O bloco de dias aparece depois da leitura, no modo manual, ou quando ja
   // existe lancamento gravado (relatorio que voltou para correcao).
@@ -143,6 +145,31 @@ async function lerRdv() {
     botao.disabled = false;
     botao.textContent = estado.relatorio.extraido ? 'Ler de novo' : 'Ler meu relatório';
   }
+}
+
+// O bloco de justificativa so aparece quando o mes passou da margem.
+function desenharJustificativa() {
+  const c = estado.previa?.comparacao;
+  const cartao = $('cartao-justificativa');
+
+  if (!c || !c.precisa_justificar) {
+    cartao.style.display = 'none';
+    return;
+  }
+
+  cartao.style.display = '';
+  $('comparacao-mes').innerHTML = `
+    <div class="aviso ${c.tem_justificativa ? 'atencao' : 'erro'}">
+      Este mês está <strong>${brl(c.diferenca)} acima</strong> do mês anterior
+      (${brl(c.total_atual)} contra ${brl(c.total_anterior)}).
+      Acima de ${brl(c.margem)} de aumento é preciso explicar o motivo.
+    </div>`;
+
+  const campo = $('justificativa');
+  if (document.activeElement !== campo) {
+    campo.value = estado.relatorio.justificativa || '';
+  }
+  campo.disabled = !estado.relatorio.editavel;
 }
 
 // Mostra o que o documento declarava contra o que a soma dos dias da.
@@ -507,13 +534,19 @@ async function salvar(avisar) {
   try {
     const r = await api('/api/relatorio', {
       metodo: 'PUT',
-      corpo: { mes, linhas: linhasParaEnviar(), observacao: $('observacao').value },
+      corpo: {
+        mes,
+        linhas: linhasParaEnviar(),
+        observacao: $('observacao').value,
+        justificativa: $('justificativa').value,
+      },
     });
     estado.relatorio = { ...estado.relatorio, ...r.relatorio };
     estado.previa = r.previa;
     sujo = false;
     desenharNumeros();
     desenharAchados();
+    desenharJustificativa();
     atualizarRodape();
     if (avisar) {
       mostrarRecado('recado', 'Salvo.', 'ok');
@@ -541,6 +574,17 @@ async function enviar() {
 
   const erros = estado.previa.achados.filter((a) => a.gravidade === 'erro');
   const soDanfe = erros.length === 1 && erros[0].codigo === 'sem_danfe';
+
+  if (erros.some((e) => e.codigo === 'aumento_sem_justificativa')) {
+    trocarAba('lancamentos');
+    $('cartao-justificativa').scrollIntoView({ behavior: 'smooth' });
+    $('justificativa').focus();
+    return mostrarRecado(
+      'recado',
+      'Escreva a justificativa do aumento antes de enviar.',
+      'erro',
+    );
+  }
 
   if (erros.length && !soDanfe) {
     trocarAba('conferencia');

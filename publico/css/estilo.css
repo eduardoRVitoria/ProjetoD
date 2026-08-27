@@ -172,6 +172,69 @@ button.pequeno { padding: 7px 12px; font-size: 13px; border-radius: 7px; }
 .selo.CONFERINDO     { background: var(--marca-clara);    color: var(--marca-forte); }
 .selo.RASCUNHO       { background: var(--superficie-2);   color: var(--texto-fraco); }
 
+/* ---------------------------------------------------- empresa e funcao */
+
+/* Cada empresa tem a sua cor, para bater o olho e saber de quem e a linha. */
+.emp {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .5px;
+  white-space: nowrap;
+  border-left: 3px solid;
+}
+.emp.DISO { background: #e7eefa; color: #1c4e80; border-color: #1c4e80; }
+.emp.DSO  { background: #f3e8f7; color: #6b3080; border-color: #6b3080; }
+
+@media (prefers-color-scheme: dark) {
+  .emp.DISO { background: #1b2a3d; color: #7fb3e0; border-color: #5b9bd5; }
+  .emp.DSO  { background: #2b1c35; color: #c79ad9; border-color: #9a5cb8; }
+}
+
+/* Faixa colorida na borda da linha, separando as empresas na tabela. */
+tr.de-DISO td:first-child { box-shadow: inset 4px 0 0 #1c4e80; }
+tr.de-DSO  td:first-child { box-shadow: inset 4px 0 0 #6b3080; }
+
+.grupo-empresa td {
+  background: var(--superficie-2);
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  color: var(--texto-fraco);
+  border-top: 2px solid var(--borda);
+}
+
+/* ------------------------------------------------------------- filtros */
+
+.filtros {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 12px;
+  background: var(--superficie-2);
+  border-radius: 10px;
+}
+.filtros input, .filtros select {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 14px;
+  width: auto;
+  background: var(--superficie);
+}
+.filtros input[type=search] { flex: 1; min-width: 180px; }
+.filtros .contagem {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--texto-fraco);
+  white-space: nowrap;
+}
+.filtros button { padding: 8px 12px; font-size: 13px; }
+
 /* -------------------------------------------------------------- numeros */
 
 .numeros {

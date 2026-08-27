@@ -31,6 +31,28 @@ $('botao-exportar').addEventListener('click', () => {
   location.href = `/api/admin/exportar?mes=${mes}`;
 });
 $('botao-criar-usuario').addEventListener('click', criarUsuario);
+
+// --- filtros do painel do mes ---
+for (const id of ['f-busca', 'f-status', 'f-empresa', 'f-funcao', 'f-agrupar']) {
+  $(id).addEventListener('input', () => desenharTabela());
+}
+$('f-limpar').addEventListener('click', () => {
+  $('f-busca').value = '';
+  for (const id of ['f-status', 'f-empresa', 'f-funcao']) $(id).value = '';
+  $('f-agrupar').checked = true;
+  desenharTabela();
+});
+
+// --- filtros da lista de colaboradores ---
+for (const id of ['fu-busca', 'fu-empresa', 'fu-funcao', 'fu-situacao', 'fu-agrupar']) {
+  $(id).addEventListener('input', () => desenharUsuarios());
+}
+$('fu-limpar').addEventListener('click', () => {
+  $('fu-busca').value = '';
+  for (const id of ['fu-empresa', 'fu-funcao', 'fu-situacao']) $(id).value = '';
+  $('fu-agrupar').checked = true;
+  desenharUsuarios();
+});
 $('botao-salvar-km').addEventListener('click', salvarKm);
 $('botao-salvar-chave').addEventListener('click', salvarChave);
 $('botao-limpar-chave').addEventListener('click', limparChave);
@@ -99,13 +121,64 @@ async function carregarPainel() {
     : `<p class="sub" style="margin:0">Todo mundo já enviou.</p>`;
 }
 
+// Normaliza para busca: sem acento, minusculo.
+const chave = (s) =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+
 function desenharTabela() {
-  const lista = painel.relatorios;
-  if (!lista.length) {
+  const todos = painel.relatorios;
+  if (!todos.length) {
     $('tabela').innerHTML = `<p class="sub">Nenhum relatório enviado para ${escapar(
       painel.mes_extenso,
     )}.</p>`;
+    $('f-contagem').textContent = '';
     return;
+  }
+
+  const busca = chave($('f-busca').value.trim());
+  const status = $('f-status').value;
+  const empresa = $('f-empresa').value;
+  const funcao = $('f-funcao').value;
+  const agrupar = $('f-agrupar').checked;
+
+  const lista = todos.filter((r) => {
+    if (status && r.status !== status) return false;
+    if (empresa && r.empresa !== empresa) return false;
+    if (funcao && r.funcao !== funcao) return false;
+    if (busca && !chave(`${r.nome} ${r.login}`).includes(busca)) return false;
+    return true;
+  });
+
+  $('f-contagem').textContent =
+    lista.length === todos.length
+      ? `${todos.length} relatório(s)`
+      : `${lista.length} de ${todos.length}`;
+
+  if (!lista.length) {
+    $('tabela').innerHTML = `<p class="sub">Nenhum relatório com esses filtros.</p>`;
+    return;
+  }
+
+  let corpo;
+  if (agrupar) {
+    const empresas = [...new Set(lista.map((r) => r.empresa || 'DISO'))].sort();
+    corpo = empresas
+      .map((e) => {
+        const doGrupo = lista.filter((r) => (r.empresa || 'DISO') === e);
+        const km = doGrupo.reduce((s, r) => s + Number(r.total_km || 0), 0);
+        const valor = doGrupo.reduce((s, r) => s + Number(r.valor_km || 0), 0);
+        return (
+          `<tr class="grupo-empresa"><td colspan="8">
+             ${escapar(e)} — ${doGrupo.length} relatório(s) · ${numeroBr(km)} km · ${brl(valor)}
+           </td></tr>` + doGrupo.map(linhaTabela).join('')
+        );
+      })
+      .join('');
+  } else {
+    corpo = lista.map(linhaTabela).join('');
   }
 
   $('tabela').innerHTML = `
@@ -115,9 +188,7 @@ function desenharTabela() {
         <th class="num">Declarado</th><th class="num">Comprovado</th><th class="num">Diferença</th>
         <th></th>
       </tr></thead>
-      <tbody>
-        ${lista.map(linhaTabela).join('')}
-      </tbody>
+      <tbody>${corpo}</tbody>
     </table>`;
 
   for (const b of $('tabela').querySelectorAll('[data-ver]')) {
@@ -138,9 +209,12 @@ function linhaTabela(r) {
 
   const pendente = r.status === 'ENVIADO' || r.status === 'CONFERINDO';
 
-  return `<tr>
+  return `<tr class="de-${escapar(r.empresa || 'DISO')}">
     <td><span class="selo ${r.status}">${escapar(r.rotulo_status)}</span></td>
-    <td>${escapar(r.nome)}</td>
+    <td>
+      ${escapar(r.nome)}<br>
+      <span class="emp ${escapar(r.empresa || 'DISO')}">${escapar(r.cracha || r.empresa || '')}</span>
+    </td>
     <td class="num">${numeroBr(r.total_km)}</td>
     <td class="num">${brl(r.valor_km)}</td>
     <td class="num">${brl(r.declarado)}</td>
@@ -457,114 +531,227 @@ function blocoParecer(p) {
 
 // ---------------------------------------------------------------- usuarios
 
+let usuarios = [];
+
 async function carregarUsuarios() {
   try {
-    const lista = await api('/api/admin/usuarios');
-    $('lista-usuarios').innerHTML = `
-      <table>
-        <thead><tr>
-          <th>Nome</th><th>Empresa</th><th>Função</th><th>Login</th><th>Placas</th>
-          <th class="num">Arquivos</th><th>Situação</th><th></th>
-        </tr></thead>
-        <tbody>
-          ${lista
-            .map(
-              (u) => `<tr>
-            <td>${escapar(u.nome)}${
-              u.papel === 'admin' ? ' <span class="selo RASCUNHO">admin</span>' : ''
-            }</td>
-            <td>
-              <select data-empresa="${u.id}" style="margin:0; padding:5px 8px; font-size:13px; width:auto">
-                <option value="DISO"${u.empresa === 'DISO' ? ' selected' : ''}>DISO</option>
-                <option value="DSO"${u.empresa === 'DSO' ? ' selected' : ''}>DSO</option>
-              </select>
-            </td>
-            <td>
-              <select data-funcao="${u.id}" style="margin:0; padding:5px 8px; font-size:13px; width:auto">
-                ${['Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO', 'Adm DSO']
-                  .map(
-                    (f) =>
-                      `<option value="${f}"${u.funcao === f ? ' selected' : ''}>${f}</option>`,
-                  )
-                  .join('')}
-              </select>
-            </td>
-            <td>${escapar(u.login)}</td>
-            <td>${escapar(u.placas || '—')}</td>
-            <td class="num">${u.anexos}</td>
-            <td>${u.ativo ? 'Ativo' : 'Desativado'}</td>
-            <td style="white-space:nowrap">
-              ${
-                u.papel === 'colaborador'
-                  ? `<button class="pequeno" data-galeria="${u.id}">Galeria</button>
-                     <button class="secundario pequeno" data-pacote="${u.id}" title="Baixa uma pasta com tudo deste colaborador">Baixar pasta</button>`
-                  : ''
-              }
-              <button class="secundario pequeno" data-senha="${u.id}">Nova senha</button>
-              <button class="secundario pequeno" data-ativo="${u.id}" data-valor="${
-                u.ativo ? 0 : 1
-              }">${u.ativo ? 'Desativar' : 'Reativar'}</button>
-            </td>
-          </tr>`,
-            )
-            .join('')}
-        </tbody>
-      </table>`;
+    usuarios = await api('/api/admin/usuarios');
+    desenharUsuarios();
+  } catch (e) {
+    mostrarRecado('recado-usuario', e.message, 'erro');
+  }
+}
 
-    const salvarCracha = async (elemento, campo) => {
+const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO', 'Adm DSO'];
+
+function desenharUsuarios() {
+  if (!usuarios.length) return;
+
+  const busca = chave($('fu-busca').value.trim());
+  const empresa = $('fu-empresa').value;
+  const funcao = $('fu-funcao').value;
+  const situacao = $('fu-situacao').value;
+  const agrupar = $('fu-agrupar').checked;
+
+  const lista = usuarios.filter((u) => {
+    if (empresa && u.empresa !== empresa) return false;
+    if (funcao && u.funcao !== funcao) return false;
+    if (situacao !== '' && String(u.ativo) !== situacao) return false;
+    if (busca && !chave(`${u.nome} ${u.login} ${u.placas || ''}`).includes(busca)) return false;
+    return true;
+  });
+
+  $('fu-contagem').textContent =
+    lista.length === usuarios.length
+      ? `${usuarios.length} cadastrado(s)`
+      : `${lista.length} de ${usuarios.length}`;
+
+  if (!lista.length) {
+    $('lista-usuarios').innerHTML = `<p class="sub">Ninguém com esses filtros.</p>`;
+    return;
+  }
+
+  let corpo;
+  if (agrupar) {
+    const empresas = [...new Set(lista.map((u) => u.empresa || 'DISO'))].sort();
+    corpo = empresas
+      .map((e) => {
+        const doGrupo = lista.filter((u) => (u.empresa || 'DISO') === e);
+        const ativos = doGrupo.filter((u) => u.ativo).length;
+        return (
+          `<tr class="grupo-empresa"><td colspan="8">
+             ${escapar(e)} — ${doGrupo.length} pessoa(s), ${ativos} ativa(s)
+           </td></tr>` + doGrupo.map(linhaUsuario).join('')
+        );
+      })
+      .join('');
+  } else {
+    corpo = lista.map(linhaUsuario).join('');
+  }
+
+  $('lista-usuarios').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Nome</th><th>Empresa</th><th>Função</th><th>Login</th><th>Placas</th>
+        <th class="num">Arquivos</th><th>Situação</th><th></th>
+      </tr></thead>
+      <tbody>${corpo}</tbody>
+    </table>`;
+
+  ligarBotoesDeUsuario();
+}
+
+function linhaUsuario(u) {
+  const ehAdmin = u.papel === 'admin';
+  return `<tr class="de-${escapar(u.empresa || 'DISO')}"${u.ativo ? '' : ' style="opacity:.55"'}>
+    <td>
+      ${escapar(u.nome)}${ehAdmin ? ' <span class="selo RASCUNHO">admin</span>' : ''}<br>
+      <span class="emp ${escapar(u.empresa || 'DISO')}">${escapar(u.cracha || '')}</span>
+    </td>
+    <td>
+      <select data-empresa="${u.id}" style="margin:0; padding:5px 8px; font-size:13px; width:auto">
+        <option value="DISO"${u.empresa === 'DISO' ? ' selected' : ''}>DISO</option>
+        <option value="DSO"${u.empresa === 'DSO' ? ' selected' : ''}>DSO</option>
+      </select>
+    </td>
+    <td>
+      <select data-funcao="${u.id}" style="margin:0; padding:5px 8px; font-size:13px; width:auto">
+        ${FUNCOES.map(
+          (f) => `<option value="${f}"${u.funcao === f ? ' selected' : ''}>${f}</option>`,
+        ).join('')}
+      </select>
+    </td>
+    <td>${escapar(u.login)}</td>
+    <td>${escapar(u.placas || '—')}</td>
+    <td class="num">${u.anexos}</td>
+    <td>${u.ativo ? 'Ativo' : 'Desativado'}</td>
+    <td style="white-space:nowrap">
+      ${
+        u.papel === 'colaborador'
+          ? `<button class="pequeno" data-galeria="${u.id}">Galeria</button>
+             <button class="secundario pequeno" data-historico="${u.id}"
+                     title="Planilha com todos os meses deste colaborador">Histórico</button>
+             <button class="secundario pequeno" data-pacote="${u.id}"
+                     title="Baixa uma pasta com tudo deste colaborador">Baixar pasta</button>`
+          : ''
+      }
+      <button class="secundario pequeno" data-senha="${u.id}">Nova senha</button>
+      <button class="secundario pequeno" data-ativo="${u.id}" data-valor="${u.ativo ? 0 : 1}">
+        ${u.ativo ? 'Desativar' : 'Reativar'}
+      </button>
+      <button class="perigo pequeno" data-excluir="${u.id}"
+              title="Apaga o colaborador e tudo que ele enviou">Excluir</button>
+    </td>
+  </tr>`;
+}
+
+function ligarBotoesDeUsuario() {
+  const raiz = $('lista-usuarios');
+
+  const salvarCracha = async (elemento, campo) => {
+    try {
+      const r = await api('/api/admin/usuario-empresa', {
+        metodo: 'POST',
+        corpo: { usuario_id: Number(elemento.dataset[campo]), [campo]: elemento.value },
+      });
+      mostrarRecado('recado-usuario', `Atualizado para ${r.cracha}.`, 'ok');
+      carregarUsuarios();
+    } catch (e) {
+      mostrarRecado('recado-usuario', e.message, 'erro');
+    }
+  };
+
+  for (const s of raiz.querySelectorAll('[data-empresa]')) {
+    s.addEventListener('change', () => salvarCracha(s, 'empresa'));
+  }
+  for (const s of raiz.querySelectorAll('[data-funcao]')) {
+    s.addEventListener('change', () => salvarCracha(s, 'funcao'));
+  }
+  for (const b of raiz.querySelectorAll('[data-galeria]')) {
+    b.addEventListener('click', () => abrirGaleria(Number(b.dataset.galeria)));
+  }
+  for (const b of raiz.querySelectorAll('[data-pacote]')) {
+    b.addEventListener('click', () => {
+      location.href = `/api/admin/pacote?usuario_id=${b.dataset.pacote}`;
+    });
+  }
+  for (const b of raiz.querySelectorAll('[data-historico]')) {
+    b.addEventListener('click', () => {
+      location.href = `/api/admin/historico?usuario_id=${b.dataset.historico}`;
+    });
+  }
+
+  for (const b of raiz.querySelectorAll('[data-senha]')) {
+    b.addEventListener('click', async () => {
+      const senha = prompt('Senha provisória para essa pessoa (mínimo 6 caracteres):');
+      if (!senha) return;
       try {
-        const r = await api('/api/admin/usuario-empresa', {
+        await api('/api/admin/usuario-senha', {
           metodo: 'POST',
-          corpo: { usuario_id: Number(elemento.dataset[campo]), [campo]: elemento.value },
+          corpo: { usuario_id: Number(b.dataset.senha), senha },
         });
-        mostrarRecado('recado-usuario', `Atualizado para ${r.cracha}.`, 'ok');
+        mostrarRecado('recado-usuario', 'Senha trocada. Passe a nova senha para a pessoa.', 'ok');
       } catch (e) {
         mostrarRecado('recado-usuario', e.message, 'erro');
       }
-    };
+    });
+  }
 
-    for (const s of $('lista-usuarios').querySelectorAll('[data-empresa]')) {
-      s.addEventListener('change', () => salvarCracha(s, 'empresa'));
-    }
-    for (const s of $('lista-usuarios').querySelectorAll('[data-funcao]')) {
-      s.addEventListener('change', () => salvarCracha(s, 'funcao'));
-    }
-
-    for (const b of $('lista-usuarios').querySelectorAll('[data-galeria]')) {
-      b.addEventListener('click', () => abrirGaleria(Number(b.dataset.galeria)));
-    }
-
-    for (const b of $('lista-usuarios').querySelectorAll('[data-pacote]')) {
-      b.addEventListener('click', () => {
-        location.href = `/api/admin/pacote?usuario_id=${b.dataset.pacote}`;
+  for (const b of raiz.querySelectorAll('[data-ativo]')) {
+    b.addEventListener('click', async () => {
+      await api('/api/admin/usuario-ativo', {
+        metodo: 'POST',
+        corpo: { usuario_id: Number(b.dataset.ativo), ativo: Number(b.dataset.valor) },
       });
-    }
+      carregarUsuarios();
+    });
+  }
 
-    for (const b of $('lista-usuarios').querySelectorAll('[data-senha]')) {
-      b.addEventListener('click', async () => {
-        const senha = prompt('Senha provisória para essa pessoa (mínimo 6 caracteres):');
-        if (!senha) return;
-        try {
-          await api('/api/admin/usuario-senha', {
-            metodo: 'POST',
-            corpo: { usuario_id: Number(b.dataset.senha), senha },
-          });
-          mostrarRecado('recado-usuario', 'Senha trocada. Passe a nova senha para a pessoa.', 'ok');
-        } catch (e) {
-          mostrarRecado('recado-usuario', e.message, 'erro');
-        }
-      });
-    }
+  for (const b of raiz.querySelectorAll('[data-excluir]')) {
+    b.addEventListener('click', () => excluirUsuario(Number(b.dataset.excluir)));
+  }
+}
 
-    for (const b of $('lista-usuarios').querySelectorAll('[data-ativo]')) {
-      b.addEventListener('click', async () => {
-        await api('/api/admin/usuario-ativo', {
-          metodo: 'POST',
-          corpo: { usuario_id: Number(b.dataset.ativo), ativo: Number(b.dataset.valor) },
-        });
-        carregarUsuarios();
-      });
+// Exclusao em dois passos: primeiro o servidor diz o que sera apagado, depois
+// a pessoa digita o login para confirmar. Nao da para apagar por engano.
+async function excluirUsuario(id) {
+  const u = usuarios.find((x) => x.id === id);
+  if (!u) return;
+
+  let aviso;
+  try {
+    await api('/api/admin/usuario', { metodo: 'DELETE', corpo: { usuario_id: id } });
+    return; // nao deveria passar sem confirmacao
+  } catch (e) {
+    if (!e.dados?.vai_apagar) {
+      return mostrarRecado('recado-usuario', e.message, 'erro');
     }
+    aviso = e.dados.vai_apagar;
+  }
+
+  const texto =
+    `EXCLUIR ${u.nome}?\n\n` +
+    `Isso apaga em definitivo:\n` +
+    `  · ${aviso.relatorios} relatório(s)\n` +
+    `  · ${aviso.anexos} arquivo(s) — RDVs, comprovantes e fotos de odômetro\n\n` +
+    `Não tem como desfazer.\n\n` +
+    `Para confirmar, digite o login: ${u.login}`;
+
+  const confirmacao = prompt(texto);
+  if (!confirmacao) return;
+
+  try {
+    const r = await api('/api/admin/usuario', {
+      metodo: 'DELETE',
+      corpo: { usuario_id: id, confirmacao },
+    });
+    mostrarRecado(
+      'recado-usuario',
+      `${r.nome} foi excluído: ${r.relatorios} relatório(s) e ${r.arquivos_apagados} arquivo(s) apagados.`,
+      'ok',
+    );
+    carregarUsuarios();
+    carregarPainel();
   } catch (e) {
     mostrarRecado('recado-usuario', e.message, 'erro');
   }

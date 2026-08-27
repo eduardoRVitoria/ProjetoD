@@ -4,6 +4,7 @@
 
 import ExcelJS from 'exceljs';
 import { mesPorExtenso } from './util.js';
+import { cracha } from './banco.js';
 
 // Na planilha vale o rotulo que a RDVS.xlsx ja usava, nao o rotulo da tela.
 const ROTULO_PLANILHA = {
@@ -56,20 +57,189 @@ const REGRAS = [
   ['Versao que vale', 'Havendo mais de um envio do mesmo mes, vale o mais recente.'],
 ];
 
+/**
+ * Planilha com o historico completo de um colaborador: um mes por linha,
+ * mais uma aba com todos os arquivos que ele ja enviou.
+ */
+export async function gerarHistorico({ usuario, relatorios, anexos, valorKm }) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Portal RDV — DISO Comércio de Alimentos';
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet('HISTORICO', { views: [{ state: 'frozen', ySplit: 5 }] });
+
+  const colunas = [
+    { titulo: 'MES', largura: 20 },
+    { titulo: 'STATUS', largura: 20 },
+    { titulo: 'TOTAL DE KM', largura: 13, formato: '#,##0' },
+    { titulo: 'VALOR DO KM', largura: 15, formato: '"R$" #,##0.00' },
+    { titulo: 'PED+ESTAC DECLARADO', largura: 15, formato: '"R$" #,##0.00' },
+    { titulo: 'PED+ESTAC COMPROVADO', largura: 15, formato: '"R$" #,##0.00' },
+    { titulo: 'DIFERENCA', largura: 14, formato: '"R$" #,##0.00' },
+    { titulo: 'MANDOU A DANFE?', largura: 13 },
+    { titulo: 'ENVIADO EM', largura: 17 },
+    { titulo: 'O QUE FOI ENCONTRADO', largura: 60 },
+    { titulo: 'O QUE PRECISA FAZER', largura: 60 },
+  ];
+
+  ws.mergeCells(1, 1, 1, colunas.length);
+  const titulo = ws.getCell('A1');
+  titulo.value = `HISTORICO DE RDV — ${usuario.nome.toUpperCase()}`;
+  titulo.font = { bold: true, size: 14, color: { argb: 'FF143A61' } };
+  ws.getRow(1).height = 26;
+
+  const contagem = {};
+  for (const r of relatorios) contagem[r.status] = (contagem[r.status] || 0) + 1;
+  const somaKm = relatorios.reduce((s, r) => s + Number(r.total_km || 0), 0);
+  const somaValor = relatorios.reduce((s, r) => s + Number(r.valor_km || 0), 0);
+
+  ws.mergeCells(2, 1, 2, colunas.length);
+  ws.getCell('A2').value =
+    `${cracha(usuario.empresa, usuario.funcao)} · ${usuario.funcao} · ${usuario.login}` +
+    `${usuario.placas ? ` · placas: ${usuario.placas}` : ''}  |  ` +
+    `${relatorios.length} mes(es)  |  ${contagem.CERTA || 0} aprovados, ` +
+    `${contagem.SO_FALTA_DANFE || 0} so faltou DANFE, ${contagem.ERRADA || 0} reprovados  |  ` +
+    `total ${somaKm.toLocaleString('pt-BR')} km`;
+  ws.getCell('A2').font = { bold: true, size: 11 };
+
+  ws.mergeCells(3, 1, 3, colunas.length);
+  ws.getCell('A3').value = `Gerado em ${new Date().toLocaleString('pt-BR')} · valor do km R$ ${valorKm
+    .toFixed(2)
+    .replace('.', ',')}`;
+  ws.getCell('A3').font = { size: 10, color: { argb: 'FF5B6879' } };
+
+  const cab = ws.getRow(5);
+  colunas.forEach((c, i) => {
+    const cel = cab.getCell(i + 1);
+    cel.value = c.titulo;
+    cel.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1C4E80' } };
+    cel.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+    ws.getColumn(i + 1).width = c.largura;
+  });
+  cab.height = 34;
+
+  let linha = 6;
+  for (const r of [...relatorios].sort((a, b) => b.mes_ref.localeCompare(a.mes_ref))) {
+    const declarado = Number(r.pedagio_declarado || 0) + Number(r.estac_declarado || 0);
+    const comp = r.pedagio_comprovado;
+    const cor = CORES[r.status];
+
+    const valores = [
+      mesPorExtenso(r.mes_ref),
+      ROTULO_PLANILHA[r.status] || r.status,
+      Number(r.total_km || 0),
+      Number(r.valor_km || 0),
+      declarado,
+      comp == null ? null : Number(comp),
+      comp == null ? null : Number((comp - declarado).toFixed(2)),
+      r.mandou_danfe == null ? '' : r.mandou_danfe ? 'SIM' : 'NAO',
+      r.enviado_em ? new Date(r.enviado_em).toLocaleString('pt-BR') : '',
+      (r.achados || []).map((a) => a.mensagem).join(' | '),
+      r.o_que_fazer || '',
+    ];
+
+    const l = ws.getRow(linha);
+    valores.forEach((v, i) => {
+      const cel = l.getCell(i + 1);
+      cel.value = v;
+      if (colunas[i].formato) cel.numFmt = colunas[i].formato;
+      cel.alignment = { vertical: 'top', wrapText: i >= 9 };
+      cel.border = { bottom: { style: 'hair', color: { argb: 'FFD9DEE7' } } };
+    });
+
+    if (cor) {
+      for (const col of [1, 2]) {
+        l.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cor.fundo } };
+        l.getCell(col).font = { bold: col === 2, color: { argb: cor.texto } };
+      }
+    }
+    linha++;
+  }
+
+  if (linha > 6) {
+    ws.autoFilter = { from: { row: 5, column: 1 }, to: { row: linha - 1, column: colunas.length } };
+  }
+
+  // ------------------------------------------------------- aba de arquivos
+  const wsA = wb.addWorksheet('ARQUIVOS ENVIADOS');
+  const colA = [
+    { t: 'MES', w: 20 },
+    { t: 'TIPO', w: 26 },
+    { t: 'ARQUIVO', w: 60 },
+    { t: 'TAMANHO', w: 12 },
+    { t: 'ENVIADO EM', w: 20 },
+  ];
+  const cabA = wsA.getRow(1);
+  colA.forEach((c, i) => {
+    const cel = cabA.getCell(i + 1);
+    cel.value = c.t;
+    cel.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1C4E80' } };
+    wsA.getColumn(i + 1).width = c.w;
+  });
+
+  const ROTULO_TIPO = {
+    rdv: 'Relatorio (RDV)',
+    odometro: 'Foto de odometro',
+    pedagio: 'Pedagio / estacionamento',
+    danfe: 'Nota de abastecimento',
+    outro: 'Outro documento',
+  };
+
+  let la = 2;
+  for (const a of anexos) {
+    const l = wsA.getRow(la++);
+    l.getCell(1).value = mesPorExtenso(a.mes_ref);
+    l.getCell(2).value = ROTULO_TIPO[a.tipo] || a.tipo;
+    l.getCell(3).value = a.nome_original;
+    l.getCell(4).value = `${(a.tamanho / 1024).toFixed(0)} KB`;
+    l.getCell(5).value = a.enviado_em ? new Date(a.enviado_em).toLocaleString('pt-BR') : '';
+  }
+  if (la > 2) {
+    wsA.autoFilter = { from: { row: 1, column: 1 }, to: { row: la - 1, column: colA.length } };
+    wsA.views = [{ state: 'frozen', ySplit: 1 }];
+  }
+
+  return wb.xlsx.writeBuffer();
+}
+
 export async function gerarPlanilha({ mes, relatorios, valorKm }) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Portal RDV — DISO Comércio de Alimentos';
   wb.created = new Date();
 
+  // Uma aba por empresa. So entra empresa que tem gente no mes - nao adianta
+  // abrir uma aba DSO vazia.
+  const empresas = [...new Set(relatorios.map((r) => r.empresa || 'DISO'))].sort();
+
+  for (const empresa of empresas) {
+    montarAba(
+      wb,
+      mes,
+      relatorios.filter((r) => (r.empresa || 'DISO') === empresa),
+      valorKm,
+      empresas.length > 1 ? empresa : null,
+    );
+  }
+
+  montarAbaDeRegras(wb, valorKm);
+  return wb.xlsx.writeBuffer();
+}
+
+function montarAba(wb, mes, relatorios, valorKm, empresa) {
   const extenso = mesPorExtenso(mes).toUpperCase();
-  const ws = wb.addWorksheet(`CONFERENCIA ${extenso}`.slice(0, 31), {
+  const nomeAba = (empresa ? `${empresa} - ${extenso}` : `CONFERENCIA ${extenso}`).slice(0, 31);
+  const ws = wb.addWorksheet(nomeAba, {
     views: [{ state: 'frozen', ySplit: 5 }],
   });
 
   // ------------------------------------------------------------ 1. titulo
   ws.mergeCells(1, 1, 1, COLUNAS.length);
   const titulo = ws.getCell('A1');
-  titulo.value = `CONFERENCIA DOS RELATORIOS DE DESPESAS DE VIAGEM (RDV) - ${extenso}`;
+  titulo.value =
+    `CONFERENCIA DOS RELATORIOS DE DESPESAS DE VIAGEM (RDV) - ${extenso}` +
+    (empresa ? ` - ${empresa}` : '');
   titulo.font = { bold: true, size: 14, color: { argb: 'FF143A61' } };
   titulo.alignment = { vertical: 'middle' };
   ws.getRow(1).height = 26;
@@ -170,8 +340,10 @@ export async function gerarPlanilha({ mes, relatorios, valorKm }) {
   if (linha > 6) {
     ws.autoFilter = { from: { row: 5, column: 1 }, to: { row: linha - 1, column: COLUNAS.length } };
   }
+}
 
-  // ------------------------------------------------------ aba de explicacao
+// ------------------------------------------------------ aba de explicacao
+function montarAbaDeRegras(wb, valorKm) {
   const wsRegras = wb.addWorksheet('COMO E CONFERIDO');
   wsRegras.getColumn(1).width = 32;
   wsRegras.getColumn(2).width = 110;
@@ -209,6 +381,13 @@ export async function gerarPlanilha({ mes, relatorios, valorKm }) {
       'as etapas 1 a 6 sao conferidas automaticamente no momento do preenchimento, e as etapas 7 a 10 pela leitura ' +
       'dos comprovantes. Esta aba existe para a planilha se explicar sozinha para quem nao acompanhou o processo.',
   ]);
-
-  return wb.xlsx.writeBuffer();
+  item([
+    'Valor do km vigente',
+    `R$ ${valorKm.toFixed(2).replace('.', ',')} por quilometro rodado.`,
+  ]);
+  item([
+    'Aumento sobre o mes anterior',
+    'Quando o mes fica mais de R$ 200,00 acima do mes anterior, o colaborador precisa escrever ' +
+      'a justificativa antes de enviar. A justificativa aparece na coluna "O QUE FOI ENCONTRADO".',
+  ]);
 }

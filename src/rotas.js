@@ -19,7 +19,7 @@ import {
 import { conferir } from './conferencia.js';
 import { conferirComIa, iaDisponivel } from './ia.js';
 import { conferirEmDemo } from './ia-demo.js';
-import { gerarPlanilha } from './planilha.js';
+import { gerarPlanilha, gerarHistorico } from './planilha.js';
 import { enviarBackup, restaurarBackup, resumoDosDados } from './backup.js';
 import { extrairDoRdv } from './extrair.js';
 import { verificarAssinatura, achadosDaAssinatura } from './assinatura.js';
@@ -83,6 +83,8 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/usuario-senha' && metodo === 'POST') return resetarSenha(req, res);
     if (rota === '/api/admin/usuario-ativo' && metodo === 'POST') return ativarUsuario(req, res);
     if (rota === '/api/admin/usuario-empresa' && metodo === 'POST') return mudarEmpresa(req, res);
+    if (rota === '/api/admin/usuario' && metodo === 'DELETE') return excluirUsuario(req, res, usuario);
+    if (rota === '/api/admin/historico' && metodo === 'GET') return exportarHistorico(res, url);
     if (rota === '/api/admin/config' && metodo === 'GET') return pegarConfig(res);
     if (rota === '/api/admin/config' && metodo === 'POST') return salvarConfig(req, res);
     if (rota === '/api/admin/exportar' && metodo === 'GET') return exportarCsv(res, url);
@@ -161,6 +163,29 @@ function acharOuCriar(usuarioId, mes) {
   return rel;
 }
 
+// O ultimo mes ja enviado antes deste, para comparar o gasto.
+// Rascunho nao conta: so vale mes que a pessoa realmente prestou contas.
+function mesAnteriorDe(usuarioId, mes) {
+  const r = db
+    .prepare(
+      `SELECT mes_ref, valor_km, pedagio_declarado, estac_declarado
+         FROM relatorios
+        WHERE usuario_id = ? AND mes_ref < ? AND status <> 'RASCUNHO'
+        ORDER BY mes_ref DESC LIMIT 1`,
+    )
+    .get(usuarioId, mes);
+
+  if (!r) return null;
+
+  return {
+    mes: r.mes_ref,
+    mesExtenso: mesPorExtenso(r.mes_ref),
+    total: Number(
+      (Number(r.valor_km || 0) + Number(r.pedagio_declarado || 0) + Number(r.estac_declarado || 0)).toFixed(2),
+    ),
+  };
+}
+
 function linhasDo(relId) {
   return db
     .prepare('SELECT * FROM linhas WHERE relatorio_id = ? ORDER BY data, ordem')
@@ -201,7 +226,7 @@ function pegarRelatorio(req, res, url, usuario) {
   const rel = acharOuCriar(usuario.id, mes);
   const linhas = linhasDo(rel.id);
   const anexos = anexosDo(rel.id);
-  const resultado = conferir(rel, linhas, anexos, valorDoKm());
+  const resultado = conferir(rel, linhas, anexos, valorDoKm(), mesAnteriorDe(rel.usuario_id, rel.mes_ref));
 
   responderJson(res, {
     relatorio: {
@@ -256,11 +281,12 @@ async function salvarRelatorio(req, res, usuario) {
 
     const linhas = linhasDo(rel.id);
     const anexos = anexosDo(rel.id);
-    const r = conferir(rel, linhas, anexos, valorDoKm());
+    const r = conferir(rel, linhas, anexos, valorDoKm(), mesAnteriorDe(rel.usuario_id, rel.mes_ref));
 
     db.prepare(
       `UPDATE relatorios
-          SET total_km = ?, valor_km = ?, pedagio_declarado = ?, estac_declarado = ?, observacao = ?
+          SET total_km = ?, valor_km = ?, pedagio_declarado = ?, estac_declarado = ?,
+              observacao = ?, justificativa = ?
         WHERE id = ?`,
     ).run(
       r.totalKm,
@@ -268,6 +294,9 @@ async function salvarRelatorio(req, res, usuario) {
       r.pedagioDeclarado,
       r.estacDeclarado,
       String(corpo.observacao || '').slice(0, 2000),
+      corpo.justificativa === undefined
+        ? rel.justificativa
+        : String(corpo.justificativa || '').slice(0, 2000) || null,
       rel.id,
     );
 
@@ -277,7 +306,7 @@ async function salvarRelatorio(req, res, usuario) {
     responderJson(res, {
       ok: true,
       relatorio: atualizado,
-      previa: conferir(atualizado, linhas, anexos, valorDoKm()),
+      previa: conferir(atualizado, linhas, anexos, valorDoKm(), mesAnteriorDe(atualizado.usuario_id, atualizado.mes_ref)),
     });
   } catch (e) {
     db.exec('ROLLBACK');
@@ -358,7 +387,7 @@ async function lerRdv(req, res, usuario) {
     const linhas = linhasDo(rel.id);
     const anexos = anexosDo(rel.id);
     const atualizado = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id);
-    const r = conferir(atualizado, linhas, anexos, valorDoKm());
+    const r = conferir(atualizado, linhas, anexos, valorDoKm(), mesAnteriorDe(atualizado.usuario_id, atualizado.mes_ref));
 
     db.prepare(
       `UPDATE relatorios SET total_km = ?, valor_km = ?, pedagio_declarado = ?, estac_declarado = ? WHERE id = ?`,
@@ -379,6 +408,7 @@ async function lerRdv(req, res, usuario) {
         linhas,
         anexos,
         valorDoKm(),
+        mesAnteriorDe(usuario.id, mes),
       ),
       grade: gradeDoMes(mes, linhas),
       aviso: avisoDaLeitura(extraido, usuario),
@@ -440,7 +470,7 @@ async function enviarRelatorio(req, res, usuario) {
   }
 
   const anexos = anexosDo(rel.id);
-  const r = conferir(rel, linhas, anexos, valorDoKm());
+  const r = conferir(rel, linhas, anexos, valorDoKm(), mesAnteriorDe(rel.usuario_id, rel.mes_ref));
 
   // Bloqueios duros: coisas que a pessoa consegue resolver sozinha antes de enviar.
   // A soma de km e o valor NAO entram aqui: com o RDV vindo de PDF, a divergencia
@@ -448,7 +478,13 @@ async function enviarRelatorio(req, res, usuario) {
   const bloqueios = r.achados.filter(
     (a) =>
       a.gravidade === 'erro' &&
-      ['km_invertido', 'sem_linhas', 'leitura_incerta', 'pedagio_sem_comprovante'].includes(a.codigo),
+      [
+        'km_invertido',
+        'sem_linhas',
+        'leitura_incerta',
+        'pedagio_sem_comprovante',
+        'aumento_sem_justificativa',
+      ].includes(a.codigo),
   );
   if (bloqueios.length > 0) {
     return responderJson(
@@ -577,7 +613,7 @@ function painel(res, url) {
 
   const linhas = db
     .prepare(
-      `SELECT r.*, u.nome, u.login, u.placas
+      `SELECT r.*, u.nome, u.login, u.placas, u.empresa, u.funcao
          FROM relatorios r
          JOIN usuarios u ON u.id = r.usuario_id
         WHERE r.mes_ref = ?
@@ -590,7 +626,7 @@ function painel(res, url) {
 
   const semEnviar = db
     .prepare(
-      `SELECT u.id, u.nome, u.login FROM usuarios u
+      `SELECT u.id, u.nome, u.login, u.empresa, u.funcao FROM usuarios u
         WHERE u.ativo = 1 AND u.papel = 'colaborador'
           AND u.id NOT IN (
             SELECT usuario_id FROM relatorios WHERE mes_ref = ? AND status <> 'RASCUNHO'
@@ -613,6 +649,10 @@ function painel(res, url) {
       usuario_id: r.usuario_id,
       nome: r.nome,
       login: r.login,
+      empresa: r.empresa,
+      funcao: r.funcao,
+      cracha: cracha(r.empresa, r.funcao),
+      justificativa: r.justificativa,
       status: r.status,
       rotulo_status: ROTULO_STATUS[r.status],
       total_km: r.total_km,
@@ -680,7 +720,7 @@ async function conferirUm(req, res, admin) {
     );
   }
 
-  const porRegra = conferir(rel, linhas, anexos, vlrKm);
+  const porRegra = conferir(rel, linhas, anexos, vlrKm, mesAnteriorDe(rel.usuario_id, rel.mes_ref));
 
   // Assinatura digital do RDV: quem assinou, quando, e se o arquivo foi
   // alterado depois. Roda local, sem custo e sem depender da IA.
@@ -836,6 +876,48 @@ function conferirAssinatura(rel, anexos, usuario) {
   return { achados, resultado: resultados };
 }
 
+async function exportarHistorico(res, url) {
+  const id = Number(url.searchParams.get('usuario_id'));
+  const usuario = db
+    .prepare('SELECT id, nome, login, empresa, funcao, placas FROM usuarios WHERE id = ?')
+    .get(id);
+  if (!usuario) return erro(res, 'Colaborador nao encontrado.', 404);
+
+  const relatorios = db
+    .prepare("SELECT * FROM relatorios WHERE usuario_id = ? AND status <> 'RASCUNHO'")
+    .all(id)
+    .map((r) => ({ ...r, achados: r.achados ? JSON.parse(r.achados) : [] }));
+
+  if (relatorios.length === 0) {
+    return erro(res, `${usuario.nome} ainda nao enviou nenhum relatorio.`, 404);
+  }
+
+  const anexos = db
+    .prepare(
+      `SELECT a.tipo, a.nome_original, a.tamanho, a.enviado_em, r.mes_ref
+         FROM anexos a JOIN relatorios r ON r.id = a.relatorio_id
+        WHERE r.usuario_id = ?
+        ORDER BY r.mes_ref DESC, a.tipo, a.enviado_em`,
+    )
+    .all(id);
+
+  const dados = Buffer.from(
+    await gerarHistorico({ usuario, relatorios, anexos, valorKm: valorDoKm() }),
+  );
+
+  const nome = usuario.nome
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^a-zA-Z0-9 ]/g, '');
+
+  res.writeHead(200, {
+    'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'Content-Length': dados.length,
+    'Content-Disposition': `attachment; filename="Historico - ${nome}.xlsx"`,
+  });
+  res.end(dados);
+}
+
 function verGaleria(res, url) {
   const id = Number(url.searchParams.get('usuario_id'));
   const g = galeriaDe(id);
@@ -936,6 +1018,78 @@ async function resetarSenha(req, res) {
   responderJson(res, { ok: true });
 }
 
+// Exclusao definitiva. Leva junto os relatorios, os anexos do banco e os
+// arquivos do disco - por isso exige confirmacao com o login digitado.
+async function excluirUsuario(req, res, quemPediu) {
+  const { usuario_id, confirmacao } = await lerJson(req);
+  const id = Number(usuario_id);
+
+  const alvo = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(id);
+  if (!alvo) return erro(res, 'Colaborador nao encontrado.', 404);
+
+  if (alvo.id === quemPediu.id) {
+    return erro(res, 'Voce nao pode excluir a propria conta.');
+  }
+
+  if (alvo.papel === 'admin') {
+    const admins = db
+      .prepare("SELECT COUNT(*) AS n FROM usuarios WHERE papel = 'admin' AND ativo = 1").get().n;
+    if (admins <= 1) return erro(res, 'Nao da para excluir o unico administrador.');
+  }
+
+  const relatorios = db
+    .prepare('SELECT COUNT(*) AS n FROM relatorios WHERE usuario_id = ?').get(id).n;
+  const arquivos = db
+    .prepare(
+      `SELECT a.arquivo FROM anexos a JOIN relatorios r ON r.id = a.relatorio_id
+        WHERE r.usuario_id = ?`,
+    )
+    .all(id);
+
+  // Confirmacao burra de proposito: digitar o login evita clique errado numa
+  // acao que apaga meses de comprovante.
+  if (String(confirmacao || '').trim().toLowerCase() !== alvo.login) {
+    return responderJson(
+      res,
+      {
+        erro: `Para excluir, confirme digitando o login "${alvo.login}".`,
+        vai_apagar: { relatorios, anexos: arquivos.length },
+      },
+      400,
+    );
+  }
+
+  db.exec('BEGIN');
+  try {
+    // As chaves estrangeiras estao em cascade: apagar o usuario leva
+    // relatorios, linhas e anexos junto.
+    db.prepare('DELETE FROM usuarios WHERE id = ?').run(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+
+  // Os arquivos do disco nao saem por cascade.
+  let apagados = 0;
+  for (const a of arquivos) {
+    try {
+      fs.unlinkSync(path.join(PASTA_ANEXOS, a.arquivo));
+      apagados++;
+    } catch {
+      // arquivo ja tinha sumido
+    }
+  }
+
+  responderJson(res, {
+    ok: true,
+    nome: alvo.nome,
+    relatorios,
+    anexos: arquivos.length,
+    arquivos_apagados: apagados,
+  });
+}
+
 async function ativarUsuario(req, res) {
   const { usuario_id, ativo } = await lerJson(req);
   db.prepare('UPDATE usuarios SET ativo = ? WHERE id = ?').run(ativo ? 1 : 0, Number(usuario_id));
@@ -975,7 +1129,8 @@ async function exportarCsv(res, url) {
 
   const linhas = db
     .prepare(
-      `SELECT r.*, u.nome FROM relatorios r JOIN usuarios u ON u.id = r.usuario_id
+      `SELECT r.*, u.nome, u.empresa, u.funcao FROM relatorios r
+         JOIN usuarios u ON u.id = r.usuario_id
         WHERE r.mes_ref = ? AND r.status <> 'RASCUNHO'`,
     )
     .all(mes);

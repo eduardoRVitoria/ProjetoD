@@ -4,6 +4,7 @@
 // fica para o modulo de IA em ia.js.
 
 import { fimDeSemana, nomeDoFeriado, diaDaSemana } from './feriados.js';
+import { MARGEM_AUMENTO } from './banco.js';
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -37,7 +38,7 @@ function diasSeguidos(dataAnterior, dataAtual) {
  * @param {Array}  anexos  anexos ja enviados
  * @param {number} vlrKm   valor pago por km (padrao 0,90)
  */
-export function conferir(rel, linhas, anexos, vlrKm = 0.9) {
+export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null) {
   const achados = [];
 
   // ---------------------------------------------------------------- 1. datas
@@ -293,12 +294,57 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9) {
     );
   }
 
+  // ------------------------------------------- 8. aumento sobre o mes anterior
+  // O que a empresa desembolsa: o valor dos km mais pedagio e estacionamento.
+  const totalDoMes = Number((valorKm + declarado).toFixed(2));
+  let comparacao = null;
+
+  if (mesAnterior && mesAnterior.total > 0) {
+    const diferenca = Number((totalDoMes - mesAnterior.total).toFixed(2));
+    const precisaExplicar = diferenca > MARGEM_AUMENTO;
+    const temJustificativa = String(rel.justificativa || '').trim().length >= 15;
+
+    comparacao = {
+      mes_anterior: mesAnterior.mes,
+      total_anterior: mesAnterior.total,
+      total_atual: totalDoMes,
+      diferenca,
+      margem: MARGEM_AUMENTO,
+      precisa_justificar: precisaExplicar,
+      tem_justificativa: temJustificativa,
+    };
+
+    if (precisaExplicar && !temJustificativa) {
+      achados.push(
+        achado(
+          'erro',
+          'aumento_sem_justificativa',
+          `Este mes ficou ${brl(diferenca)} acima de ${mesAnterior.mesExtenso || mesAnterior.mes} ` +
+            `(${brl(totalDoMes)} contra ${brl(mesAnterior.total)}). Acima de ${brl(
+              MARGEM_AUMENTO,
+            )} de aumento e preciso explicar o motivo.`,
+        ),
+      );
+    } else if (precisaExplicar && temJustificativa) {
+      achados.push(
+        achado(
+          'aviso',
+          'aumento_justificado',
+          `Este mes ficou ${brl(diferenca)} acima de ${mesAnterior.mesExtenso || mesAnterior.mes}. ` +
+            `Justificativa do colaborador: "${String(rel.justificativa).trim()}"`,
+        ),
+      );
+    }
+  }
+
   const erros = achados.filter((a) => a.gravidade === 'erro');
   const soFaltaDanfe = erros.length === 1 && erros[0].codigo === 'sem_danfe';
 
   return {
     totalKm,
     valorKm,
+    totalDoMes,
+    comparacao,
     pedagioDeclarado: Number(pedagioLinhas.toFixed(2)),
     estacDeclarado: Number(estacLinhas.toFixed(2)),
     totalDeclarado: declarado,
