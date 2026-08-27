@@ -7,6 +7,16 @@ import {
 
 const $ = (id) => document.getElementById(id);
 
+// Le um campo de filtro sem quebrar se ele nao existir na pagina.
+// Um HTML antigo em cache com o JS novo derrubava a tela inteira: sem os
+// filtros, o `$(id).value` estourava e a lista nunca era desenhada.
+const filtro = (id, padrao = '') => {
+  const el = $(id);
+  if (!el) return padrao;
+  return el.type === 'checkbox' ? el.checked : el.value;
+};
+const ligar = (id, evento, fn) => $(id)?.addEventListener(evento, fn);
+
 let mes = mesAtual();
 let painel = null;
 
@@ -34,23 +44,23 @@ $('botao-criar-usuario').addEventListener('click', criarUsuario);
 
 // --- filtros do painel do mes ---
 for (const id of ['f-busca', 'f-status', 'f-empresa', 'f-funcao', 'f-agrupar']) {
-  $(id).addEventListener('input', () => desenharTabela());
+  ligar(id, 'input', () => desenharTabela());
 }
-$('f-limpar').addEventListener('click', () => {
-  $('f-busca').value = '';
-  for (const id of ['f-status', 'f-empresa', 'f-funcao']) $(id).value = '';
-  $('f-agrupar').checked = true;
+ligar('f-limpar', 'click', () => {
+  if ($('f-busca')) $('f-busca').value = '';
+  for (const id of ['f-status', 'f-empresa', 'f-funcao']) if ($(id)) $(id).value = '';
+  if ($('f-agrupar')) $('f-agrupar').checked = true;
   desenharTabela();
 });
 
 // --- filtros da lista de colaboradores ---
 for (const id of ['fu-busca', 'fu-empresa', 'fu-funcao', 'fu-situacao', 'fu-agrupar']) {
-  $(id).addEventListener('input', () => desenharUsuarios());
+  ligar(id, 'input', () => desenharUsuarios());
 }
-$('fu-limpar').addEventListener('click', () => {
-  $('fu-busca').value = '';
-  for (const id of ['fu-empresa', 'fu-funcao', 'fu-situacao']) $(id).value = '';
-  $('fu-agrupar').checked = true;
+ligar('fu-limpar', 'click', () => {
+  if ($('fu-busca')) $('fu-busca').value = '';
+  for (const id of ['fu-empresa', 'fu-funcao', 'fu-situacao']) if ($(id)) $(id).value = '';
+  if ($('fu-agrupar')) $('fu-agrupar').checked = true;
   desenharUsuarios();
 });
 $('botao-salvar-km').addEventListener('click', salvarKm);
@@ -134,15 +144,15 @@ function desenharTabela() {
     $('tabela').innerHTML = `<p class="sub">Nenhum relatório enviado para ${escapar(
       painel.mes_extenso,
     )}.</p>`;
-    $('f-contagem').textContent = '';
+    if ($('f-contagem')) $('f-contagem').textContent = '';
     return;
   }
 
-  const busca = chave($('f-busca').value.trim());
-  const status = $('f-status').value;
-  const empresa = $('f-empresa').value;
-  const funcao = $('f-funcao').value;
-  const agrupar = $('f-agrupar').checked;
+  const busca = chave(String(filtro('f-busca')).trim());
+  const status = filtro('f-status');
+  const empresa = filtro('f-empresa');
+  const funcao = filtro('f-funcao');
+  const agrupar = filtro('f-agrupar', true);
 
   const lista = todos.filter((r) => {
     if (status && r.status !== status) return false;
@@ -152,7 +162,7 @@ function desenharTabela() {
     return true;
   });
 
-  $('f-contagem').textContent =
+  if ($('f-contagem')) $('f-contagem').textContent =
     lista.length === todos.length
       ? `${todos.length} relatório(s)`
       : `${lista.length} de ${todos.length}`;
@@ -547,11 +557,11 @@ const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO
 function desenharUsuarios() {
   if (!usuarios.length) return;
 
-  const busca = chave($('fu-busca').value.trim());
-  const empresa = $('fu-empresa').value;
-  const funcao = $('fu-funcao').value;
-  const situacao = $('fu-situacao').value;
-  const agrupar = $('fu-agrupar').checked;
+  const busca = chave(String(filtro('fu-busca')).trim());
+  const empresa = filtro('fu-empresa');
+  const funcao = filtro('fu-funcao');
+  const situacao = filtro('fu-situacao');
+  const agrupar = filtro('fu-agrupar', true);
 
   const lista = usuarios.filter((u) => {
     if (empresa && u.empresa !== empresa) return false;
@@ -561,7 +571,7 @@ function desenharUsuarios() {
     return true;
   });
 
-  $('fu-contagem').textContent =
+  if ($('fu-contagem')) $('fu-contagem').textContent =
     lista.length === usuarios.length
       ? `${usuarios.length} cadastrado(s)`
       : `${lista.length} de ${usuarios.length}`;

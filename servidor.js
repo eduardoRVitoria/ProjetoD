@@ -57,10 +57,15 @@ function servirEstatico(req, res, rota) {
 
   const ext = path.extname(destino).toLowerCase();
   const dados = fs.readFileSync(destino);
+
+  // HTML, JS e CSS nunca podem ficar em cache: uma versao velha de um deles
+  // junto com a nova do outro derruba a tela inteira. Imagem e manifest podem.
+  const codigo = ['.html', '.js', '.css'].includes(ext);
+
   res.writeHead(200, {
     'Content-Type': MIMES[ext] || 'application/octet-stream',
     'Content-Length': dados.length,
-    'Cache-Control': ext === '.html' ? 'no-store' : 'public, max-age=300',
+    'Cache-Control': codigo ? 'no-store, must-revalidate' : 'public, max-age=3600',
   });
   res.end(dados);
 }
