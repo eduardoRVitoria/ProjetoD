@@ -567,38 +567,80 @@ function desenharUsuarios() {
       : `${lista.length} de ${usuarios.length}`;
 
   if (!lista.length) {
-    $('lista-usuarios').innerHTML = `<p class="sub">Ninguém com esses filtros.</p>`;
+    $('lista-usuarios').innerHTML = `<div class="cartao"><p class="sub" style="margin:0">
+      Ninguém com esses filtros.</p></div>`;
     return;
   }
 
-  let corpo;
   if (agrupar) {
+    // Uma janela por empresa, e dentro dela o pessoal de campo separado do
+    // administrativo — que faz um trabalho totalmente diferente.
     const empresas = [...new Set(lista.map((u) => u.empresa || 'DISO'))].sort();
-    corpo = empresas
-      .map((e) => {
-        const doGrupo = lista.filter((u) => (u.empresa || 'DISO') === e);
-        const ativos = doGrupo.filter((u) => u.ativo).length;
-        return (
-          `<tr class="grupo-empresa"><td colspan="8">
-             ${escapar(e)} — ${doGrupo.length} pessoa(s), ${ativos} ativa(s)
-           </td></tr>` + doGrupo.map(linhaUsuario).join('')
-        );
-      })
+    $('lista-usuarios').innerHTML = empresas
+      .map((e) => janelaDaEmpresa(e, lista.filter((u) => (u.empresa || 'DISO') === e)))
       .join('');
   } else {
-    corpo = lista.map(linhaUsuario).join('');
+    $('lista-usuarios').innerHTML = `
+      <div class="cartao">
+        <h2>Todos os cadastrados</h2>
+        ${tabelaDeUsuarios(lista)}
+      </div>`;
   }
 
-  $('lista-usuarios').innerHTML = `
-    <table>
-      <thead><tr>
-        <th>Nome</th><th>Empresa</th><th>Função</th><th>Login</th><th>Placas</th>
-        <th class="num">Arquivos</th><th>Situação</th><th></th>
-      </tr></thead>
-      <tbody>${corpo}</tbody>
-    </table>`;
-
   ligarBotoesDeUsuario();
+}
+
+// As tres frentes. Um vendedor e um Adm DISO nao tem nada a ver um com o outro,
+// entao nao faz sentido aparecerem na mesma lista.
+const SECOES = [
+  { titulo: 'Vendedores e promotores', funcoes: ['Vendedor', 'Promotor'] },
+  { titulo: 'Supervisores', funcoes: ['Supervisor'] },
+  { titulo: 'Administrativo', funcoes: ['Adm Promotor', 'Adm DISO', 'Adm DSO'] },
+];
+
+function janelaDaEmpresa(empresa, pessoas) {
+  const ativos = pessoas.filter((u) => u.ativo).length;
+  const arquivos = pessoas.reduce((s, u) => s + Number(u.anexos || 0), 0);
+
+  const secoes = SECOES.map((s) => {
+    const doGrupo = pessoas.filter((u) => s.funcoes.includes(u.funcao));
+    if (!doGrupo.length) return '';
+    return `
+      <h3 class="secao">${s.titulo} <span class="n">${doGrupo.length}</span></h3>
+      ${tabelaDeUsuarios(doGrupo)}`;
+  }).join('');
+
+  // Funcao fora das secoes conhecidas nao pode sumir da tela.
+  const conhecidas = SECOES.flatMap((s) => s.funcoes);
+  const sobra = pessoas.filter((u) => !conhecidas.includes(u.funcao));
+  const extra = sobra.length
+    ? `<h3 class="secao">Sem função definida <span class="n">${sobra.length}</span></h3>
+       ${tabelaDeUsuarios(sobra)}`
+    : '';
+
+  return `
+    <div class="cartao empresa-${escapar(empresa)}">
+      <div class="titulo-empresa">
+        <span class="sigla">${escapar(empresa)}</span>
+        <span class="quantos">
+          ${pessoas.length} pessoa(s) · ${ativos} ativa(s) · ${arquivos} arquivo(s)
+        </span>
+      </div>
+      ${secoes}${extra}
+    </div>`;
+}
+
+function tabelaDeUsuarios(lista) {
+  return `
+    <div class="rolagem">
+      <table>
+        <thead><tr>
+          <th>Nome</th><th>Empresa</th><th>Função</th><th>Login</th><th>Placas</th>
+          <th class="num">Arquivos</th><th>Situação</th><th></th>
+        </tr></thead>
+        <tbody>${lista.map(linhaUsuario).join('')}</tbody>
+      </table>
+    </div>`;
 }
 
 function linhaUsuario(u) {

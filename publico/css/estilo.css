@@ -201,6 +201,49 @@ button.pequeno { padding: 7px 12px; font-size: 13px; border-radius: 7px; }
 tr.de-DISO td:first-child { box-shadow: inset 4px 0 0 #1c4e80; }
 tr.de-DSO  td:first-child { box-shadow: inset 4px 0 0 #6b3080; }
 
+/* Cada empresa vira um cartao proprio, com a cor dela na borda de cima. */
+.cartao.empresa-DISO { border-top: 4px solid #1c4e80; }
+.cartao.empresa-DSO  { border-top: 4px solid #6b3080; }
+
+@media (prefers-color-scheme: dark) {
+  .cartao.empresa-DISO { border-top-color: #5b9bd5; }
+  .cartao.empresa-DSO  { border-top-color: #9a5cb8; }
+}
+
+.titulo-empresa {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 4px;
+}
+.titulo-empresa .sigla {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.3px;
+}
+.cartao.empresa-DISO .titulo-empresa .sigla { color: #1c4e80; }
+.cartao.empresa-DSO  .titulo-empresa .sigla { color: #6b3080; }
+@media (prefers-color-scheme: dark) {
+  .cartao.empresa-DISO .titulo-empresa .sigla { color: #7fb3e0; }
+  .cartao.empresa-DSO  .titulo-empresa .sigla { color: #c79ad9; }
+}
+.titulo-empresa .quantos { color: var(--texto-fraco); font-size: 14px; }
+
+/* Secoes dentro do cartao da empresa: vendedores, supervisores, adm. */
+.secao {
+  margin: 20px 0 8px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+  color: var(--texto-fraco);
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--borda);
+}
+.secao:first-of-type { margin-top: 12px; }
+.secao .n { color: var(--marca); }
+
 .grupo-empresa td {
   background: var(--superficie-2);
   font-weight: 800;
