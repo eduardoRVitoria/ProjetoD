@@ -294,6 +294,67 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null) {
     );
   }
 
+  // O KM digitado junto de cada foto permite conferir o painel contra o
+  // relatorio sem ninguem abrir imagem nenhuma.
+  const leituras = fotos
+    .map((f) => Number(f.km))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .sort((a, b) => a - b);
+
+  if (leituras.length && linhas.length) {
+    const kms = linhas
+      .flatMap((l) => [Number(l.km_inicial), Number(l.km_final)])
+      .filter((n) => Number.isFinite(n) && n > 0);
+
+    if (kms.length) {
+      const menorRdv = Math.min(...kms);
+      const maiorRdv = Math.max(...kms);
+      const TOLERANCIA = 50; // o painel anda entre a foto e o primeiro registro
+
+      const abaixo = leituras.filter((n) => n < menorRdv - TOLERANCIA);
+      const acima = leituras.filter((n) => n > maiorRdv + TOLERANCIA);
+
+      if (abaixo.length || acima.length) {
+        const fora = [...abaixo, ...acima];
+        achados.push(
+          achado(
+            'erro',
+            'odometro_fora_do_rdv',
+            `${fora.length} leitura(s) de odometro nao batem com o relatorio: ` +
+              `${fora.map((n) => n.toLocaleString('pt-BR')).join(', ')} km, ` +
+              `enquanto o RDV vai de ${menorRdv.toLocaleString('pt-BR')} a ${maiorRdv.toLocaleString('pt-BR')} km.`,
+          ),
+        );
+      }
+
+      // A diferenca entre a menor e a maior leitura tem que caber no mes.
+      if (leituras.length >= 2) {
+        const rodadoNasFotos = leituras[leituras.length - 1] - leituras[0];
+        if (rodadoNasFotos > totalKm + TOLERANCIA) {
+          achados.push(
+            achado(
+              'aviso',
+              'odometro_alem_do_declarado',
+              `Entre a primeira e a ultima foto o painel andou ${rodadoNasFotos.toLocaleString('pt-BR')} km, ` +
+                `mas o relatorio declara ${totalKm.toLocaleString('pt-BR')} km no mes.`,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  const fotosSemKm = fotos.filter((f) => !Number.isFinite(Number(f.km)) || Number(f.km) <= 0);
+  if (fotosSemKm.length) {
+    achados.push(
+      achado(
+        'aviso',
+        'odometro_sem_km',
+        `${fotosSemKm.length} foto(s) de odometro foram enviadas sem o KM digitado.`,
+      ),
+    );
+  }
+
   // ------------------------------------------- 8. aumento sobre o mes anterior
   // O que a empresa desembolsa: o valor dos km mais pedagio e estacionamento.
   const totalDoMes = Number((valorKm + declarado).toFixed(2));

@@ -93,7 +93,7 @@ const servidor = http.createServer(async (req, res) => {
         res.writeHead(302, { Location: '/' });
         return res.end();
       }
-      if (rota === '/admin.html' && usuario.papel !== 'admin') {
+      if (rota === '/admin.html' && !['admin', 'super'].includes(usuario.papel)) {
         res.writeHead(302, { Location: '/app.html' });
         return res.end();
       }

@@ -74,7 +74,8 @@ try {
 } catch { /* sem sessao, mostra o login mesmo */ }
 
 function irPraDentro(usuario) {
-  location.href = usuario.papel === 'admin' ? '/admin.html' : '/app.html';
+  const confere = usuario.papel === 'admin' || usuario.papel === 'super';
+  location.href = confere ? '/admin.html' : '/app.html';
 }
 
 form.addEventListener('submit', async (ev) => {

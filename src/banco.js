@@ -120,6 +120,14 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     db.exec('ALTER TABLE relatorios ADD COLUMN justificativa TEXT');
   }
 
+  const colAnexos = new Set(db.prepare('PRAGMA table_info(anexos)').all().map((c) => c.name));
+  if (!colAnexos.has('km')) {
+    // Leitura do odometro que o colaborador digita junto com a foto.
+    // A foto sozinha nao da para conferir sem alguem ler o numero na mao.
+    db.exec('ALTER TABLE anexos ADD COLUMN km REAL');
+    db.exec('ALTER TABLE anexos ADD COLUMN data_leitura TEXT');
+  }
+
   const colUsuarios = new Set(db.prepare('PRAGMA table_info(usuarios)').all().map((c) => c.name));
   if (!colUsuarios.has('empresa')) {
     db.exec("ALTER TABLE usuarios ADD COLUMN empresa TEXT NOT NULL DEFAULT 'DISO'");
@@ -191,3 +199,72 @@ export const agora = () => new Date().toISOString();
 
 // Quanto o mes pode subir em relacao ao anterior sem precisar de explicacao.
 export const MARGEM_AUMENTO = 200;
+
+// ------------------------------------------------------------------- perfis
+//
+//   colaborador : envia o proprio RDV.
+//   admin       : confere, mas SO da propria empresa. Nao cria outro admin.
+//   super       : ve e faz tudo, nas duas empresas.
+//
+// A regra vale no servidor, nao na tela: esconder botao nao impede ninguem de
+// chamar a API na mao.
+
+export const PAPEIS = ['colaborador', 'admin', 'super'];
+
+export const ehSuper = (u) => u?.papel === 'super';
+export const ehAdmin = (u) => u?.papel === 'admin' || u?.papel === 'super';
+
+/**
+ * O que este usuario alcanca. `null` = tudo.
+ * O recorte tem duas dimensoes, porque o Adm Promotor cruza as empresas:
+ *   Adm DISO     -> empresa DISO, qualquer funcao
+ *   Adm DSO      -> empresa DSO, qualquer funcao
+ *   Adm Promotor -> as duas empresas, mas SO promotores
+ */
+export function escopoDe(u) {
+  if (ehSuper(u)) return null;
+  if (u?.funcao === 'Adm Promotor') {
+    return { empresa: null, funcoes: ['Promotor'], rotulo: 'promotores das duas empresas' };
+  }
+  return { empresa: u?.empresa || null, funcoes: null, rotulo: u?.empresa || 'sua empresa' };
+}
+
+/** Pode enxergar este cadastro (e os relatorios dele)? */
+export function podeVerUsuario(quem, alvo) {
+  if (!alvo) return false;
+  const e = escopoDe(quem);
+  if (!e) return true;
+  if (e.empresa && alvo.empresa !== e.empresa) return false;
+  if (e.funcoes && !e.funcoes.includes(alvo.funcao)) return false;
+  return true;
+}
+
+/** Alem de enxergar, pode alterar? Admin nao mexe em admin nem em super. */
+export function podeMexerNoUsuario(quem, alvo) {
+  if (!alvo) return false;
+  if (ehSuper(quem)) return true;
+  if (quem.papel !== 'admin') return false;
+  if (!podeVerUsuario(quem, alvo)) return false;
+  return alvo.papel === 'colaborador';
+}
+
+/**
+ * Devolve o pedaco de SQL e os argumentos que aplicam o escopo numa consulta
+ * onde a tabela usuarios esta como `u`.
+ */
+export function filtroSql(quem) {
+  const e = escopoDe(quem);
+  if (!e) return { sql: '', args: [] };
+
+  const partes = [];
+  const args = [];
+  if (e.empresa) {
+    partes.push('u.empresa = ?');
+    args.push(e.empresa);
+  }
+  if (e.funcoes?.length) {
+    partes.push(`u.funcao IN (${e.funcoes.map(() => '?').join(', ')})`);
+    args.push(...e.funcoes);
+  }
+  return { sql: partes.length ? `AND ${partes.join(' AND ')}` : '', args };
+}

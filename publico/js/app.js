@@ -403,6 +403,13 @@ function desenharAnexos() {
         <span class="nome"><a href="/api/anexo/${a.id}" target="_blank" rel="noopener">${escapar(
           a.nome_original,
         )}</a></span>
+        ${
+          a.km
+            ? `<span class="selo CERTA">${numeroBr(a.km)} km${
+                a.data_leitura ? ` · ${dataBr(a.data_leitura)}` : ''
+              }</span>`
+            : ''
+        }
         <span class="peso">${tamanhoBr(a.tamanho)}</span>
         ${
           estado.relatorio.editavel
@@ -451,13 +458,27 @@ seletor.addEventListener('change', () => {
 
 async function enviarArquivos(arquivos) {
   if (!arquivos.length || !tipoEmUso) return;
+
+  // Foto de odometro vai junto com o numero do painel. Sem isso a foto so
+  // serve para alguem abrir e ler na mao depois.
+  const extras = new Map();
+  if (tipoEmUso === 'odometro') {
+    for (const arquivo of arquivos) {
+      const km = await pedirKm(arquivo);
+      if (km === null) {
+        return mostrarRecado('recado', 'Envio cancelado — a foto do odômetro precisa do KM.', 'atencao');
+      }
+      extras.set(arquivo, km);
+    }
+  }
+
   mostrarRecado('recado', `Enviando ${arquivos.length} arquivo(s)...`, 'info');
   try {
     for (const arquivo of arquivos) {
       if (arquivo.size === 0) {
         throw new Error(`"${arquivo.name}" está vazio (0 KB). Tente gerar o arquivo de novo.`);
       }
-      const r = await subirArquivo(arquivo, { mes, tipo: tipoEmUso });
+      const r = await subirArquivo(arquivo, { mes, tipo: tipoEmUso, ...(extras.get(arquivo) || {}) });
       estado.anexos = r.anexos;
     }
     desenharAnexos();
@@ -467,6 +488,61 @@ async function enviarArquivos(arquivos) {
   } catch (e) {
     mostrarRecado('recado', e.message, 'erro');
   }
+}
+
+// Caixa que mostra a foto escolhida e pede o numero do painel e o dia.
+// Ver a imagem na hora de digitar evita o erro bobo de trocar as fotos.
+function pedirKm(arquivo) {
+  return new Promise((resolve) => {
+    const fundo = document.createElement('div');
+    fundo.className = 'fundo-modal';
+    fundo.innerHTML = `
+      <div class="modal" style="max-width:460px">
+        <h2>Qual o KM desta foto?</h2>
+        <p class="sub">${escapar(arquivo.name)}</p>
+        <img alt="foto do odômetro" id="previa-foto"
+             style="width:100%; max-height:300px; object-fit:contain; border-radius:10px;
+                    background:var(--superficie-2); margin-bottom:14px">
+        <div id="recado-km"></div>
+        <label for="km-foto">KM que aparece no painel</label>
+        <input type="number" id="km-foto" inputmode="numeric" step="1" min="1"
+               placeholder="ex.: 271368" autocomplete="off">
+        <label for="data-foto">Dia da foto</label>
+        <input type="date" id="data-foto" value="${new Date().toISOString().slice(0, 10)}">
+        <div class="linha-botoes">
+          <button id="km-ok">Anexar</button>
+          <button class="secundario" id="km-cancela">Cancelar</button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(fundo);
+
+    const url = URL.createObjectURL(arquivo);
+    fundo.querySelector('#previa-foto').src = url;
+
+    const campo = fundo.querySelector('#km-foto');
+    campo.focus();
+
+    const fechar = (valor) => {
+      URL.revokeObjectURL(url);
+      fundo.remove();
+      resolve(valor);
+    };
+
+    const confirmar = () => {
+      const km = Number(campo.value);
+      if (!Number.isFinite(km) || km <= 0) {
+        return mostrarRecado('recado-km', 'Digite o número que aparece no painel.', 'erro');
+      }
+      fechar({ km, data: fundo.querySelector('#data-foto').value || undefined });
+    };
+
+    fundo.querySelector('#km-ok').addEventListener('click', confirmar);
+    fundo.querySelector('#km-cancela').addEventListener('click', () => fechar(null));
+    campo.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') confirmar();
+    });
+  });
 }
 
 async function apagarAnexo(id) {

@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import {
   db, agora, valorDoKm, lerConfig, gravarConfig, PASTA_ANEXOS,
   EMPRESAS, FUNCOES, cracha, empresaDaFuncao,
+  PAPEIS, ehSuper, ehAdmin, escopoDe, podeMexerNoUsuario, podeVerUsuario, filtroSql,
 } from './banco.js';
 import {
   autenticar,
@@ -70,24 +71,39 @@ export async function tratarApi(req, res, url, usuario, seguro) {
 
   // --- area do administrador ---
   if (rota.startsWith('/api/admin/')) {
-    if (usuario.papel !== 'admin') return erro(res, 'Area restrita ao administrador.', 403);
+    if (!ehAdmin(usuario)) return erro(res, 'Area restrita ao administrador.', 403);
 
-    if (rota === '/api/admin/painel' && metodo === 'GET') return painel(res, url);
-    if (rota === '/api/admin/relatorio' && metodo === 'GET') return relatorioDetalhe(res, url);
+    // Ajustes que valem para as duas empresas ficam so com quem ve tudo.
+    const soSuper = [
+      '/api/admin/config',
+      '/api/admin/backup',
+      '/api/admin/restaurar',
+      '/api/admin/dados',
+    ];
+    if (soSuper.includes(rota) && !ehSuper(usuario)) {
+      return erro(
+        res,
+        'Essa area e restrita. Fale com o Eduardo Ramos ou o Victor Sarmento.',
+        403,
+      );
+    }
+
+    if (rota === '/api/admin/painel' && metodo === 'GET') return painel(res, url, usuario);
+    if (rota === '/api/admin/relatorio' && metodo === 'GET') return relatorioDetalhe(res, url, usuario);
     if (rota === '/api/admin/conferir' && metodo === 'POST') return conferirUm(req, res, usuario);
     if (rota === '/api/admin/decidir' && metodo === 'POST') return decidir(req, res, usuario);
-    if (rota === '/api/admin/galeria' && metodo === 'GET') return verGaleria(res, url);
-    if (rota === '/api/admin/pacote' && metodo === 'GET') return baixarPacote(res, url);
-    if (rota === '/api/admin/usuarios' && metodo === 'GET') return listarUsuarios(res);
-    if (rota === '/api/admin/usuarios' && metodo === 'POST') return novoUsuario(req, res);
-    if (rota === '/api/admin/usuario-senha' && metodo === 'POST') return resetarSenha(req, res);
-    if (rota === '/api/admin/usuario-ativo' && metodo === 'POST') return ativarUsuario(req, res);
-    if (rota === '/api/admin/usuario-empresa' && metodo === 'POST') return mudarEmpresa(req, res);
+    if (rota === '/api/admin/galeria' && metodo === 'GET') return verGaleria(res, url, usuario);
+    if (rota === '/api/admin/pacote' && metodo === 'GET') return baixarPacote(res, url, usuario);
+    if (rota === '/api/admin/usuarios' && metodo === 'GET') return listarUsuarios(res, usuario);
+    if (rota === '/api/admin/usuarios' && metodo === 'POST') return novoUsuario(req, res, usuario);
+    if (rota === '/api/admin/usuario-senha' && metodo === 'POST') return resetarSenha(req, res, usuario);
+    if (rota === '/api/admin/usuario-ativo' && metodo === 'POST') return ativarUsuario(req, res, usuario);
+    if (rota === '/api/admin/usuario-empresa' && metodo === 'POST') return mudarEmpresa(req, res, usuario);
     if (rota === '/api/admin/usuario' && metodo === 'DELETE') return excluirUsuario(req, res, usuario);
-    if (rota === '/api/admin/historico' && metodo === 'GET') return exportarHistorico(res, url);
+    if (rota === '/api/admin/historico' && metodo === 'GET') return exportarHistorico(res, url, usuario);
     if (rota === '/api/admin/config' && metodo === 'GET') return pegarConfig(res);
     if (rota === '/api/admin/config' && metodo === 'POST') return salvarConfig(req, res);
-    if (rota === '/api/admin/exportar' && metodo === 'GET') return exportarCsv(res, url);
+    if (rota === '/api/admin/exportar' && metodo === 'GET') return exportarCsv(res, url, usuario);
     if (rota === '/api/admin/backup' && metodo === 'GET') return baixarBackup(res);
     if (rota === '/api/admin/restaurar' && metodo === 'POST') return subirBackup(req, res);
     if (rota === '/api/admin/dados' && metodo === 'GET') return responderJson(res, resumoDosDados());
@@ -124,6 +140,9 @@ function eu(res, usuario) {
     valor_km: valorDoKm(),
     ia_disponivel: iaDisponivel(),
     mes_atual: mesAtual(),
+    // A tela usa isto para mostrar so o que a pessoa pode fazer.
+    escopo: escopoDe(usuario),
+    pode_tudo: ehSuper(usuario),
   });
 }
 
@@ -142,6 +161,9 @@ const publico = (u) => ({
   nome: u.nome,
   email: u.email,
   papel: u.papel,
+  empresa: u.empresa,
+  funcao: u.funcao,
+  cracha: cracha(u.empresa, u.funcao),
   placas: u.placas,
   trocar_senha: Boolean(u.trocar_senha),
 });
@@ -195,7 +217,8 @@ function linhasDo(relId) {
 function anexosDo(relId) {
   return db
     .prepare(
-      'SELECT id, tipo, nome_original, mime, tamanho, enviado_em FROM anexos WHERE relatorio_id = ? ORDER BY tipo, id',
+      `SELECT id, tipo, nome_original, mime, tamanho, km, data_leitura, enviado_em
+         FROM anexos WHERE relatorio_id = ? ORDER BY tipo, km, id`,
     )
     .all(relId);
 }
@@ -531,9 +554,27 @@ async function subirAnexo(req, res, url, usuario) {
   const mes = url.searchParams.get('mes');
   const tipo = url.searchParams.get('tipo');
   const nomeBruto = url.searchParams.get('nome') || 'arquivo';
+  const kmBruto = url.searchParams.get('km');
+  const dataLeitura = url.searchParams.get('data');
 
   if (!mesValido(mes)) return erro(res, 'Mes invalido.');
   if (!TIPOS_DE_ANEXO.has(tipo)) return erro(res, 'Tipo de anexo invalido.');
+
+  // Foto de odometro sem o numero digitado nao serve para conferir nada:
+  // alguem teria que abrir a imagem e ler o painel na mao, que e o trabalho
+  // que este sistema existe para acabar.
+  let km = null;
+  if (tipo === 'odometro') {
+    km = numero(kmBruto, NaN);
+    if (!Number.isFinite(km) || km <= 0) {
+      return erro(res, 'Digite o KM que aparece no painel da foto.');
+    }
+    if (km > 9_999_999) return erro(res, 'Esse KM parece alto demais. Confira o numero.');
+  }
+
+  if (dataLeitura && !/^\d{4}-\d{2}-\d{2}$/.test(dataLeitura)) {
+    return erro(res, 'Data da leitura invalida.');
+  }
 
   const rel = acharOuCriar(usuario.id, mes);
   if (!EDITAVEL.has(rel.status)) return erro(res, 'Esse relatorio nao aceita mais anexos.');
@@ -546,8 +587,9 @@ async function subirAnexo(req, res, url, usuario) {
   fs.writeFileSync(path.join(PASTA_ANEXOS, salvo), dados);
 
   db.prepare(
-    `INSERT INTO anexos (relatorio_id, tipo, nome_original, arquivo, mime, tamanho, enviado_em)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO anexos (relatorio_id, tipo, nome_original, arquivo, mime, tamanho,
+                         km, data_leitura, enviado_em)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     rel.id,
     tipo,
@@ -555,6 +597,8 @@ async function subirAnexo(req, res, url, usuario) {
     salvo,
     req.headers['content-type'] || 'application/octet-stream',
     dados.length,
+    km,
+    dataLeitura || null,
     agora(),
   );
 
@@ -566,7 +610,15 @@ function anexoPermitido(id, usuario) {
   if (!a) return null;
   const rel = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(a.relatorio_id);
   if (!rel) return null;
-  if (usuario.papel !== 'admin' && rel.usuario_id !== usuario.id) return null;
+  // O dono sempre pode. Quem confere so pode dentro do proprio recorte -
+  // senao um Adm DISO baixaria o comprovante de alguem da DSO pela URL.
+  if (rel.usuario_id !== usuario.id) {
+    if (!ehAdmin(usuario)) return null;
+    const dono = db
+      .prepare('SELECT empresa, funcao FROM usuarios WHERE id = ?')
+      .get(rel.usuario_id);
+    if (!podeVerUsuario(usuario, dono)) return null;
+  }
   return { anexo: a, rel };
 }
 
@@ -592,7 +644,7 @@ function apagarAnexo(res, rota, usuario) {
   const id = rota.split('/').pop();
   const achado = anexoPermitido(id, usuario);
   if (!achado) return erro(res, 'Anexo nao encontrado.', 404);
-  if (!EDITAVEL.has(achado.rel.status) && usuario.papel !== 'admin') {
+  if (!EDITAVEL.has(achado.rel.status) && !ehAdmin(usuario)) {
     return erro(res, 'Esse relatorio nao pode mais ser alterado.');
   }
 
@@ -607,33 +659,38 @@ function apagarAnexo(res, rota, usuario) {
 
 // ------------------------------------------------------------------- admin
 
-function painel(res, url) {
+function painel(res, url, quem) {
   const mes = url.searchParams.get('mes') || mesAtual();
   if (!mesValido(mes)) return erro(res, 'Mes invalido.');
+
+  // O recorte e no SQL, nao na tela: esconder linha nao impede ninguem de
+  // chamar a API direto.
+  const escopo = escopoDe(quem);
+  const { sql: filtro, args: argsEscopo } = filtroSql(quem);
 
   const linhas = db
     .prepare(
       `SELECT r.*, u.nome, u.login, u.placas, u.empresa, u.funcao
          FROM relatorios r
          JOIN usuarios u ON u.id = r.usuario_id
-        WHERE r.mes_ref = ?
+        WHERE r.mes_ref = ? ${filtro}
         ORDER BY CASE r.status
                    WHEN 'ENVIADO' THEN 0 WHEN 'CONFERINDO' THEN 1 WHEN 'ERRADA' THEN 2
                    WHEN 'SO_FALTA_DANFE' THEN 3 WHEN 'CERTA' THEN 4 ELSE 5 END,
                  u.nome`,
     )
-    .all(mes);
+    .all(mes, ...argsEscopo);
 
   const semEnviar = db
     .prepare(
       `SELECT u.id, u.nome, u.login, u.empresa, u.funcao FROM usuarios u
-        WHERE u.ativo = 1 AND u.papel = 'colaborador'
+        WHERE u.ativo = 1 AND u.papel = 'colaborador' ${filtro}
           AND u.id NOT IN (
             SELECT usuario_id FROM relatorios WHERE mes_ref = ? AND status <> 'RASCUNHO'
           )
         ORDER BY u.nome`,
     )
-    .all(mes);
+    .all(...argsEscopo, mes);
 
   const contagem = {};
   for (const l of linhas) contagem[l.status] = (contagem[l.status] || 0) + 1;
@@ -641,6 +698,7 @@ function painel(res, url) {
   responderJson(res, {
     mes,
     mes_extenso: mesPorExtenso(mes),
+    escopo,
     ia_disponivel: iaDisponivel(),
     contagem,
     nao_enviaram: semEnviar,
@@ -671,15 +729,18 @@ function painel(res, url) {
   });
 }
 
-function relatorioDetalhe(res, url) {
+function relatorioDetalhe(res, url, quem) {
   const id = Number(url.searchParams.get('id'));
   const rel = db
     .prepare(
-      `SELECT r.*, u.nome, u.login, u.placas FROM relatorios r
+      `SELECT r.*, u.nome, u.login, u.placas, u.empresa, u.funcao FROM relatorios r
          JOIN usuarios u ON u.id = r.usuario_id WHERE r.id = ?`,
     )
     .get(id);
   if (!rel) return erro(res, 'Relatorio nao encontrado.', 404);
+  if (!podeVerUsuario(quem, rel)) {
+    return erro(res, 'Esse relatorio e de outra empresa.', 403);
+  }
 
   responderJson(res, {
     relatorio: {
@@ -703,6 +764,10 @@ async function conferirUm(req, res, admin) {
   if (rel.status === 'RASCUNHO') return erro(res, 'Esse relatorio ainda nao foi enviado.');
 
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(rel.usuario_id);
+  if (!podeVerUsuario(admin, usuario)) {
+    return erro(res, 'Esse relatorio e de outra empresa.', 403);
+  }
+
   const linhas = linhasDo(rel.id);
   const anexos = db.prepare('SELECT * FROM anexos WHERE relatorio_id = ?').all(rel.id);
   const vlrKm = valorDoKm();
@@ -809,6 +874,11 @@ async function decidir(req, res, admin) {
   const rel = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(Number(relatorio_id));
   if (!rel) return erro(res, 'Relatorio nao encontrado.', 404);
 
+  const dono = db.prepare('SELECT empresa, funcao FROM usuarios WHERE id = ?').get(rel.usuario_id);
+  if (!podeVerUsuario(admin, dono)) {
+    return erro(res, 'Esse relatorio e de outra empresa.', 403);
+  }
+
   db.prepare(
     'UPDATE relatorios SET status = ?, o_que_fazer = ?, conferido_em = ?, decidido_por = ? WHERE id = ?',
   ).run(status, String(o_que_fazer || '').slice(0, 2000), agora(), admin.id, rel.id);
@@ -876,12 +946,15 @@ function conferirAssinatura(rel, anexos, usuario) {
   return { achados, resultado: resultados };
 }
 
-async function exportarHistorico(res, url) {
+async function exportarHistorico(res, url, quem) {
   const id = Number(url.searchParams.get('usuario_id'));
   const usuario = db
     .prepare('SELECT id, nome, login, empresa, funcao, placas FROM usuarios WHERE id = ?')
     .get(id);
   if (!usuario) return erro(res, 'Colaborador nao encontrado.', 404);
+  if (!podeVerUsuario(quem, usuario)) {
+    return erro(res, 'Esse colaborador e de outra empresa.', 403);
+  }
 
   const relatorios = db
     .prepare("SELECT * FROM relatorios WHERE usuario_id = ? AND status <> 'RASCUNHO'")
@@ -918,23 +991,41 @@ async function exportarHistorico(res, url) {
   res.end(dados);
 }
 
-function verGaleria(res, url) {
+// Confere se o admin pode olhar os dados daquele colaborador.
+function alcanca(quem, usuarioId) {
+  const alvo = db.prepare('SELECT empresa, funcao FROM usuarios WHERE id = ?').get(Number(usuarioId));
+  if (!alvo) return null;
+  return podeVerUsuario(quem, alvo) ? alvo : false;
+}
+
+function verGaleria(res, url, quem) {
   const id = Number(url.searchParams.get('usuario_id'));
+  const alvo = alcanca(quem, id);
+  if (alvo === null) return erro(res, 'Colaborador nao encontrado.', 404);
+  if (alvo === false) return erro(res, 'Esse colaborador e de outra empresa.', 403);
+
   const g = galeriaDe(id);
   if (!g) return erro(res, 'Colaborador nao encontrado.', 404);
   responderJson(res, g);
 }
 
-function baixarPacote(res, url) {
+function baixarPacote(res, url, quem) {
   const id = Number(url.searchParams.get('usuario_id'));
   const mes = url.searchParams.get('mes');
   if (mes && !mesValido(mes)) return erro(res, 'Mes invalido.');
+
+  const alvo = alcanca(quem, id);
+  if (alvo === null) return erro(res, 'Colaborador nao encontrado.', 404);
+  if (alvo === false) return erro(res, 'Esse colaborador e de outra empresa.', 403);
+
   if (!enviarPacote(res, id, mes || null)) {
     return erro(res, 'Colaborador nao encontrado.', 404);
   }
 }
 
-function listarUsuarios(res) {
+function listarUsuarios(res, quem) {
+  const { sql: filtro, args } = filtroSql(quem);
+
   responderJson(
     res,
     db
@@ -945,21 +1036,27 @@ function listarUsuarios(res) {
                    JOIN relatorios r ON r.id = a.relatorio_id
                   WHERE r.usuario_id = u.id) AS anexos,
                 (SELECT COUNT(*) FROM relatorios r WHERE r.usuario_id = u.id) AS relatorios
-           FROM usuarios u ORDER BY u.papel DESC, u.empresa, u.funcao, u.nome`,
+           FROM usuarios u WHERE 1=1 ${filtro}
+          ORDER BY u.papel DESC, u.empresa, u.funcao, u.nome`,
       )
-      .all()
-      .map((u) => ({ ...u, cracha: cracha(u.empresa, u.funcao) })),
+      .all(...args)
+      .map((u) => ({
+        ...u,
+        cracha: cracha(u.empresa, u.funcao),
+        // A tela precisa saber em quem este admin pode mexer.
+        editavel: podeMexerNoUsuario(quem, u),
+      })),
   );
 }
 
-async function novoUsuario(req, res) {
+async function novoUsuario(req, res, quem) {
   const {
     login, nome, email, papel = 'colaborador', senha, placas,
     empresa = 'DISO', funcao = 'Vendedor',
   } = await lerJson(req);
   if (!login || !nome || !senha) return erro(res, 'Login, nome e senha sao obrigatorios.');
   if (String(senha).length < 6) return erro(res, 'A senha precisa ter pelo menos 6 caracteres.');
-  if (!['colaborador', 'admin'].includes(papel)) return erro(res, 'Papel invalido.');
+  if (!PAPEIS.includes(papel)) return erro(res, 'Perfil invalido.');
   if (!EMPRESAS.includes(empresa)) {
     return erro(res, `Empresa invalida. Use ${EMPRESAS.join(' ou ')}.`);
   }
@@ -969,6 +1066,21 @@ async function novoUsuario(req, res) {
 
   // "Adm DISO" / "Adm DSO" ja dizem a empresa - nao deixa ficar cruzado.
   const empresaFinal = empresaDaFuncao(funcao) || empresa;
+
+  // Quem nao ve tudo so cadastra colaborador, e so dentro do proprio recorte.
+  if (!ehSuper(quem)) {
+    if (papel !== 'colaborador') {
+      return erro(
+        res,
+        'Voce so pode cadastrar colaborador. Para criar um administrador, fale com o Eduardo Ramos ou o Victor Sarmento.',
+        403,
+      );
+    }
+    if (!podeVerUsuario(quem, { empresa: empresaFinal, funcao })) {
+      const e = escopoDe(quem);
+      return erro(res, `Voce so cadastra ${e.rotulo}.`, 403);
+    }
+  }
 
   try {
     const id = criarUsuario({
@@ -981,8 +1093,26 @@ async function novoUsuario(req, res) {
   }
 }
 
-async function mudarEmpresa(req, res) {
+async function mudarEmpresa(req, res, quem) {
   const { usuario_id, empresa, funcao } = await lerJson(req);
+
+  const alvo = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(Number(usuario_id));
+  if (!podeMexerNoUsuario(quem, alvo)) {
+    return erro(res, 'Voce nao pode alterar esse cadastro.', 403);
+  }
+  // A alteracao nao pode empurrar a pessoa para fora do que este admin alcanca -
+  // senao ele "perde" o cadastro que acabou de mexer, e pior, move gente para
+  // um recorte que nao e dele.
+  if (!ehSuper(quem)) {
+    const depois = {
+      empresa: empresaDaFuncao(funcao ?? alvo.funcao) || empresa || alvo.empresa,
+      funcao: funcao ?? alvo.funcao,
+    };
+    if (!podeVerUsuario(quem, depois)) {
+      const e = escopoDe(quem);
+      return erro(res, `Essa mudanca tira a pessoa do seu alcance (${e.rotulo}).`, 403);
+    }
+  }
 
   if (empresa != null) {
     if (!EMPRESAS.includes(empresa)) {
@@ -1008,11 +1138,14 @@ async function mudarEmpresa(req, res) {
   responderJson(res, { ok: true, cracha: u ? cracha(u.empresa, u.funcao) : null });
 }
 
-async function resetarSenha(req, res) {
+async function resetarSenha(req, res, quem) {
   const { usuario_id, senha } = await lerJson(req);
   if (!senha || String(senha).length < 6) return erro(res, 'A senha precisa ter pelo menos 6 caracteres.');
-  const u = db.prepare('SELECT id FROM usuarios WHERE id = ?').get(Number(usuario_id));
+  const u = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(Number(usuario_id));
   if (!u) return erro(res, 'Usuario nao encontrado.', 404);
+  if (!podeMexerNoUsuario(quem, u)) {
+    return erro(res, 'Voce nao pode trocar a senha desse cadastro.', 403);
+  }
   trocarSenha(u.id, String(senha));
   db.prepare('UPDATE usuarios SET trocar_senha = 1 WHERE id = ?').run(u.id);
   responderJson(res, { ok: true });
@@ -1031,7 +1164,17 @@ async function excluirUsuario(req, res, quemPediu) {
     return erro(res, 'Voce nao pode excluir a propria conta.');
   }
 
-  if (alvo.papel === 'admin') {
+  if (!podeMexerNoUsuario(quemPediu, alvo)) {
+    return erro(
+      res,
+      ehSuper(quemPediu)
+        ? 'Nao e possivel excluir esse cadastro.'
+        : 'Voce so exclui colaborador da sua empresa.',
+      403,
+    );
+  }
+
+  if (alvo.papel === 'admin' || alvo.papel === 'super') {
     const admins = db
       .prepare("SELECT COUNT(*) AS n FROM usuarios WHERE papel = 'admin' AND ativo = 1").get().n;
     if (admins <= 1) return erro(res, 'Nao da para excluir o unico administrador.');
@@ -1090,9 +1233,14 @@ async function excluirUsuario(req, res, quemPediu) {
   });
 }
 
-async function ativarUsuario(req, res) {
+async function ativarUsuario(req, res, quem) {
   const { usuario_id, ativo } = await lerJson(req);
-  db.prepare('UPDATE usuarios SET ativo = ? WHERE id = ?').run(ativo ? 1 : 0, Number(usuario_id));
+  const u = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(Number(usuario_id));
+  if (!u) return erro(res, 'Usuario nao encontrado.', 404);
+  if (!podeMexerNoUsuario(quem, u)) {
+    return erro(res, 'Voce nao pode alterar esse cadastro.', 403);
+  }
+  db.prepare('UPDATE usuarios SET ativo = ? WHERE id = ?').run(ativo ? 1 : 0, u.id);
   responderJson(res, { ok: true });
 }
 
@@ -1123,17 +1271,19 @@ async function salvarConfig(req, res) {
   pegarConfig(res);
 }
 
-async function exportarCsv(res, url) {
+async function exportarCsv(res, url, quem) {
   const mes = url.searchParams.get('mes') || mesAtual();
   if (!mesValido(mes)) return erro(res, 'Mes invalido.');
+
+  const { sql: filtro, args: argsEscopo } = filtroSql(quem);
 
   const linhas = db
     .prepare(
       `SELECT r.*, u.nome, u.empresa, u.funcao FROM relatorios r
          JOIN usuarios u ON u.id = r.usuario_id
-        WHERE r.mes_ref = ? AND r.status <> 'RASCUNHO'`,
+        WHERE r.mes_ref = ? AND r.status <> 'RASCUNHO' ${filtro}`,
     )
-    .all(mes);
+    .all(mes, ...argsEscopo);
 
   if (linhas.length === 0) {
     return erro(res, `Nenhum relatorio enviado em ${mesPorExtenso(mes)}.`, 404);

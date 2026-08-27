@@ -28,6 +28,7 @@ function anexosDoColaborador(usuarioId, mes = null) {
   return db
     .prepare(
       `SELECT a.id, a.tipo, a.nome_original, a.arquivo, a.mime, a.tamanho, a.enviado_em,
+              a.km, a.data_leitura,
               r.mes_ref, r.status, r.id AS relatorio_id
          FROM anexos a
          JOIN relatorios r ON r.id = a.relatorio_id
@@ -68,10 +69,15 @@ export function galeriaDe(usuarioId) {
       nome: a.nome_original,
       tamanho: a.tamanho,
       mime: a.mime,
+      km: a.km,
       enviado_em: a.enviado_em,
       // Para odometro vale o dia da FOTO, nao o do upload: quem importou 12
       // fotos de julho num dia so nao quer ver as 12 empilhadas nesse dia.
-      dia: diaDaFoto(a.nome_original, a.mes_ref) || (a.enviado_em ? a.enviado_em.slice(0, 10) : null),
+      // A data digitada pelo colaborador ganha do palpite pelo nome do arquivo.
+      dia:
+        a.data_leitura ||
+        diaDaFoto(a.nome_original, a.mes_ref) ||
+        (a.enviado_em ? a.enviado_em.slice(0, 10) : null),
       imagem: /^image\//.test(a.mime || ''),
     };
     (m[a.tipo] || m.outro).push(item);
@@ -142,7 +148,9 @@ export function enviarPacote(res, usuarioId, mes = null) {
     // Odometro ganha subpasta por dia; o resto fica direto na pasta do tipo.
     const dia =
       a.tipo === 'odometro'
-        ? diaDaFoto(a.nome_original, a.mes_ref) || (a.enviado_em ? a.enviado_em.slice(0, 10) : null)
+        ? a.data_leitura ||
+          diaDaFoto(a.nome_original, a.mes_ref) ||
+          (a.enviado_em ? a.enviado_em.slice(0, 10) : null)
         : null;
     const subDia = dia ? `/${dia}` : '';
 

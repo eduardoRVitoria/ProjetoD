@@ -22,10 +22,12 @@ export async function api(rota, { metodo = 'GET', corpo = null } = {}) {
   return dados;
 }
 
-export async function subirArquivo(arquivo, { mes, tipo }) {
-  const rota = `/api/anexo?mes=${encodeURIComponent(mes)}&tipo=${encodeURIComponent(
+export async function subirArquivo(arquivo, { mes, tipo, km, data }) {
+  let rota = `/api/anexo?mes=${encodeURIComponent(mes)}&tipo=${encodeURIComponent(
     tipo,
   )}&nome=${encodeURIComponent(arquivo.name)}`;
+  if (km != null) rota += `&km=${encodeURIComponent(km)}`;
+  if (data) rota += `&data=${encodeURIComponent(data)}`;
   const resposta = await fetch(rota, {
     method: 'POST',
     headers: { 'Content-Type': arquivo.type || 'application/octet-stream' },
