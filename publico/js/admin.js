@@ -872,6 +872,78 @@ function desenharUsuarios() {
   }
 
   ligarBotoesDeUsuario();
+  ligarMenus($('lista-usuarios'));
+}
+
+// ------------------------------------------------------ menu de tres pontos
+
+// Um menu aberto por vez. Guardar qual esta aberto e mais simples do que varrer
+// a tela procurando menu aberto toda vez que alguem clica em algum lugar.
+let menuAberto = null;
+let menusLigados = false;
+
+function fecharMenu(devolverFoco = false) {
+  if (!menuAberto) return;
+  const { botao, lista } = menuAberto;
+  lista.hidden = true;
+  botao.setAttribute('aria-expanded', 'false');
+  menuAberto = null;
+  if (devolverFoco) botao.focus();
+}
+
+function abrirMenu(botao, lista) {
+  fecharMenu();
+  lista.hidden = false;
+  botao.setAttribute('aria-expanded', 'true');
+  menuAberto = { botao, lista };
+}
+
+function ligarMenus(raiz) {
+  if (!raiz) return;
+
+  for (const botao of raiz.querySelectorAll('.menu-botao')) {
+    const lista = botao.nextElementSibling;
+    if (!lista) continue;
+
+    botao.addEventListener('click', (ev) => {
+      // Sem isto o clique sobe ate o document e fecha o menu que acabou de abrir.
+      ev.stopPropagation();
+      if (menuAberto && menuAberto.botao === botao) fecharMenu();
+      else abrirMenu(botao, lista);
+    });
+
+    botao.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'ArrowDown') return;
+      ev.preventDefault();
+      abrirMenu(botao, lista);
+      lista.querySelector('[role=menuitem]')?.focus();
+    });
+
+    // Escolheu uma acao: o menu sai da frente e deixa ver o que aconteceu.
+    lista.addEventListener('click', () => fecharMenu());
+
+    lista.addEventListener('keydown', (ev) => {
+      const itens = [...lista.querySelectorAll('[role=menuitem]')];
+      if (!itens.length) return;
+      const atual = itens.indexOf(document.activeElement);
+      if (ev.key === 'ArrowDown') {
+        ev.preventDefault();
+        itens[(atual + 1) % itens.length].focus();
+      } else if (ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        itens[(atual - 1 + itens.length) % itens.length].focus();
+      }
+    });
+  }
+
+  // Clique fora e Esc valem para a tela inteira, entao sao ligados uma vez so -
+  // a lista e redesenhada a cada mudanca e empilharia um ouvinte por redesenho.
+  if (menusLigados) return;
+  menusLigados = true;
+  document.addEventListener('click', () => fecharMenu());
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') fecharMenu(true);
+  });
 }
 
 function janelaDaEmpresa(empresa, pessoas) {
@@ -906,76 +978,104 @@ function janelaDaEmpresa(empresa, pessoas) {
     </div>`;
 }
 
+// Continua com o nome antigo porque o resto do arquivo chama por ele, mas hoje
+// desenha uma lista de cartoes, nao uma tabela: com 8 colunas a tabela so cabia
+// rolando de lado, e as acoes ocupavam mais espaco que a propria pessoa.
 function tabelaDeUsuarios(lista) {
-  return `
-    <div class="rolagem">
-      <table>
-        <thead><tr>
-          <th>Nome</th><th>Empresa</th><th>Função</th><th>Login</th><th>Placas</th>
-          <th class="num">Arquivos</th><th>Situação</th><th></th>
-        </tr></thead>
-        <tbody>${lista.map(linhaUsuario).join('')}</tbody>
-      </table>
-    </div>`;
+  return `<div class="pessoas">${lista.map(linhaUsuario).join('')}</div>`;
+}
+
+// Duas letras bastam para diferenciar as pessoas na lista.
+function iniciaisDoNome(nome) {
+  const partes = String(nome || '').trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return '?';
+  const primeira = partes[0][0] || '';
+  const ultima = partes.length > 1 ? partes[partes.length - 1][0] : '';
+  return (primeira + ultima).toUpperCase();
 }
 
 function linhaUsuario(u) {
   const ehAdmin = u.papel === 'admin';
+  const empresa = escapar(u.empresa || 'DISO');
+  const nome = escapar(u.nome);
+  const placa = placaParaTela(u.placas);
+
+  // A linha de baixo junta o que identifica a pessoa sem competir com o nome.
+  const secundaria = [escapar(u.login), placa ? escapar(placa) : '', `${u.anexos} arquivo(s)`]
+    .filter(Boolean)
+    .join(' · ');
+
+  const soColaborador =
+    u.papel === 'colaborador'
+      ? `<button role="menuitem" data-galeria="${u.id}">Galeria</button>
+         <button role="menuitem" data-historico="${u.id}"
+                 title="Planilha com todos os meses deste colaborador">Histórico</button>
+         <button role="menuitem" data-pacote="${u.id}"
+                 title="Baixa uma pasta com tudo deste colaborador">Baixar pasta</button>
+         <button role="menuitem" data-imprimir="${u.id}"
+                 title="PDF único com RDV, nota de abastecimento e pedágio do mês, pronto para imprimir">Imprimir mês</button>
+         <div class="menu-risco" role="separator"></div>`
+      : '';
+
   // Desativado fica MARCADO, nao apagado: com 42 pessoas desativadas, esmaecer
   // a linha fazia parecer que elas nao estavam na tela.
-  return `<tr class="de-${escapar(u.empresa || 'DISO')}${u.ativo ? '' : ' inativo'}">
-    <td>
-      ${escapar(u.nome)}${ehAdmin ? ' <span class="selo RASCUNHO">admin</span>' : ''}<br>
-      <span class="emp ${escapar(u.empresa || 'DISO')}">${escapar(u.cracha || '')}</span>
-    </td>
-    <td>
-      <select data-empresa="${u.id}" style="margin:0; padding:5px 8px; font-size:13px; width:auto">
+  return `
+  <div class="pessoa de-${empresa}${u.ativo ? '' : ' inativo'}">
+    <span class="avatar ${empresa}" aria-hidden="true">${escapar(iniciaisDoNome(u.nome))}</span>
+
+    <div class="pessoa-id">
+      <div class="pessoa-nome">
+        ${nome}${ehAdmin ? ' <span class="selo RASCUNHO">admin</span>' : ''}
+      </div>
+      <div class="pessoa-sub">
+        <span class="emp ${empresa}">${escapar(u.cracha || '')}</span>
+        ${secundaria}
+      </div>
+    </div>
+
+    <div class="pessoa-meta">
+      <select data-empresa="${u.id}" aria-label="Empresa de ${nome}">
         ${EMPRESAS.map(
           (e) => `<option value="${e}"${u.empresa === e ? ' selected' : ''}>${e}</option>`,
         ).join('')}
       </select>
-    </td>
-    <td>
-      <select data-funcao="${u.id}" style="margin:0; padding:5px 8px; font-size:13px; width:auto">
+      <select data-funcao="${u.id}" aria-label="Função de ${nome}">
         ${FUNCOES.map(
           (f) => `<option value="${f}"${u.funcao === f ? ' selected' : ''}>${f}</option>`,
         ).join('')}
       </select>
-    </td>
-    <td>${escapar(u.login)}</td>
-    <td>${escapar(placaParaTela(u.placas) || "—")}</td>
-    <td class="num">${u.anexos}</td>
-    <td>${
-      u.ativo
-        ? '<span class="selo CERTA">Ativo</span>'
-        : '<span class="selo ERRADA">Desativado</span>'
-    }</td>
-    <td style="white-space:nowrap">
       ${
-        u.papel === 'colaborador'
-          ? `<button class="pequeno" data-galeria="${u.id}">Galeria</button>
-             <button class="secundario pequeno" data-historico="${u.id}"
-                     title="Planilha com todos os meses deste colaborador">Histórico</button>
-             <button class="secundario pequeno" data-pacote="${u.id}"
-                     title="Baixa uma pasta com tudo deste colaborador">Baixar pasta</button>
-             <button class="secundario pequeno" data-imprimir="${u.id}"
-                     title="PDF único com RDV, nota de abastecimento e pedágio do mês, pronto para imprimir">Imprimir mês</button>`
-          : ''
+        u.ativo
+          ? '<span class="selo CERTA">Ativo</span>'
+          : '<span class="selo ERRADA">Desativado</span>'
       }
-      <button class="secundario pequeno" data-nome="${u.id}"
-              title="Corrige o nome que aparece no painel e nas planilhas.">Editar nome</button>
-      <button class="secundario pequeno" data-placa="${u.id}"
-              title="Corrige a placa, ou apaga o que estiver errado no campo.">Editar placa</button>
-      <button class="secundario pequeno" data-login="${u.id}"
-              title="Corrige o login de acesso. O cadastro e os relatórios continuam os mesmos.">Trocar login</button>
-      <button class="secundario pequeno" data-senha="${u.id}">Nova senha</button>
-      <button class="secundario pequeno" data-ativo="${u.id}" data-valor="${u.ativo ? 0 : 1}">
-        ${u.ativo ? 'Desativar' : 'Reativar'}
+    </div>
+
+    <div class="menu">
+      <button type="button" class="menu-botao" aria-label="Ações de ${nome}"
+              aria-haspopup="true" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/>
+        </svg>
       </button>
-      <button class="perigo pequeno" data-excluir="${u.id}"
-              title="Apaga o colaborador e tudo que ele enviou">Excluir</button>
-    </td>
-  </tr>`;
+      <div class="menu-lista" role="menu" hidden>
+        ${soColaborador}
+        <button role="menuitem" data-nome="${u.id}"
+                title="Corrige o nome que aparece no painel e nas planilhas.">Editar nome</button>
+        <button role="menuitem" data-placa="${u.id}"
+                title="Corrige a placa, ou apaga o que estiver errado no campo.">Editar placa</button>
+        <button role="menuitem" data-login="${u.id}"
+                title="Corrige o login de acesso. O cadastro e os relatórios continuam os mesmos.">Trocar login</button>
+        <button role="menuitem" data-senha="${u.id}">Nova senha</button>
+        <button role="menuitem" data-ativo="${u.id}" data-valor="${u.ativo ? 0 : 1}">
+          ${u.ativo ? 'Desativar' : 'Reativar'}
+        </button>
+        <div class="menu-risco" role="separator"></div>
+        <button role="menuitem" class="menu-perigo" data-excluir="${u.id}"
+                title="Apaga o colaborador e tudo que ele enviou">Excluir</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 function ligarBotoesDeUsuario() {

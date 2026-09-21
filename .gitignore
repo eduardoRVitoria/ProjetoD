@@ -2,3 +2,11 @@ node_modules/
 dados/
 *.log
 .env
+
+# Rede de seguranca: `dados/` ja cobre o caminho normal do banco e dos
+# comprovantes, mas uma copia solta na raiz vazaria nomes, logins e hashes.
+semente/
+*.db
+*.db-wal
+*.db-shm
+*.zip

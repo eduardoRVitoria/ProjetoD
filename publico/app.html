@@ -3,16 +3,54 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1c4e80">
+<meta name="theme-color" content="#ffffff">
 <title>Meu RDV — Portal RDV</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icone.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/css/estilo.css">
 </head>
 <body>
+<div class="apl">
+
+<aside class="lateral">
+  <div class="lateral-marca">
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" rx="16" fill="#6e9438"/>
+      <path d="M14 40h36M20 40V26l6-8h13l6 8v14" stroke="#fff" stroke-width="3.6"
+            fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="24" cy="44" r="4.5" fill="#6e9438" stroke="#fff" stroke-width="3.6"/>
+      <circle cx="42" cy="44" r="4.5" fill="#6e9438" stroke="#fff" stroke-width="3.6"/>
+    </svg>
+    <span>Portal RDV</span>
+  </div>
+
+  <nav class="abas">
+    <button data-aba="lancamentos" class="ativa">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4"/></svg>
+      Meu relatório
+    </button>
+    <button data-aba="comprovantes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/></svg>
+      Comprovantes
+    </button>
+    <button data-aba="conferencia">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>
+      Conferência
+    </button>
+    <button data-aba="historico">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+      Histórico
+    </button>
+  </nav>
+</aside>
+
+<div class="area">
 
 <header class="topo">
-  <h1>Portal RDV</h1>
+  <h1>Meu RDV</h1>
   <div class="quem">
     <div id="meu-nome"></div>
     <button class="link" id="botao-sair" style="margin-top:4px">Sair</button>
@@ -31,13 +69,6 @@
       <div id="selo-status"></div>
     </div>
     <div id="painel-status" style="margin-top:14px"></div>
-  </div>
-
-  <div class="abas">
-    <button data-aba="lancamentos" class="ativa">Meu relatório</button>
-    <button data-aba="comprovantes">Comprovantes</button>
-    <button data-aba="conferencia">Conferência</button>
-    <button data-aba="historico">Histórico</button>
   </div>
 
   <!-- ------------------------------------------------------ lancamentos -->
@@ -155,6 +186,9 @@
     </div>
   </section>
 </main>
+
+</div><!-- .area -->
+</div><!-- .apl -->
 
 <div class="rodape-fixo" id="rodape">
   <div class="resumo" id="resumo-rodape"></div>

@@ -3,16 +3,50 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1c4e80">
+<meta name="theme-color" content="#ffffff">
 <title>Conferência — Portal RDV</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icone.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/css/estilo.css">
 </head>
 <body>
+<div class="apl">
 
-<header class="topo">
-  <h1>Portal RDV · Conferência</h1>
+<aside class="lateral">
+  <div class="lateral-marca">
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" rx="16" fill="#6e9438"/>
+      <path d="M14 40h36M20 40V26l6-8h13l6 8v14" stroke="#fff" stroke-width="3.6"
+            fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="24" cy="44" r="4.5" fill="#6e9438" stroke="#fff" stroke-width="3.6"/>
+      <circle cx="42" cy="44" r="4.5" fill="#6e9438" stroke="#fff" stroke-width="3.6"/>
+    </svg>
+    <span>Portal RDV</span>
+  </div>
+
+  <nav class="abas">
+    <button data-aba="painel" class="ativa">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+      Painel do mês
+    </button>
+    <button data-aba="usuarios">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 5.2a3.2 3.2 0 0 1 0 5.6M18 19a5.4 5.4 0 0 0-2.2-4.3"/></svg>
+      Colaboradores
+    </button>
+    <button data-aba="config">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+      Configurações
+    </button>
+  </nav>
+</aside>
+
+<div class="area">
+
+<header class="topo larga">
+  <h1>Conferência</h1>
   <div class="quem">
     <div id="meu-nome"></div>
     <button class="link" id="botao-sair" style="margin-top:4px">Sair</button>
@@ -21,12 +55,6 @@
 
 <main class="conteudo larga">
   <div id="recado"></div>
-
-  <div class="abas">
-    <button data-aba="painel" class="ativa">Painel do mês</button>
-    <button data-aba="usuarios">Colaboradores</button>
-    <button data-aba="config">Configurações</button>
-  </div>
 
   <!-- ----------------------------------------------------------- painel -->
   <section id="aba-painel">
@@ -238,6 +266,9 @@
     </div>
   </section>
 </main>
+
+</div><!-- .area -->
+</div><!-- .apl -->
 
 <script type="module" src="/js/admin.js"></script>
 </body>
