@@ -45,9 +45,14 @@
     <div class="cartao">
       <h2>1. Envie o seu RDV</h2>
       <p class="sub">
-        Anexe o relatório do jeito que você já faz — o PDF, a planilha impressa em PDF
-        ou uma foto nítida. Não precisa digitar nada: o sistema lê a tabela sozinho.
+        Anexe o relatório em <strong>PDF</strong>. Não precisa digitar nada: o
+        sistema lê a tabela sozinho.
       </p>
+      <div class="aviso atencao" style="margin-bottom:12px">
+        <strong>Mande o RDV em PDF, não em Excel.</strong><br>
+        A planilha não pode ser conferida junto dos comprovantes — só o PDF
+        permite isso. No Excel: <strong>Arquivo → Salvar como → PDF</strong>.
+      </div>
       <div class="solta" data-tipo="rdv">Toque para escolher o arquivo do seu RDV</div>
       <div id="lista-rdv" style="margin-top:12px"></div>
       <div class="linha-botoes" style="margin-top:14px">
@@ -70,17 +75,6 @@
         Mostrar só os dias que têm lançamento
       </label>
       <div id="grade"></div>
-    </div>
-
-    <div class="cartao" id="cartao-justificativa" style="display:none">
-      <h2>Justificativa do aumento</h2>
-      <div id="comparacao-mes"></div>
-      <label for="justificativa">Por que este mês ficou mais caro?</label>
-      <textarea id="justificativa"
-        placeholder="Ex.: assumi a rota do litoral em substituição a um colega afastado, com três viagens a Santos no mês."></textarea>
-      <p class="sub" style="margin:0">
-        Escreva pelo menos uma frase explicando o motivo. Sem isso não dá para enviar.
-      </p>
     </div>
 
     <div class="cartao">
@@ -140,7 +134,9 @@
       <h2>O que a conferência automática já vê</h2>
       <p class="sub">
         Isso roda enquanto você preenche, antes de enviar. O que estiver em vermelho
-        trava o envio; o que estiver em amarelo é só um alerta.
+        reprova o relatório; o que estiver em amarelo é só um alerta.
+        Onde aparecer o botão <strong>Escrever a justificativa</strong>, é porque a
+        pendência se resolve explicando — clique e escreva ali mesmo, sem sair desta tela.
       </p>
       <div id="achados"></div>
     </div>

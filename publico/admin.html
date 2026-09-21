@@ -37,11 +37,16 @@
           <input type="month" id="mes" style="margin-bottom:0">
         </div>
         <button id="botao-conferir-todos">Conferir os pendentes com IA</button>
+        <button class="secundario" id="botao-reconferir-antigos"
+                title="Roda a conferência de novo nos relatórios deste mês que foram julgados por regras anteriores às de hoje">Reconferir os com regras antigas</button>
         <button class="secundario" id="botao-demo">Testar em modo demonstração</button>
         <button class="secundario" id="botao-exportar">Baixar planilha</button>
+        <button class="secundario" id="botao-imprimir-mes"
+                title="PDF único com o RDV, a nota de abastecimento e o comprovante de pedágio de todo mundo neste mês">Imprimir comprovantes do mês</button>
       </div>
       <div id="status-ia" style="margin-top:14px"></div>
       <div class="numeros" id="contagem" style="margin-top:14px"></div>
+      <p class="sub" id="atualizado-em" style="margin:10px 0 0"></p>
     </div>
 
     <div class="cartao">
@@ -59,6 +64,7 @@
           <option value="">Todas as empresas</option>
           <option value="DISO">DISO</option>
           <option value="DSO">DSO</option>
+          <option value="PROMOTORES">PROMOTORES</option>
         </select>
         <select id="f-funcao">
           <option value="">Todas as funções</option>
@@ -116,6 +122,7 @@
           <select id="u-empresa">
             <option value="DISO">DISO</option>
             <option value="DSO">DSO</option>
+            <option value="PROMOTORES">PROMOTORES</option>
           </select>
         </div>
         <div>
@@ -148,6 +155,7 @@
           <option value="">Todas as empresas</option>
           <option value="DISO">DISO</option>
           <option value="DSO">DSO</option>
+          <option value="PROMOTORES">PROMOTORES</option>
         </select>
         <select id="fu-funcao">
           <option value="">Todas as funções</option>
@@ -199,6 +207,33 @@
       <div class="linha-botoes">
         <button id="botao-salvar-chave">Salvar chave</button>
         <button class="secundario" id="botao-limpar-chave">Remover chave</button>
+      </div>
+    </div>
+
+    <div class="cartao" id="cartao-backup">
+      <h2>Backup dos dados</h2>
+      <p class="sub">
+        Baixa um arquivo <code>.zip</code> com o banco inteiro e todos os comprovantes.
+        Guarde essa cópia fora do servidor — num pendrive, no seu computador ou na nuvem.
+        É o que traz tudo de volta se o servidor for perdido.
+      </p>
+
+      <div id="resumo-backup" class="sub"></div>
+      <div id="recado-backup"></div>
+
+      <div class="linha-botoes">
+        <button id="botao-baixar-backup">Baixar backup agora</button>
+      </div>
+
+      <h3 style="margin-top:24px">Restaurar</h3>
+      <p class="sub">
+        Envia um backup de volta para o servidor. <strong>Substitui tudo</strong> que está
+        aqui hoje: os colaboradores, os relatórios e os anexos passam a ser os do arquivo.
+        Só use para recuperar uma perda.
+      </p>
+      <input type="file" id="arquivo-restaurar" accept=".zip,application/zip" style="margin-bottom:12px">
+      <div class="linha-botoes">
+        <button class="perigo" id="botao-restaurar">Restaurar deste arquivo</button>
       </div>
     </div>
   </section>

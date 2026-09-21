@@ -20,4 +20,6 @@ RUN mkdir -p /dados/anexos
 
 EXPOSE 3000
 
-CMD ["node", "servidor.js"]
+# O semear.js roda antes e so age se o disco estiver vazio (primeira subida num
+# volume novo). Com o banco ja no lugar, ele nao faz nada.
+CMD ["sh", "-c", "node src/semear.js && node servidor.js"]

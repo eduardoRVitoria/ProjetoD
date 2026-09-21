@@ -10,7 +10,11 @@ const aqui = path.dirname(fileURLToPath(import.meta.url));
 
 // Em producao (Railway/Render) o disco persistente e montado num caminho proprio
 // e vem por DADOS_DIR. Sem a variavel, usa a pasta local do projeto.
-export const PASTA_DADOS = process.env.DADOS_DIR || path.join(aqui, '..', 'dados');
+// O `resolve` nao e enfeite: o valor vem de fora e pode chegar com barra
+// trocada ou caminho relativo. Quem compara este texto com o resultado de um
+// path.join - a guarda que impede um zip de escrever fora da pasta - so acerta
+// se os dois estiverem escritos do mesmo jeito.
+export const PASTA_DADOS = path.resolve(process.env.DADOS_DIR || path.join(aqui, '..', 'dados'));
 export const PASTA_ANEXOS = path.join(PASTA_DADOS, 'anexos');
 
 fs.mkdirSync(PASTA_ANEXOS, { recursive: true });
@@ -119,6 +123,21 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     // Explicacao do colaborador quando o mes vem mais caro que o anterior
     db.exec('ALTER TABLE relatorios ADD COLUMN justificativa TEXT');
   }
+  if (!colunas.has('versao_regras')) {
+    // Em que versao das regras este parecer foi julgado. NULL = antes de o
+    // controle existir, ou seja, antigo - que e a verdade.
+    db.exec('ALTER TABLE relatorios ADD COLUMN versao_regras INTEGER');
+  }
+
+  const colLinhas = new Set(db.prepare('PRAGMA table_info(linhas)').all().map((c) => c.name));
+  if (!colLinhas.has('hora_pedagio')) {
+    // Hora da passagem mais tarde do dia, e o porque dela quando passa das 18h.
+    //
+    // A grade tem um valor de pedagio por dia, nao passagem a passagem, entao a
+    // hora tambem e uma so - e a que interessa para esta regra e a ultima.
+    db.exec('ALTER TABLE linhas ADD COLUMN hora_pedagio TEXT');
+    db.exec('ALTER TABLE linhas ADD COLUMN justificativa_hora TEXT');
+  }
 
   const colAnexos = new Set(db.prepare('PRAGMA table_info(anexos)').all().map((c) => c.name));
   if (!colAnexos.has('km')) {
@@ -131,12 +150,28 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
   // Eduardo Ramos e Victor Sarmento sao os unicos que veem e fazem tudo.
   // Fica aqui, e nao num script solto, para valer sozinho a cada publicacao -
   // inclusive se alguem for recadastrado depois.
-  const SUPERS = ['EDUARDO RAMOS', 'VICTOR SARMENTO'];
+  // O login e o criterio firme: nao muda quando alguem corrige o nome no
+  // cadastro. O nome fica como rede de seguranca, e casa por primeiro+ultimo
+  // para aguentar nome do meio ("Eduardo Vitoria Ramos" continua valendo).
+  const SUPERS_LOGIN = ['admin', 'victoradm'];
+  const SUPERS_NOME = [['EDUARDO', 'RAMOS'], ['VICTOR', 'SARMENTO']];
+
   const semAcento = (s) =>
     String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toUpperCase();
 
-  for (const u of db.prepare("SELECT id, nome, papel FROM usuarios WHERE papel <> 'super'").all()) {
-    if (SUPERS.includes(semAcento(u.nome))) {
+  const ehUmDosDonos = (u) => {
+    if (SUPERS_LOGIN.includes(String(u.login || '').trim().toLowerCase())) return true;
+    const partes = semAcento(u.nome).split(/\s+/).filter(Boolean);
+    if (!partes.length) return false;
+    return SUPERS_NOME.some(
+      ([primeiro, ultimo]) => partes[0] === primeiro && partes[partes.length - 1] === ultimo,
+    );
+  };
+
+  for (const u of db
+    .prepare("SELECT id, login, nome, papel FROM usuarios WHERE papel <> 'super'")
+    .all()) {
+    if (ehUmDosDonos(u)) {
       db.prepare("UPDATE usuarios SET papel = 'super' WHERE id = ?").run(u.id);
     }
   }
@@ -150,8 +185,9 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
   }
 }
 
-// As duas empresas do grupo.
-export const EMPRESAS = ['DISO', 'DSO'];
+// As frentes do grupo. PROMOTORES e uma janela propria: todo promotor mora la,
+// e nao dentro da DISO ou da DSO.
+export const EMPRESAS = ['DISO', 'DSO', 'PROMOTORES'];
 
 // A funcao entra junto da empresa e vira a sigla: DISO (V), DSO (P).
 // As funcoes administrativas ja trazem a empresa no nome, entao aparecem
@@ -167,9 +203,17 @@ export const SIGLA_FUNCAO = {
   'Adm Promotor': 'AP',
 };
 
-// Funcao administrativa manda na empresa: "Adm DSO" nao pode ficar na DISO.
-export const empresaDaFuncao = (funcao) =>
-  funcao === 'Adm DISO' ? 'DISO' : funcao === 'Adm DSO' ? 'DSO' : null;
+// A funcao manda na empresa quando ela ja diz de qual frente e: "Adm DSO" nao
+// pode ficar na DISO, e promotor (e quem administra promotor) mora sempre na
+// janela PROMOTORES.
+const EMPRESA_DA_FUNCAO = {
+  'Adm DISO': 'DISO',
+  'Adm DSO': 'DSO',
+  'Adm Promotor': 'PROMOTORES',
+  Promotor: 'PROMOTORES',
+};
+
+export const empresaDaFuncao = (funcao) => EMPRESA_DA_FUNCAO[funcao] || null;
 
 // "Adm DISO" e "Adm DSO" ja dizem a empresa, entao aparecem inteiras.
 // As demais viram sigla ao lado da empresa: DISO (V), DSO (AP).
@@ -228,17 +272,18 @@ export const ehSuper = (u) => u?.papel === 'super';
 export const ehAdmin = (u) => u?.papel === 'admin' || u?.papel === 'super';
 
 /**
- * O que este usuario alcanca. `null` = tudo.
- * O recorte tem duas dimensoes, porque o Adm Promotor cruza as empresas:
- *   Adm DISO     -> empresa DISO, qualquer funcao
- *   Adm DSO      -> empresa DSO, qualquer funcao
- *   Adm Promotor -> as duas empresas, mas SO promotores
+ * O que este usuario alcanca. `null` = tudo, e so o super tem isso.
+ * Cada administrativo fica preso a propria janela:
+ *   Adm DISO     -> empresa DISO
+ *   Adm DSO      -> empresa DSO
+ *   Adm Promotor -> empresa PROMOTORES, onde moram todos os promotores
+ *
+ * O recorte por funcao (`funcoes`) continua valendo no filtro e na checagem,
+ * mas hoje ninguem usa: desde que PROMOTORES virou empresa, separar por
+ * empresa ja da conta.
  */
 export function escopoDe(u) {
   if (ehSuper(u)) return null;
-  if (u?.funcao === 'Adm Promotor') {
-    return { empresa: null, funcoes: ['Promotor'], rotulo: 'promotores das duas empresas' };
-  }
   return { empresa: u?.empresa || null, funcoes: null, rotulo: u?.empresa || 'sua empresa' };
 }
 

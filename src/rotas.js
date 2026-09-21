@@ -17,18 +17,28 @@ import {
   cookieDeSessao,
   cookieDeSaida,
 } from './auth.js';
-import { conferir } from './conferencia.js';
-import { conferirComIa, iaDisponivel } from './ia.js';
+import { checarSaude } from './saude.js';
+import {
+  conferir,
+  diferencaDePedagio as achadoDeDiferenca,
+  passagensSemExplicacao,
+  VERSAO_REGRAS,
+} from './conferencia.js';
+import { conferirComIa, iaDisponivel, textoDosIgnorados } from './ia.js';
 import { conferirEmDemo } from './ia-demo.js';
 import { gerarPlanilha, gerarHistorico } from './planilha.js';
 import { enviarBackup, restaurarBackup, resumoDosDados } from './backup.js';
-import { extrairDoRdv } from './extrair.js';
+import { montarImpressao } from './impressao.js';
+import { extrairDoRdv, motivoDeNaoConseguirLer } from './extrair.js';
+import * as log from './log.js';
 import { verificarAssinatura, achadosDaAssinatura } from './assinatura.js';
 import { galeriaDe, enviarPacote } from './galeria.js';
 import { nomeDoFeriado, fimDeSemana, diaDaSemana } from './feriados.js';
+import { REGRAS, checar, registrar, limpar, recadoDeEspera } from './limite.js';
 import {
   responderJson,
   erro,
+  ipDoPedido,
   lerJson,
   lerCorpo,
   numero,
@@ -37,11 +47,40 @@ import {
   diasDoMes,
   mesPorExtenso,
   nomeDeArquivoSeguro,
-  ROTULO_STATUS,
+  ROTULO_STATUS, listaDeJson, textoDaIa, placaLimpa,
 } from './util.js';
 
 const TIPOS_DE_ANEXO = new Set(['rdv', 'pedagio', 'danfe', 'odometro', 'outro']);
-const EDITAVEL = new Set(['RASCUNHO', 'ERRADA', 'SO_FALTA_DANFE']);
+// Mexer no RDV e enviar. Depois que o relatorio sai da mao da pessoa, so volta
+// a abrir se a conferencia REPROVAR - e ai ela corrige o que foi apontado.
+//
+// "So falta DANFE" ficou de fora de proposito: nesse estado o RDV ja foi aceito
+// e o que falta e um documento. Deixar reabrir aqui permitia reescrever
+// quilometragem e itinerario de um relatorio ja conferido, escondido atras de
+// "vou anexar a nota".
+const EDITAVEL = new Set(['RASCUNHO', 'ERRADA']);
+
+// Receber anexo e mais largo que editar: em "So falta DANFE" a pessoa precisa
+// conseguir mandar a nota que faltou, sem poder tocar no resto.
+//
+// ENVIADO entrou aqui depois. Quem acabou de mandar e percebe que anexou o
+// extrato errado ficava de maos atadas: tinha que esperar ser REPROVADO para
+// so entao poder trocar o arquivo. Um ciclo inteiro de conferencia - e uma
+// reprovacao no historico da pessoa - por causa de um anexo trocado.
+//
+// CONFERINDO fica de fora: a IA esta lendo os arquivos naquele instante, e
+// trocar no meio produz parecer sobre arquivo que ja nao existe.
+//
+// CERTA fica de fora: aprovado e aprovado. Deixar trocar comprovante depois da
+// aprovacao desmancha justamente o que foi aprovado.
+const ACEITA_ANEXO = new Set([...EDITAVEL, 'SO_FALTA_DANFE', 'ENVIADO']);
+
+// E, nesse estado, so a nota de abastecimento entra - nao vale trocar o proprio
+// RDV nem as fotos do odometro por baixo dos panos.
+const ANEXO_SO_FALTA_DANFE = new Set(['danfe']);
+
+// Formatos de planilha, recusados no anexo do RDV - ver subirAnexo.
+const PLANILHA = new Set(['.xlsx', '.xlsm', '.xls', '.csv']);
 
 // ---------------------------------------------------------------- despachante
 
@@ -50,6 +89,34 @@ export async function tratarApi(req, res, url, usuario, seguro) {
   const metodo = req.method;
 
   // --- rotas abertas ---
+  // Sem sessao de proposito: e o monitor externo que bate aqui, e ele nao tem
+  // como fazer login. Devolve 503 quando ha problema, porque monitor entende
+  // codigo HTTP - um 200 dizendo "ok:false" no corpo nao dispara alerta nenhum.
+  if (rota === '/api/saude' && metodo === 'GET') {
+    const s = checarSaude();
+    if (!s.ok) log.falha('saude', 'portal com problema', null, { problemas: s.problemas.join('; ') });
+    return responderJson(res, s, s.ok ? 200 : 503);
+  }
+
+  // Teto geral por IP.
+  //
+  // Largo de proposito: doze pessoas com o painel do admin se atualizando de
+  // minuto em minuto ficam muito abaixo de 300 por minuto. Isto e contra
+  // varredura automatica, nao contra gente trabalhando.
+  //
+  // Fica DEPOIS do /api/saude porque quem bate la e o monitor externo. Limitar
+  // ele viraria alarme falso justo quando o portal esta bem - e o alarme so
+  // serve enquanto ninguem aprendeu a ignora-lo.
+  const ip = ipDoPedido(req);
+  const teto = checar(REGRAS.GERAL, ip);
+  if (!teto.ok) {
+    log.aviso('limite', 'teto geral por ip', { ip, esperar: teto.esperarSegundos });
+    return erro(res, recadoDeEspera(teto.esperarSegundos), 429, {
+      'Retry-After': String(teto.esperarSegundos),
+    });
+  }
+  registrar(REGRAS.GERAL, ip);
+
   if (rota === '/api/entrar' && metodo === 'POST') return entrar(req, res, seguro);
   if (rota === '/api/sair' && metodo === 'POST') return sair(req, res);
 
@@ -94,9 +161,13 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/decidir' && metodo === 'POST') return decidir(req, res, usuario);
     if (rota === '/api/admin/galeria' && metodo === 'GET') return verGaleria(res, url, usuario);
     if (rota === '/api/admin/pacote' && metodo === 'GET') return baixarPacote(res, url, usuario);
+    if (rota === '/api/admin/impressao' && metodo === 'GET') return baixarImpressao(res, url, usuario);
     if (rota === '/api/admin/usuarios' && metodo === 'GET') return listarUsuarios(res, usuario);
     if (rota === '/api/admin/usuarios' && metodo === 'POST') return novoUsuario(req, res, usuario);
     if (rota === '/api/admin/usuario-senha' && metodo === 'POST') return resetarSenha(req, res, usuario);
+    if (rota === '/api/admin/usuario-login' && metodo === 'POST') return mudarLogin(req, res, usuario);
+    if (rota === '/api/admin/usuario-nome' && metodo === 'POST') return mudarNome(req, res, usuario);
+    if (rota === '/api/admin/usuario-placa' && metodo === 'POST') return mudarPlaca(req, res, usuario);
     if (rota === '/api/admin/usuario-ativo' && metodo === 'POST') return ativarUsuario(req, res, usuario);
     if (rota === '/api/admin/usuario-empresa' && metodo === 'POST') return mudarEmpresa(req, res, usuario);
     if (rota === '/api/admin/usuario' && metodo === 'DELETE') return excluirUsuario(req, res, usuario);
@@ -104,8 +175,8 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/config' && metodo === 'GET') return pegarConfig(res);
     if (rota === '/api/admin/config' && metodo === 'POST') return salvarConfig(req, res);
     if (rota === '/api/admin/exportar' && metodo === 'GET') return exportarCsv(res, url, usuario);
-    if (rota === '/api/admin/backup' && metodo === 'GET') return baixarBackup(res);
-    if (rota === '/api/admin/restaurar' && metodo === 'POST') return subirBackup(req, res);
+    if (rota === '/api/admin/backup' && metodo === 'GET') return baixarBackup(res, usuario);
+    if (rota === '/api/admin/restaurar' && metodo === 'POST') return subirBackup(req, res, usuario);
     if (rota === '/api/admin/dados' && metodo === 'GET') return responderJson(res, resumoDosDados());
   }
 
@@ -116,9 +187,46 @@ export async function tratarApi(req, res, url, usuario, seguro) {
 
 async function entrar(req, res, seguro) {
   const { login, senha } = await lerJson(req);
+  const ip = ipDoPedido(req);
+  const nome = String(login || '').trim().toLowerCase();
+
+  // A chave e `login|ip`, NAO o ip.
+  //
+  // O escritorio inteiro sai por um endereco so - no log de 01/09 sao cinco
+  // contas no mesmo IP. Limitar por ip trancaria a empresa toda cada vez que
+  // uma pessoa errasse a senha, e isso acontece: o bruno.st errou quatro
+  // vezes seguidas as 11:04 antes de acertar. Um portal que se tranca sozinho
+  // no fechamento do mes e pior que o problema que isto resolve.
+  //
+  // O limite por ip puro existe, mas com a rede bem mais larga: 50 falhas de
+  // logins DIFERENTES e varredura, nao gente esquecida.
+  const porLogin = checar(REGRAS.LOGIN, `${nome}|${ip}`);
+  const porIp = checar(REGRAS.LOGIN_IP, ip);
+  const travado = !porLogin.ok ? porLogin : !porIp.ok ? porIp : null;
+  if (travado) {
+    log.aviso('limite', 'login bloqueado', { login: nome, ip, esperar: travado.esperarSegundos });
+    return erro(res, recadoDeEspera(travado.esperarSegundos), 429, {
+      'Retry-After': String(travado.esperarSegundos),
+    });
+  }
+
   const u = autenticar(login, senha);
-  if (!u) return erro(res, 'Login ou senha invalidos.', 401);
+  if (!u) {
+    registrar(REGRAS.LOGIN, `${nome}|${ip}`);
+    registrar(REGRAS.LOGIN_IP, ip);
+    // O login tentado entra no log, a senha nunca. Repetido do mesmo IP e o
+    // sinal de que alguem esta chutando - ou de que um vendedor esqueceu a
+    // senha e vai ligar daqui a pouco.
+    log.aviso('entrada', 'login recusado', { login: nome });
+    return erro(res, 'Login ou senha invalidos.', 401);
+  }
+
+  // Acertou: zera o contador daquele login. O do IP fica - ele mede varredura
+  // de logins diferentes, e um acerto nao desmente isso.
+  limpar(REGRAS.LOGIN, `${nome}|${ip}`);
+
   const token = abrirSessao(u.id);
+  log.info('entrada', 'entrou', { quem: u.login, papel: u.papel, empresa: u.empresa });
   responderJson(
     res,
     { ok: true, usuario: publico(u) },
@@ -140,6 +248,11 @@ function eu(res, usuario) {
     valor_km: valorDoKm(),
     ia_disponivel: iaDisponivel(),
     mes_atual: mesAtual(),
+    // Fora de producao a tela ganha uma faixa. Um portal de teste identico ao
+    // de verdade e um convite a lancar o RDV do mes no lugar errado.
+    ambiente: process.env.AMBIENTE && process.env.AMBIENTE !== 'producao'
+      ? process.env.AMBIENTE
+      : null,
     // A tela usa isto para mostrar so o que a pessoa pode fazer.
     escopo: escopoDe(usuario),
     pode_tudo: ehSuper(usuario),
@@ -238,6 +351,7 @@ function gradeDoMes(mes, linhas) {
       itinerario: l ? l.itinerario || '' : '',
       pedagio: l ? l.pedagio : 0,
       estacionamento: l ? l.estacionamento : 0,
+      justificativa_hora: l ? l.justificativa_hora || '' : '',
     };
   });
 }
@@ -249,6 +363,8 @@ function pegarRelatorio(req, res, url, usuario) {
   const rel = acharOuCriar(usuario.id, mes);
   const linhas = linhasDo(rel.id);
   const anexos = anexosDo(rel.id);
+  // "previa": e a aba que o colaborador ve enquanto preenche. A cobranca de
+  // DANFE e de foto de odometro sai dali e volta na hora do envio.
   const resultado = conferir(rel, linhas, anexos, valorDoKm(), mesAnteriorDe(rel.usuario_id, rel.mes_ref));
 
   responderJson(res, {
@@ -257,7 +373,10 @@ function pegarRelatorio(req, res, url, usuario) {
       mes_extenso: mesPorExtenso(mes),
       rotulo_status: ROTULO_STATUS[rel.status],
       editavel: EDITAVEL.has(rel.status),
-      achados: rel.achados ? JSON.parse(rel.achados) : null,
+      // Em "So falta DANFE" a pessoa nao edita nada, mas ainda manda a nota.
+      aceita_anexo: ACEITA_ANEXO.has(rel.status),
+      so_falta_danfe: rel.status === 'SO_FALTA_DANFE',
+      achados: listaDeJson(rel.achados),
       extraido: rel.extraido ? JSON.parse(rel.extraido) : null,
     },
     grade: gradeDoMes(mes, linhas),
@@ -284,8 +403,8 @@ async function salvarRelatorio(req, res, usuario) {
     db.prepare('DELETE FROM linhas WHERE relatorio_id = ?').run(rel.id);
 
     const inserir = db.prepare(
-      `INSERT INTO linhas (relatorio_id, data, km_inicial, km_final, itinerario, pedagio, estacionamento, ordem)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO linhas (relatorio_id, data, km_inicial, km_final, itinerario, pedagio, estacionamento, ordem, hora_pedagio, justificativa_hora)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     let ordem = 0;
@@ -295,11 +414,15 @@ async function salvarRelatorio(req, res, usuario) {
       const ped = numero(l.pedagio);
       const est = numero(l.estacionamento);
       const itin = String(l.itinerario || '').trim().slice(0, 500);
+      // Hora da passagem mais tarde do dia, e o porque dela quando passa das 18h.
+      const horaRecebida = String(l.hora_pedagio || '').trim();
+      const hora = /^\d{1,2}:\d{2}$/.test(horaRecebida) ? horaRecebida : null;
+      const porQue = String(l.justificativa_hora || '').trim().slice(0, 500) || null;
       // Dia totalmente em branco nao vira linha.
       if (ki === 0 && kf === 0 && ped === 0 && est === 0 && !itin) continue;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(l.data || ''))) continue;
       if (!String(l.data).startsWith(mes)) continue;
-      inserir.run(rel.id, l.data, ki, kf, itin, ped, est, ordem++);
+      inserir.run(rel.id, l.data, ki, kf, itin, ped, est, ordem++, hora, porQue);
     }
 
     const linhas = linhasDo(rel.id);
@@ -343,6 +466,25 @@ async function lerRdv(req, res, usuario) {
   const { mes } = await lerJson(req);
   if (!mesValido(mes)) return erro(res, 'Mes invalido.');
 
+  // Esta e a unica rota do portal que gasta dinheiro: fala com a API da
+  // Anthropic e leva uns 20 segundos. Um vendedor honesto le o RDV de 1 a 3
+  // vezes no mes; dez por hora e folga larga e ainda assim poe teto na conta.
+  //
+  // Conta a CHAMADA, nao o sucesso, e por isso vem antes de tudo: botao preso
+  // repetindo tambem custa. No log de 01/09 ha uma leitura de 20,6s que
+  // terminou em 400 - gastou e nao entregou.
+  //
+  // Por usuario, nao por IP: um vendedor gastar a cota nao pode travar o
+  // colega da mesa ao lado, que sai pelo mesmo endereco.
+  const cota = checar(REGRAS.IA, String(usuario.id));
+  if (!cota.ok) {
+    log.aviso('limite', 'leitura de rdv', { quem: usuario.login, esperar: cota.esperarSegundos });
+    return erro(res, recadoDeEspera(cota.esperarSegundos), 429, {
+      'Retry-After': String(cota.esperarSegundos),
+    });
+  }
+  registrar(REGRAS.IA, String(usuario.id));
+
   const rel = acharOuCriar(usuario.id, mes);
   if (!EDITAVEL.has(rel.status)) {
     return erro(res, `Esse relatorio esta como "${ROTULO_STATUS[rel.status]}" e nao pode ser relido.`);
@@ -357,10 +499,21 @@ async function lerRdv(req, res, usuario) {
   }
 
   let extraido;
+  const comecouEm = Date.now();
   try {
     const saida = await extrairDoRdv(arquivos, mes);
     extraido = saida.extraido;
   } catch (e) {
+    // O motivo ia so para a tela do vendedor. Quando cinco tentativas seguidas
+    // falharam, o log tinha o 502 e nenhuma pista do porque - e a pessoa ja
+    // tinha desistido. O tempo entra junto: falha em milissegundos e chave ou
+    // arquivo recusado; falha em segundos e a API que respondeu erro.
+    log.falha('rdv', 'nao consegui ler o RDV', e, {
+      quem: usuario.login,
+      mes,
+      arquivos: arquivos.map((a) => a.nome_original).join(' | '),
+      levou: log.desde(comecouEm),
+    });
     return erro(res, e.message, 502);
   }
 
@@ -385,8 +538,8 @@ async function lerRdv(req, res, usuario) {
     db.prepare('DELETE FROM linhas WHERE relatorio_id = ?').run(rel.id);
 
     const inserir = db.prepare(
-      `INSERT INTO linhas (relatorio_id, data, km_inicial, km_final, itinerario, pedagio, estacionamento, ordem)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO linhas (relatorio_id, data, km_inicial, km_final, itinerario, pedagio, estacionamento, ordem, hora_pedagio, justificativa_hora)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     let ordem = 0;
     for (const l of extraido.linhas) {
@@ -399,6 +552,11 @@ async function lerRdv(req, res, usuario) {
         l.pedagio,
         l.estacionamento,
         ordem++,
+        // A leitura do RDV nao traz hora nem explicacao - quem informa e a pessoa,
+        // na grade. Reler o arquivo nao pode apagar o que ela ja escreveu, entao
+        // estes dois campos ficam nulos e sao preenchidos pelo salvar.
+        null,
+        null,
       );
     }
 
@@ -419,8 +577,22 @@ async function lerRdv(req, res, usuario) {
     db.exec('COMMIT');
 
     // Se o documento trouxe placa e a pessoa ainda nao tem, aproveita.
-    if (extraido.placas && !usuario.placas) {
-      db.prepare('UPDATE usuarios SET placas = ? WHERE id = ?').run(extraido.placas, usuario.id);
+    //
+    // Passa pela peneira antes: isto grava no CADASTRO de uma pessoa a partir
+    // do que um modelo leu num arquivo. Sem conferencia, um dia a extracao
+    // devolveu 3.314 caracteres de payload e eles foram parar no campo placa
+    // de um vendedor - a janela do relatorio dele virou um muro de texto.
+    // Nao parecendo placa, nao grava: cadastro sem placa e melhor que cadastro
+    // com lixo, e a pessoa pode digitar a dela depois.
+    const daLeitura = placaLimpa(extraido.placas);
+    if (daLeitura && !usuario.placas) {
+      db.prepare('UPDATE usuarios SET placas = ? WHERE id = ?').run(daLeitura, usuario.id);
+    } else if (extraido.placas && !daLeitura) {
+      log.aviso('relatorio', 'a leitura devolveu algo que nao e placa - ignorado', {
+        quem: usuario.login,
+        veio: String(extraido.placas).slice(0, 80),
+        tamanho: String(extraido.placas).length,
+      });
     }
 
     responderJson(res, {
@@ -486,6 +658,11 @@ async function enviarRelatorio(req, res, usuario) {
 
   const linhas = linhasDo(rel.id);
   if (linhas.length === 0) {
+    log.aviso('relatorio', 'envio recusado', {
+      quem: usuario.login,
+      mes: rel.mes_ref,
+      bloqueios: 'sem_lancamentos',
+    });
     return erro(
       res,
       'Anexe o arquivo do seu RDV e toque em "Ler meu relatorio" antes de enviar.',
@@ -510,6 +687,14 @@ async function enviarRelatorio(req, res, usuario) {
       ].includes(a.codigo),
   );
   if (bloqueios.length > 0) {
+    // O motivo ia so para a tela do vendedor. Quando ele liga dizendo "nao
+    // consigo enviar", o log mostrava um 400 seco e nao dava para responder
+    // sem ir ate a pessoa. Agora o codigo do bloqueio fica registrado.
+    log.aviso('relatorio', 'envio recusado', {
+      quem: usuario.login,
+      mes: rel.mes_ref,
+      bloqueios: bloqueios.map((b) => b.codigo).join(','),
+    });
     return responderJson(
       res,
       {
@@ -520,18 +705,66 @@ async function enviarRelatorio(req, res, usuario) {
     );
   }
 
+  const codigos = new Set(r.achados.map((a) => a.codigo));
+  const faltando = [];
+  if (codigos.has('sem_danfe')) faltando.push('a nota de abastecimento');
+  if (codigos.has('sem_odometro')) faltando.push('a foto do odometro');
+
   db.prepare(
     `UPDATE relatorios SET status = 'ENVIADO', enviado_em = ?, achados = NULL, parecer_ia = NULL,
             o_que_fazer = NULL, conferido_em = NULL, pedagio_comprovado = NULL
       WHERE id = ?`,
   ).run(agora(), rel.id);
 
+  log.info('relatorio', rel.status === 'RASCUNHO' ? 'enviado' : 'reenviado corrigido', {
+    rel: rel.id,
+    mes: rel.mes_ref,
+    quem: usuario.login,
+    km: r.totalKm,
+    linhas: linhas.length,
+    anexos: anexos.length,
+    // Achado de aviso nao trava o envio, mas e o que a conferencia vai olhar.
+    ressalvas: r.achados.filter((a) => a.gravidade === 'aviso').length || undefined,
+  });
+
   responderJson(res, {
     ok: true,
-    aviso: r.achados.some((a) => a.codigo === 'sem_danfe')
-      ? 'Enviado, mas voce nao anexou a nota de abastecimento - isso costuma reprovar o relatorio.'
+    // A cobranca de anexo nao aparece mais na aba durante o preenchimento, entao
+    // o "enviado" e a ultima chance de dizer o que ficou faltando.
+    aviso: faltando.length
+      ? `Enviado, mas faltou ${faltando.join(' e ')} - isso costuma reprovar o relatorio.`
       : 'Relatorio enviado para conferencia.',
   });
+
+  // A conferencia comeca sozinha, DEPOIS de responder.
+  //
+  // Sem isso o relatorio ficava parado esperando alguem clicar "Conferir os
+  // pendentes com IA" - e ate esse clique o pedagio comprovado ficava vazio,
+  // porque quem soma o extrato da tag e a conferencia, nao o envio.
+  //
+  // Fora da resposta de proposito: a leitura leva uns 30 segundos e o vendedor
+  // nao pode ficar com a tela presa esperando. Ele ja recebeu o "enviado"; o
+  // parecer aparece no painel quando ficar pronto.
+  if (iaDisponivel()) {
+    const atual = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id);
+    conferirRelatorio(atual, { usarIa: true, decididoPor: null })
+      .then((saida) => {
+        log.info('ia', 'conferencia automatica', {
+          rel: rel.id,
+          quem: usuario.login,
+          resultado: saida.status,
+          pedagio: saida.parecer?.pedagio_comprovado,
+        });
+      })
+      .catch((e) => {
+        // Falhar aqui nao pode desfazer o envio: o relatorio ja esta com o
+        // administrador, que confere na mao pelo botao de sempre.
+        log.falha('ia', 'conferencia automatica falhou - o relatorio segue para conferencia manual', e, {
+          rel: rel.id,
+          quem: usuario.login,
+        });
+      });
+  }
 }
 
 function meusRelatorios(res, usuario) {
@@ -577,14 +810,53 @@ async function subirAnexo(req, res, url, usuario) {
   }
 
   const rel = acharOuCriar(usuario.id, mes);
-  if (!EDITAVEL.has(rel.status)) return erro(res, 'Esse relatorio nao aceita mais anexos.');
+  if (!ACEITA_ANEXO.has(rel.status)) return erro(res, 'Esse relatorio nao aceita mais anexos.');
+  if (rel.status === 'SO_FALTA_DANFE' && !ANEXO_SO_FALTA_DANFE.has(tipo)) {
+    return erro(
+      res,
+      'Esse relatorio esta aguardando so a nota de abastecimento. '
+        + 'Anexe a DANFE - o resto do relatorio ja foi conferido e nao muda mais.',
+    );
+  }
+
+  // O RDV tem que vir em PDF.
+  //
+  // A planilha ate e LIDA na extracao - o portal converte a tabela em texto -,
+  // mas nao pode ser CONFERIDA: a API le imagem e PDF, e um .xlsx e um ZIP de
+  // XMLs, cujos bytes nao dizem nada para o modelo. Na pratica o relatorio era
+  // conferido sem que ninguem olhasse o proprio RDV; no 108 ele apareceu como
+  // "formato .xlsx nao suportado" na lista de anexos nao lidos.
+  //
+  // So vale para o RDV. Pedágio, nota e odômetro continuam como estavam.
+  if (tipo === 'rdv' && PLANILHA.has(path.extname(nomeBruto || '').toLowerCase())) {
+    return erro(
+      res,
+      'Mande o RDV em PDF. A planilha nao pode ser conferida - so o PDF permite '
+        + 'que o relatorio seja lido junto dos comprovantes. No Excel: Arquivo > '
+        + 'Salvar como > PDF.',
+    );
+  }
 
   const dados = await lerCorpo(req);
   if (dados.length === 0) return erro(res, 'O arquivo chegou vazio (0 KB). Tente enviar de novo.');
 
   const nomeLimpo = nomeDeArquivoSeguro(decodeURIComponent(nomeBruto));
   const salvo = `${rel.id}-${crypto.randomBytes(6).toString('hex')}-${nomeLimpo}`;
-  fs.writeFileSync(path.join(PASTA_ANEXOS, salvo), dados);
+  const caminhoSalvo = path.join(PASTA_ANEXOS, salvo);
+  fs.writeFileSync(caminhoSalvo, dados);
+
+  // A conferencia de leitura precisa do arquivo em disco, entao acontece depois
+  // de gravar. Se o arquivo nao abre, ele nao vira registro: sai do disco e a
+  // pessoa recebe o recado na hora, enquanto ainda esta com o RDV na mao.
+  const naoAbre = await motivoDeNaoConseguirLer(caminhoSalvo, path.extname(nomeLimpo).toLowerCase());
+  if (naoAbre) {
+    try {
+      fs.unlinkSync(caminhoSalvo);
+    } catch {
+      // ja sumiu - nao ha o que limpar
+    }
+    return erro(res, naoAbre);
+  }
 
   db.prepare(
     `INSERT INTO anexos (relatorio_id, tipo, nome_original, arquivo, mime, tamanho,
@@ -602,7 +874,26 @@ async function subirAnexo(req, res, url, usuario) {
     agora(),
   );
 
-  responderJson(res, { ok: true, anexos: anexosDo(rel.id) });
+  // A nota que faltava chegou: o relatorio volta sozinho para a fila de
+  // conferencia. Sem isso ele ficaria parado em "So falta DANFE" para sempre -
+  // a pessoa nao pode mais reenviar, entao anexar E o reenvio dela.
+  let voltouParaFila = false;
+  if (rel.status === 'SO_FALTA_DANFE') {
+    db.prepare(
+      `UPDATE relatorios SET status = 'ENVIADO', enviado_em = ?, achados = NULL,
+              parecer_ia = NULL, o_que_fazer = NULL, conferido_em = NULL
+        WHERE id = ?`,
+    ).run(agora(), rel.id);
+    voltouParaFila = true;
+  }
+
+  responderJson(res, {
+    ok: true,
+    anexos: anexosDo(rel.id),
+    aviso: voltouParaFila
+      ? 'Nota anexada. O relatorio voltou para a conferencia - nao precisa enviar de novo.'
+      : undefined,
+  });
 }
 
 function anexoPermitido(id, usuario) {
@@ -644,7 +935,10 @@ function apagarAnexo(res, rota, usuario) {
   const id = rota.split('/').pop();
   const achado = anexoPermitido(id, usuario);
   if (!achado) return erro(res, 'Anexo nao encontrado.', 404);
-  if (!EDITAVEL.has(achado.rel.status) && !ehAdmin(usuario)) {
+  // ACEITA_ANEXO, nao EDITAVEL: trocar um arquivo e apagar o velho e mandar o
+  // certo. Se apagar seguisse a regra mais estreita, quem enviou so conseguiria
+  // ACRESCENTAR anexo, nunca substituir o errado - que e o caso comum.
+  if (!ACEITA_ANEXO.has(achado.rel.status) && !ehAdmin(usuario)) {
     return erro(res, 'Esse relatorio nao pode mais ser alterado.');
   }
 
@@ -717,14 +1011,20 @@ function painel(res, url, quem) {
       valor_km: r.valor_km,
       declarado: Number((r.pedagio_declarado + r.estac_declarado).toFixed(2)),
       comprovado: r.pedagio_comprovado,
-      diferenca:
-        r.pedagio_comprovado == null
-          ? null
-          : Number((r.pedagio_comprovado - (r.pedagio_declarado + r.estac_declarado)).toFixed(2)),
+      // Diferenca so existe quando ha DOIS numeros para comparar.
+      //
+      // Sem valor declarado nao ha divergencia nenhuma - o que havia era o
+      // comprovado inteiro sendo repetido na coluna de diferenca e pintado de
+      // vermelho, num relatorio que estava aprovado. Isso apontava erro onde
+      // nao tinha, que e o pior tipo de alerta: ensina a ignorar a coluna.
+      diferenca: diferencaDePedagio(r),
       o_que_fazer: r.o_que_fazer,
+      // Parecer julgado por regra anterior a atual. Nao e erro: e aviso de que
+      // este relatorio nao passou pelas regras de hoje.
+      regras_antigas: Boolean(r.conferido_em) && (r.versao_regras ?? 0) < VERSAO_REGRAS,
       enviado_em: r.enviado_em,
       conferido_em: r.conferido_em,
-      achados: r.achados ? JSON.parse(r.achados) : null,
+      achados: listaDeJson(r.achados),
     })),
   });
 }
@@ -742,19 +1042,235 @@ function relatorioDetalhe(res, url, quem) {
     return erro(res, 'Esse relatorio e de outra empresa.', 403);
   }
 
+  const linhas = linhasDo(rel.id);
+  const anexos = anexosDo(rel.id);
+
+  // O que estaria pendente se a conferencia rodasse agora.
+  //
+  // `rel.achados` e o parecer GRAVADO: so existe depois que alguem conferiu.
+  // Enquanto o relatorio e rascunho, ou foi enviado e ninguem olhou ainda,
+  // aquela coluna esta vazia - e o admin abria e nao via pendencia nenhuma,
+  // mesmo faltando a nota e a foto do odometro.
+  //
+  // O `rel` cru e de proposito - `conferir` le `rel.extraido` como texto e
+  // faz o proprio JSON.parse. O objeto ja parseado vai na resposta abaixo.
+  const pendenciasAgora = conferir(
+    rel,
+    linhas,
+    anexos,
+    valorDoKm(),
+    mesAnteriorDe(rel.usuario_id, rel.mes_ref),
+  );
+
   responderJson(res, {
     relatorio: {
       ...rel,
       rotulo_status: ROTULO_STATUS[rel.status],
       mes_extenso: mesPorExtenso(rel.mes_ref),
-      achados: rel.achados ? JSON.parse(rel.achados) : null,
+      achados: listaDeJson(rel.achados),
+      regras_antigas: Boolean(rel.conferido_em) && (rel.versao_regras ?? 0) < VERSAO_REGRAS,
       parecer_ia: rel.parecer_ia ? JSON.parse(rel.parecer_ia) : null,
       assinatura: rel.assinatura ? JSON.parse(rel.assinatura) : null,
       extraido: rel.extraido ? JSON.parse(rel.extraido) : null,
     },
-    linhas: linhasDo(rel.id),
-    anexos: anexosDo(rel.id),
+    linhas,
+    anexos,
+    // Só sai por esta rota, que é do admin. A rota do colaborador
+    // (`/api/relatorio`) não tem este campo, e a prévia dele continua sem as
+    // cobranças de anexo.
+    pendencias_agora: pendenciasAgora,
   });
+}
+
+/**
+ * A conferencia em si, sem depender de quem pediu.
+ *
+ * Nasceu presa a rota do admin, e por isso so acontecia quando alguem clicava
+ * "Conferir os pendentes com IA". Quem enviava o relatorio e olhava o painel
+ * via o pedagio zerado - o `pedagio_comprovado` e preenchido AQUI, pela leitura
+ * do extrato, e em lugar nenhum antes disso.
+ *
+ * Agora tambem roda sozinha logo depois do envio, sem ninguem clicar. As duas
+ * portas entram por esta funcao para nao existirem duas conferencias com
+ * regras que podem divergir com o tempo.
+ *
+ * `decididoPor` e null quando foi automatica - o painel mostra que o veredito
+ * nao veio da mao de um administrador.
+ *
+ * Lanca erro se a IA falhar; quem chama decide o que fazer com isso.
+ */
+/**
+ * O arquivo que a IA apontou, casado com um anexo DE VERDADE deste relatorio.
+ *
+ * O nome vem de um modelo, entao ele nao vira link por decreto: so o que casa
+ * com um anexo do proprio relatorio ganha `anexo_id`, e e o id - nunca o texto
+ * do modelo - que monta a URL. Assim um nome inventado nao abre arquivo de
+ * ninguem.
+ *
+ * Quando nao casa, o nome ainda aparece na tela como texto: quase sempre e o
+ * mesmo arquivo com uma diferenca boba de escrita, e dizer "a foto tal" ajuda
+ * mais que nao dizer nada. O que ele nao ganha e o link.
+ */
+export function anexoDoAchado(nomeDito, anexos, relId) {
+  const nome = String(nomeDito || '').trim();
+  if (!nome) return { anexo_id: null, anexo_nome: null };
+
+  const chave = (t) => String(t || '').trim().toLowerCase();
+  const achado = anexos.find((a) => chave(a.nome_original) === chave(nome));
+  if (achado) return { anexo_id: achado.id, anexo_nome: achado.nome_original };
+
+  log.aviso('ia', 'a IA citou um anexo que nao existe no relatorio', { rel: relId, citado: nome.slice(0, 120) });
+  return { anexo_id: null, anexo_nome: nome.slice(0, 120) };
+}
+
+async function conferirRelatorio(rel, { usarIa = true, demo = false, decididoPor = null } = {}) {
+  const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(rel.usuario_id);
+  const linhas = linhasDo(rel.id);
+  const anexos = db.prepare('SELECT * FROM anexos WHERE relatorio_id = ?').all(rel.id);
+  const vlrKm = valorDoKm();
+
+  if (linhas.length === 0) {
+    const e = new Error(
+      'Este relatorio nao tem os lancamentos dia a dia (veio da conferencia antiga). '
+        + 'Use "Ler o RDV" para extrair do arquivo, ou decida na mao pelos botoes abaixo.',
+    );
+    e.semLinhas = true;
+    throw e;
+  }
+
+  const porRegra = conferir(rel, linhas, anexos, vlrKm, mesAnteriorDe(rel.usuario_id, rel.mes_ref));
+  const daAssinatura = conferirAssinatura(rel, anexos, usuario);
+  porRegra.achados.push(...daAssinatura.achados);
+
+  let parecer = null;
+  let avisoIa = null;
+  let anexosIgnorados = [];
+
+  if (demo) {
+    parecer = conferirEmDemo({ rel, linhas, anexos, resultadoRegra: porRegra });
+    avisoIa = 'MODO DEMONSTRACAO: nenhum comprovante foi lido. Este parecer e simulado e nao vale como conferencia.';
+  } else if (usarIa && iaDisponivel()) {
+    db.prepare('UPDATE relatorios SET status = ? WHERE id = ?').run('CONFERINDO', rel.id);
+    try {
+      const saida = await conferirComIa({ usuario, rel, linhas, anexos, resultadoRegra: porRegra, vlrKm });
+      parecer = saida.parecer;
+      anexosIgnorados = saida.anexosIgnorados;
+      if (anexosIgnorados.length) {
+        avisoIa = `Anexos nao lidos pela IA: ${textoDosIgnorados(anexosIgnorados)}`;
+      }
+    } catch (e) {
+      // Devolve o relatorio ao estado anterior para nao deixar ninguem preso em
+      // "Conferindo" por causa de uma chamada que falhou.
+      db.prepare('UPDATE relatorios SET status = ? WHERE id = ?').run(rel.status, rel.id);
+      throw e;
+    }
+  } else if (usarIa && !iaDisponivel()) {
+    avisoIa = 'Sem chave de API configurada - conferencia feita so pelas regras automaticas.';
+  }
+
+  const achados = [...porRegra.achados];
+  if (parecer) {
+    for (const a of parecer.achados || []) {
+      // Passa pelo saneador: o texto vem de um modelo e vai direto para a tela.
+      achados.push({
+        gravidade: a.gravidade,
+        codigo: 'ia',
+        mensagem: textoDaIa(a.mensagem, 160),
+        data: null,
+        ...anexoDoAchado(a.anexo, anexos, rel.id),
+      });
+    }
+    if (parecer.tem_danfe_de_abastecimento) {
+      const i = achados.findIndex((a) => a.codigo === 'sem_danfe');
+      if (i >= 0) achados.splice(i, 1);
+    }
+  }
+
+  // Anexo que a conferencia nem conseguiu abrir vira pendencia com nome e
+  // motivo.
+  //
+  // Isto so existia como aviso na resposta do administrador - e na conferencia
+  // automatica do envio nem isso, so uma linha de log. O vendedor mandava um
+  // PDF com senha, recebia um parecer que ignorava aquele comprovante e nao
+  // tinha como saber qual arquivo o sistema nao leu.
+  //
+  // Aviso, e nao erro: o relatorio pode estar inteiro certo mesmo assim, e
+  // reprovar por causa de um arquivo a mais seria pior que o problema.
+  for (const i of anexosIgnorados) {
+    achados.push({
+      gravidade: 'aviso',
+      codigo: 'anexo_nao_lido',
+      mensagem: `A conferencia nao conseguiu ler este comprovante: ${i.motivo}. `
+        + 'Reenvie em PDF ou foto, se ele for necessario.',
+      data: null,
+      anexo_id: i.id,
+      anexo_nome: i.nome,
+    });
+  }
+
+  // A diferenca de pedagio so pode ser julgada AGORA, depois da IA.
+  //
+  // O `porRegra` la em cima comparou `rel.pedagio_comprovado`, que na primeira
+  // conferencia ainda e NULL - o envio zera. Quem descobre o valor e a IA, que
+  // acabou de ler o extrato. Sem esta chamada, um RDV com R$ 10 de diferenca
+  // saia APROVADO, e so reprovava se alguem clicasse "Conferir de novo".
+  //
+  // Qualquer centavo conta.
+  if (parecer && !achados.some((a) => a.codigo === 'pedagio_diferenca')) {
+    const d = achadoDeDiferenca(porRegra.totalDeclarado, parecer.pedagio_comprovado ?? null);
+    if (d) achados.push(d);
+  }
+
+  // Passagem depois das 18h precisa de explicacao, e a hora vem do EXTRATO -
+  // lida agora pela IA, nao do que a pessoa digitou. Cada uma e cobrada contra
+  // a explicacao do dia dela, entao ele responde no proprio dia da despesa.
+  //
+  // Vale para DSO e PROMOTORES. A DISO ficou de fora - a propria regra trata
+  // disso, por isso a empresa do dono do relatorio vai junto.
+  if (parecer) {
+    achados.push(...passagensSemExplicacao(parecer.passagens_apos_18h, linhas, usuario.empresa));
+  }
+
+  const erros = achados.filter((a) => a.gravidade === 'erro');
+  const soDanfe = erros.length === 1 && erros[0].codigo === 'sem_danfe';
+  const status = erros.length === 0 ? 'CERTA' : soDanfe ? 'SO_FALTA_DANFE' : 'ERRADA';
+
+  const oQueFazer =
+    textoDaIa(parecer?.o_que_fazer, 220)
+    || (status === 'CERTA'
+      ? ''
+      : erros.map((e) => e.mensagem).join(' ') || 'Corrija os pontos apontados e reenvie.');
+
+  // O declarado tambem e regravado aqui, nao so o comprovado.
+  //
+  // Ele era gravado apenas na leitura do RDV. Quando a regra de como calcular o
+  // declarado mudou - passar a usar o total do quadro de resumo quando o
+  // formulario nao tem coluna por dia -, os relatorios ja enviados ficaram com
+  // o valor velho, e nao havia como corrigir sem a pessoa reenviar o mes.
+  // Conferindo de novo, o valor se acerta.
+  db.prepare(
+    `UPDATE relatorios
+        SET status = ?, achados = ?, parecer_ia = ?, o_que_fazer = ?,
+            pedagio_comprovado = ?, conferido_em = ?, decidido_por = ?,
+            pedagio_declarado = ?, estac_declarado = ?, versao_regras = ?
+      WHERE id = ?`,
+  ).run(
+    status,
+    JSON.stringify(achados),
+    parecer ? JSON.stringify(parecer) : null,
+    oQueFazer,
+    parecer ? Number(parecer.pedagio_comprovado ?? 0) : null,
+    agora(),
+    decididoPor,
+    porRegra.pedagioDeclarado,
+    porRegra.estacDeclarado,
+    // Em que versao das regras este parecer foi julgado. E o que permite o
+    // painel avisar quando um relatorio ficou para tras.
+    VERSAO_REGRAS,
+    rel.id,
+  );
+
+  return { status, achados, parecer, aviso: avisoIa };
 }
 
 async function conferirUm(req, res, admin) {
@@ -768,102 +1284,14 @@ async function conferirUm(req, res, admin) {
     return erro(res, 'Esse relatorio e de outra empresa.', 403);
   }
 
-  const linhas = linhasDo(rel.id);
-  const anexos = db.prepare('SELECT * FROM anexos WHERE relatorio_id = ?').all(rel.id);
-  const vlrKm = valorDoKm();
-
-  // Relatorio sem dia a dia (os importados da conferencia manual) nao pode
-  // passar pelas regras: elas somariam zero e reprovariam todo mundo,
-  // apagando o veredito que ja existia. Ou se le o PDF primeiro, ou se decide
-  // na mao pelo botao de aprovar/reprovar.
-  if (linhas.length === 0) {
-    return erro(
-      res,
-      'Este relatorio nao tem os lancamentos dia a dia (veio da conferencia antiga). ' +
-        'Use "Ler o RDV" para extrair do arquivo, ou decida na mao pelos botoes abaixo.',
-      409,
-    );
+  try {
+    const r = await conferirRelatorio(rel, { usarIa: usar_ia, demo, decididoPor: admin.id });
+    return responderJson(res, { ok: true, ...r, rotulo_status: ROTULO_STATUS[r.status] });
+  } catch (e) {
+    if (e.semLinhas) return erro(res, e.message, 409);
+    log.falha('ia', 'conferencia falhou', e, { rel: rel.id, por: admin?.login });
+    return erro(res, `Falha na conferencia com IA: ${e.message}`, 502);
   }
-
-  const porRegra = conferir(rel, linhas, anexos, vlrKm, mesAnteriorDe(rel.usuario_id, rel.mes_ref));
-
-  // Assinatura digital do RDV: quem assinou, quando, e se o arquivo foi
-  // alterado depois. Roda local, sem custo e sem depender da IA.
-  const daAssinatura = conferirAssinatura(rel, anexos, usuario);
-  porRegra.achados.push(...daAssinatura.achados);
-
-  let parecer = null;
-  let avisoIa = null;
-
-  if (demo) {
-    // Nao chama a API. Serve para testar e apresentar o fluxo sem gastar credito.
-    parecer = conferirEmDemo({ rel, linhas, anexos, resultadoRegra: porRegra });
-    avisoIa =
-      'MODO DEMONSTRACAO: nenhum comprovante foi lido. Este parecer e simulado e nao vale como conferencia.';
-  } else if (usar_ia && iaDisponivel()) {
-    db.prepare('UPDATE relatorios SET status = ? WHERE id = ?').run('CONFERINDO', rel.id);
-    try {
-      const saida = await conferirComIa({ usuario, rel, linhas, anexos, resultadoRegra: porRegra, vlrKm });
-      parecer = saida.parecer;
-      if (saida.anexosIgnorados.length) {
-        avisoIa = `Anexos nao lidos pela IA: ${saida.anexosIgnorados.join('; ')}`;
-      }
-    } catch (e) {
-      db.prepare('UPDATE relatorios SET status = ? WHERE id = ?').run(rel.status, rel.id);
-      return erro(res, `Falha na conferencia com IA: ${e.message}`, 502);
-    }
-  } else if (usar_ia && !iaDisponivel()) {
-    avisoIa = 'Sem chave de API configurada - conferencia feita so pelas regras automaticas.';
-  }
-
-  // Junta os dois pareceres. A IA manda no que depende de comprovante;
-  // a regra manda no que e calendario e aritmetica.
-  const achados = [...porRegra.achados];
-  if (parecer) {
-    for (const a of parecer.achados || []) {
-      achados.push({ gravidade: a.gravidade, codigo: 'ia', mensagem: a.mensagem, data: null });
-    }
-    if (parecer.tem_danfe_de_abastecimento) {
-      // A IA olhou o conteudo e confirmou: derruba o achado da regra.
-      const i = achados.findIndex((a) => a.codigo === 'sem_danfe');
-      if (i >= 0) achados.splice(i, 1);
-    }
-  }
-
-  const erros = achados.filter((a) => a.gravidade === 'erro');
-  const soDanfe = erros.length === 1 && erros[0].codigo === 'sem_danfe';
-  const status = erros.length === 0 ? 'CERTA' : soDanfe ? 'SO_FALTA_DANFE' : 'ERRADA';
-
-  const oQueFazer =
-    parecer?.o_que_fazer?.trim() ||
-    (status === 'CERTA'
-      ? ''
-      : erros.map((e) => e.mensagem).join(' ') || 'Corrija os pontos apontados e reenvie.');
-
-  db.prepare(
-    `UPDATE relatorios
-        SET status = ?, achados = ?, parecer_ia = ?, o_que_fazer = ?,
-            pedagio_comprovado = ?, conferido_em = ?, decidido_por = ?
-      WHERE id = ?`,
-  ).run(
-    status,
-    JSON.stringify(achados),
-    parecer ? JSON.stringify(parecer) : null,
-    oQueFazer,
-    parecer ? Number(parecer.pedagio_comprovado ?? 0) : null,
-    agora(),
-    admin.id,
-    rel.id,
-  );
-
-  responderJson(res, {
-    ok: true,
-    status,
-    rotulo_status: ROTULO_STATUS[status],
-    achados,
-    parecer,
-    aviso: avisoIa,
-  });
 }
 
 async function decidir(req, res, admin) {
@@ -874,7 +1302,7 @@ async function decidir(req, res, admin) {
   const rel = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(Number(relatorio_id));
   if (!rel) return erro(res, 'Relatorio nao encontrado.', 404);
 
-  const dono = db.prepare('SELECT empresa, funcao FROM usuarios WHERE id = ?').get(rel.usuario_id);
+  const dono = db.prepare('SELECT nome, empresa, funcao FROM usuarios WHERE id = ?').get(rel.usuario_id);
   if (!podeVerUsuario(admin, dono)) {
     return erro(res, 'Esse relatorio e de outra empresa.', 403);
   }
@@ -883,21 +1311,45 @@ async function decidir(req, res, admin) {
     'UPDATE relatorios SET status = ?, o_que_fazer = ?, conferido_em = ?, decidido_por = ? WHERE id = ?',
   ).run(status, String(o_que_fazer || '').slice(0, 2000), agora(), admin.id, rel.id);
 
+  // A decisao que libera ou trava o reembolso. O banco guarda so o estado
+  // final; o log guarda a sequencia - quem decidiu o que, e quando mudou de
+  // ideia. E a pergunta que aparece quando alguem contesta um valor.
+  log.info('decisao', `${rel.status} -> ${status}`, {
+    rel: rel.id,
+    mes: rel.mes_ref,
+    de: dono.nome,
+    por: admin.login,
+    valor: rel.valor_km,
+  });
+
   responderJson(res, { ok: true, status, rotulo_status: ROTULO_STATUS[status] });
 }
 
-function baixarBackup(res) {
+function baixarBackup(res, quem) {
   const carimbo = new Date().toISOString().slice(0, 10);
+  // Guardado para a tela poder dizer ha quanto tempo foi o ultimo. Backup que
+  // depende de alguem lembrar so funciona se alguem for lembrado.
+  gravarConfig('ultimo_backup_em', agora());
+  log.info('backup', 'backup baixado', { por: quem?.login });
   return enviarBackup(res, `portal-rdv-backup-${carimbo}.zip`);
 }
 
-async function subirBackup(req, res) {
+async function subirBackup(req, res, quem) {
   // 500 MB: o backup carrega todos os anexos junto.
   const zip = await lerCorpo(req, 500 * 1024 * 1024);
   if (!zip.length) return erro(res, 'Nenhum arquivo recebido.');
 
+  // O que esta saindo do lugar, registrado ANTES de ser substituido. E a acao
+  // mais destrutiva do portal e a unica testemunha do que havia antes.
+  const antes = resumoDosDados();
+
   try {
     const r = await restaurarBackup(zip);
+    log.info('backup', 'DADOS RESTAURADOS', {
+      por: quem?.login,
+      antes: `${antes.usuarios}u/${antes.relatorios}r/${antes.anexos}a`,
+      depois: `${r.usuarios ?? '?'}u/${r.relatorios ?? '?'}r/${r.anexos ?? '?'}a`,
+    });
     responderJson(res, {
       ok: true,
       ...r,
@@ -905,6 +1357,7 @@ async function subirBackup(req, res) {
         'Dados restaurados. Reinicie o servidor para o banco ser reaberto a partir do arquivo novo.',
     });
   } catch (e) {
+    log.aviso('backup', 'restauracao recusada', { por: quem?.login, motivo: e.message });
     erro(res, e.message, 400);
   }
 }
@@ -959,7 +1412,7 @@ async function exportarHistorico(res, url, quem) {
   const relatorios = db
     .prepare("SELECT * FROM relatorios WHERE usuario_id = ? AND status <> 'RASCUNHO'")
     .all(id)
-    .map((r) => ({ ...r, achados: r.achados ? JSON.parse(r.achados) : [] }));
+    .map((r) => ({ ...r, achados: listaDeJson(r.achados) ?? [] }));
 
   if (relatorios.length === 0) {
     return erro(res, `${usuario.nome} ainda nao enviou nenhum relatorio.`, 404);
@@ -1009,6 +1462,39 @@ function verGaleria(res, url, quem) {
   responderJson(res, g);
 }
 
+/**
+ * Caderno de comprovantes do mes, em PDF unico.
+ *
+ * Sem `usuario_id` sai o mes inteiro, uma pessoa depois da outra. Com ele, sai
+ * so aquele colaborador.
+ */
+async function baixarImpressao(res, url, quem) {
+  const mes = url.searchParams.get('mes');
+  if (!mesValido(mes)) return erro(res, 'Mes invalido.');
+
+  const idBruto = url.searchParams.get('usuario_id');
+  let id = null;
+  if (idBruto) {
+    id = Number(idBruto);
+    const alvo = alcanca(quem, id);
+    if (alvo === null) return erro(res, 'Colaborador nao encontrado.', 404);
+    if (alvo === false) return erro(res, 'Esse colaborador e de outra empresa.', 403);
+  }
+
+  const caderno = await montarImpressao(mes, id, escopoDe(quem));
+  if (!caderno) {
+    return erro(res, 'Nao ha RDV, nota de abastecimento ou comprovante de pedagio nesse mes.', 404);
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="${caderno.nome}"`,
+    'Content-Length': caderno.bytes.length,
+    'Cache-Control': 'no-store',
+  });
+  res.end(Buffer.from(caderno.bytes));
+}
+
 function baixarPacote(res, url, quem) {
   const id = Number(url.searchParams.get('usuario_id'));
   const mes = url.searchParams.get('mes');
@@ -1055,6 +1541,9 @@ async function novoUsuario(req, res, quem) {
     empresa = 'DISO', funcao = 'Vendedor',
   } = await lerJson(req);
   if (!login || !nome || !senha) return erro(res, 'Login, nome e senha sao obrigatorios.');
+  // Mesma regra da troca de login: minusculas, sem espaco, sem caractere solto.
+  const { login: loginFinal, erro: recadoLogin } = loginNormalizado(login);
+  if (recadoLogin) return erro(res, recadoLogin);
   if (String(senha).length < 6) return erro(res, 'A senha precisa ter pelo menos 6 caracteres.');
   if (!PAPEIS.includes(papel)) return erro(res, 'Perfil invalido.');
   if (!EMPRESAS.includes(empresa)) {
@@ -1084,7 +1573,10 @@ async function novoUsuario(req, res, quem) {
 
   try {
     const id = criarUsuario({
-      login, nome, email, papel, senha, placas, empresa: empresaFinal, funcao,
+      login: loginFinal, nome, email, papel, senha,
+      // Mesma peneira da leitura do RDV: o campo aceita placa, nao texto livre.
+      placas: placaLimpa(placas),
+      empresa: empresaFinal, funcao,
     });
     responderJson(res, { ok: true, id });
   } catch (e) {
@@ -1136,6 +1628,133 @@ async function mudarEmpresa(req, res, quem) {
 
   const u = db.prepare('SELECT empresa, funcao FROM usuarios WHERE id = ?').get(Number(usuario_id));
   responderJson(res, { ok: true, cracha: u ? cracha(u.empresa, u.funcao) : null });
+}
+
+/**
+ * Normaliza e confere um login, para o cadastro e para a troca.
+ *
+ * As duas portas precisam da MESMA regra. Enquanto so a troca normalizava, dava
+ * para cadastrar "Bruno.ST" pelo formulario de novo colaborador e criar um
+ * acesso em que ninguem entra: o autenticar() procura o login em minusculas e
+ * nunca acha o que foi gravado com maiuscula.
+ *
+ * Devolve { login } quando passa, ou { erro } com o recado pronto.
+ */
+function loginNormalizado(bruto) {
+  const login = String(bruto || '').trim().toLowerCase();
+  if (login.length < 3) return { erro: 'O login precisa ter pelo menos 3 caracteres.' };
+  if (/\s/.test(login)) return { erro: 'O login nao pode ter espaco.' };
+  if (!/^[a-z0-9._-]+$/.test(login)) {
+    return { erro: 'O login aceita apenas letras, numeros, ponto, hifen e sublinhado.' };
+  }
+  return { login };
+}
+
+/**
+ * Troca o login de um colaborador.
+ *
+ * Serve para quando o login foi cadastrado errado, ou a pessoa passou a usar
+ * outro. O cadastro e o mesmo: relatorios, anexos e historico continuam presos
+ * ao `id`, entao nada se perde na troca.
+ *
+ * Duas cautelas que o formulario sozinho nao garante:
+ *  - MINUSCULAS. O `autenticar()` procura o login em minusculas; gravar
+ *    "Bruno.ST" criaria um cadastro em que ninguem consegue entrar.
+ *  - As sessoes caem. Quem estava logado com o login velho e desconectado, do
+ *    mesmo jeito que acontece na troca de senha.
+ */
+async function mudarLogin(req, res, quem) {
+  const { usuario_id, login } = await lerJson(req);
+
+  const alvo = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(Number(usuario_id));
+  if (!alvo) return erro(res, 'Colaborador nao encontrado.', 404);
+  if (!podeMexerNoUsuario(quem, alvo)) {
+    return erro(res, 'Voce nao pode alterar esse cadastro.', 403);
+  }
+
+  const { login: novo, erro: recado } = loginNormalizado(login);
+  if (recado) return erro(res, recado);
+  if (novo === alvo.login) return erro(res, 'Esse ja e o login atual.');
+
+  const ocupado = db.prepare('SELECT nome FROM usuarios WHERE login = ? AND id <> ?')
+    .get(novo, alvo.id);
+  if (ocupado) return erro(res, `O login "${novo}" ja e de ${ocupado.nome}.`);
+
+  db.prepare('UPDATE usuarios SET login = ? WHERE id = ?').run(novo, alvo.id);
+  // Sessao aberta com o login antigo nao continua valendo.
+  db.prepare('DELETE FROM sessoes WHERE usuario_id = ?').run(alvo.id);
+
+  responderJson(res, { ok: true, login: novo, anterior: alvo.login });
+}
+
+/**
+ * Corrige o nome de um colaborador.
+ *
+ * O nome e so rotulo: nao entra em login, nem em permissao, nem em nada que o
+ * sistema decida. Trocar aqui muda como a pessoa aparece no painel, na galeria
+ * e nas planilhas - inclusive nos relatorios que ela ja mandou, porque tudo
+ * aponta para o `id`, nunca para o texto do nome.
+ *
+ * A unica dependencia de nome no sistema e a rede de seguranca que reconhece os
+ * dois supervisores, e ela so vale quando o login nao bateu - ver banco.js.
+ */
+async function mudarNome(req, res, quem) {
+  const { usuario_id, nome } = await lerJson(req);
+
+  const alvo = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(Number(usuario_id));
+  if (!alvo) return erro(res, 'Colaborador nao encontrado.', 404);
+  if (!podeMexerNoUsuario(quem, alvo)) {
+    return erro(res, 'Voce nao pode alterar esse cadastro.', 403);
+  }
+
+  // Espaco duplo vira um so: o nome vai para planilha e para o cabecalho do
+  // relatorio, e "Joao  Silva" aparece torto no meio dos outros.
+  const novo = String(nome || '').trim().replace(/\s+/g, ' ');
+  if (novo.length < 3) return erro(res, 'O nome precisa ter pelo menos 3 caracteres.');
+  if (novo.length > 120) return erro(res, 'O nome ficou longo demais (maximo 120 caracteres).');
+  if (novo === alvo.nome) return erro(res, 'Esse ja e o nome atual.');
+
+  db.prepare('UPDATE usuarios SET nome = ? WHERE id = ?').run(novo, alvo.id);
+  responderJson(res, { ok: true, nome: novo, anterior: alvo.nome });
+}
+
+/**
+ * Corrige a placa de um colaborador - ou apaga a que esta la.
+ *
+ * Nao existia jeito nenhum de mexer neste campo depois de gravado: o cadastro
+ * so deixava trocar login, nome, senha, empresa, funcao e ativo. Quando a
+ * leitura do RDV entupiu o campo de um vendedor com 3.314 caracteres de lixo,
+ * a unica saida teria sido mexer no banco na mao.
+ *
+ * Texto vazio limpa o campo. E o que conserta um cadastro sujo sem precisar de
+ * ninguem com acesso ao banco.
+ */
+async function mudarPlaca(req, res, quem) {
+  const { usuario_id, placas } = await lerJson(req);
+
+  const alvo = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(Number(usuario_id));
+  if (!alvo) return erro(res, 'Colaborador nao encontrado.', 404);
+  if (!podeMexerNoUsuario(quem, alvo)) {
+    return erro(res, 'Voce nao pode alterar esse cadastro.', 403);
+  }
+
+  const bruto = String(placas ?? '').trim();
+  if (!bruto) {
+    db.prepare('UPDATE usuarios SET placas = NULL WHERE id = ?').run(alvo.id);
+    return responderJson(res, { ok: true, placas: null });
+  }
+
+  const nova = placaLimpa(bruto);
+  if (!nova) {
+    return erro(
+      res,
+      'Isso nao parece uma placa. Use letras e numeros, ate 60 caracteres - '
+        + 'por exemplo "ABC1D23" ou "ABC1D23, XYZ4E56". Para apagar, deixe o campo vazio.',
+    );
+  }
+
+  db.prepare('UPDATE usuarios SET placas = ? WHERE id = ?').run(nova, alvo.id);
+  responderJson(res, { ok: true, placas: nova, anterior: alvo.placas });
 }
 
 async function resetarSenha(req, res, quem) {
@@ -1303,7 +1922,7 @@ async function exportarCsv(res, url, quem) {
 
   const relatorios = linhas.map((r) => ({
     ...r,
-    achados: r.achados ? JSON.parse(r.achados) : [],
+    achados: listaDeJson(r.achados) ?? [],
     // Quando a resposta da DANFE nao esta gravada, deduz pelos anexos.
     tem_danfe_por_anexo:
       db.prepare("SELECT COUNT(*) AS n FROM anexos WHERE relatorio_id = ? AND tipo = 'danfe'").get(r.id).n > 0,
@@ -1317,4 +1936,27 @@ async function exportarCsv(res, url, quem) {
     'Content-Disposition': `attachment; filename="RDV-${mes}.xlsx"`,
   });
   res.end(dados);
+}
+
+/**
+ * Quanto o comprovado destoa do declarado - ou null quando nao da para dizer.
+ *
+ * Devolve null em dois casos, e nos dois "—" na tela e mais honesto que um
+ * numero:
+ *   - ainda nao foi conferido: nao existe comprovado;
+ *   - o relatorio nao declara pedagio: nao existe com o que comparar, e o
+ *     comprovado sozinho nao e divergencia.
+ *
+ * Centavo de arredondamento tambem vira zero. Um relatorio certo mostra 0, que
+ * e o que quem confere espera ver.
+ */
+function diferencaDePedagio(rel) {
+  const comprovado = rel.pedagio_comprovado;
+  if (comprovado == null) return null;
+
+  const declarado = Number(rel.pedagio_declarado || 0) + Number(rel.estac_declarado || 0);
+  if (declarado === 0) return null;
+
+  const dif = Number((comprovado - declarado).toFixed(2));
+  return Math.abs(dif) < 0.01 ? 0 : dif;
 }

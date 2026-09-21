@@ -7,6 +7,8 @@
 // erro de conta e pego, ja que agora ele nao e mais evitado na origem.
 
 import Anthropic from '@anthropic-ai/sdk';
+import ExcelJS from 'exceljs';
+import * as XLSX from 'xlsx';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chaveDaApi, lerConfig, PASTA_ANEXOS } from './banco.js';
@@ -21,6 +23,141 @@ const IMAGENS = {
   '.gif': 'image/gif',
   '.webp': 'image/webp',
 };
+
+// Planilha nao vai como anexo: a API le imagem e PDF, e um .xlsx e um ZIP de
+// XMLs - os bytes dele nao dizem nada para o modelo. Entao a planilha vira
+// TEXTO aqui no servidor, e o modelo transcreve esse texto como faria com o PDF.
+// O .xls e o binario velho do Excel 97-2003, que o exceljs nao abre - esse vai
+// pelo SheetJS. Vale lembrar que muito sistema legado (extrato de tag de
+// pedagio, por exemplo) exporta uma tabela HTML com o nome trocado para .xls;
+// o SheetJS reconhece esse caso sozinho, entao ele entra aqui do mesmo jeito.
+const PLANILHAS = new Set(['.xlsx', '.xlsm', '.xls']);
+const TEXTO = new Set(['.csv', '.txt']);
+
+/**
+ * Data no formato brasileiro, que e o que as INSTRUCOES mandam o modelo ler.
+ *
+ * Em UTC de proposito: tanto o exceljs quanto o SheetJS entregam a data da
+ * planilha como meia-noite UTC. Lendo com getDate() (que e local), no Brasil
+ * isso volta para as 21h do dia ANTERIOR e a data sai um dia atrasada - o que
+ * bagunca justamente a checagem de fim de semana e feriado.
+ */
+function dataEmTexto(v) {
+  return `${String(v.getUTCDate()).padStart(2, '0')}/${
+    String(v.getUTCMonth() + 1).padStart(2, '0')}/${v.getUTCFullYear()}`;
+}
+
+/** Formata uma celula do jeito que ela aparece para quem abre a planilha. */
+function celulaEmTexto(celula) {
+  const v = celula?.value;
+  if (v == null) return '';
+  if (v instanceof Date) return dataEmTexto(v);
+  // Formula: o que importa e o resultado, nao a formula em si.
+  if (typeof v === 'object') {
+    if (v.result != null) return celulaEmTexto({ value: v.result });
+    if (v.text != null) return String(v.text);
+    if (Array.isArray(v.richText)) return v.richText.map((p) => p.text).join('');
+    if (v.hyperlink && v.text) return String(v.text);
+    return '';
+  }
+  return String(v);
+}
+
+/**
+ * A celula crua do SheetJS virando texto.
+ *
+ * Usa o valor (`v`), nunca o texto formatado (`w`): o `w` de uma data vem no
+ * formato americano ("8/3/26"), e as INSTRUCOES dizem ao modelo que data e
+ * dd/mm/aaaa - ele leria 8 de marco onde esta 3 de agosto.
+ */
+function celulaAntigaEmTexto(c) {
+  if (!c) return '';
+  if (c.v instanceof Date) return dataEmTexto(c.v);
+  return c.v == null ? '' : String(c.v);
+}
+
+/** Monta a linha "12: a | b | c", sem as celulas vazias do fim. */
+function linhaEmTexto(n, celulas) {
+  while (celulas.length && celulas[celulas.length - 1] === '') celulas.pop();
+  return celulas.some((c) => c !== '') ? `${n}: ${celulas.join(' | ')}` : null;
+}
+
+/**
+ * Le a planilha e devolve as celulas como texto separado por " | ", uma linha
+ * por linha. Mantem o numero da linha para o modelo nao se perder em tabela
+ * grande, e pula as linhas totalmente vazias.
+ *
+ * O `ext` vem do nome_original, nao do caminho salvo: e ele que decide qual
+ * leitor abre o arquivo.
+ */
+export async function planilhaEmTexto(caminho, ext) {
+  if (ext === '.xls') return xlsAntigoEmTexto(caminho);
+
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(caminho);
+
+  const partes = [];
+  wb.eachSheet((ws) => {
+    const linhas = [];
+    ws.eachRow({ includeEmpty: false }, (row, n) => {
+      const celulas = [];
+      row.eachCell({ includeEmpty: true }, (c) => celulas.push(celulaEmTexto(c)));
+      const linha = linhaEmTexto(n, celulas);
+      if (linha) linhas.push(linha);
+    });
+    if (linhas.length) partes.push(`--- aba "${ws.name}" ---\n${linhas.join('\n')}`);
+  });
+
+  return partes.join('\n\n');
+}
+
+/**
+ * Mesma coisa para o .xls do Excel 97-2003, que o exceljs nao abre. O SheetJS
+ * fareja o formato pelos bytes, entao isso aqui tambem cobre o arquivo que na
+ * verdade e uma tabela HTML (ou um CSV) com a extensao trocada para .xls -
+ * coisa que sistema de pedagio e de posto faz o tempo todo.
+ */
+function xlsAntigoEmTexto(caminho) {
+  // raw: o SheetJS senao "adivinha" o texto das celulas de tabela HTML e erra
+  // no padrao brasileiro - vira 03/08/2026 em 8 de marco, e "12,50" em 1250.
+  // Com raw a string fica como esta no arquivo; a data de celula de data de
+  // verdade continua vindo como Date, que e o que o cellDates garante.
+  const wb = XLSX.read(fs.readFileSync(caminho), {
+    type: 'buffer',
+    cellDates: true,
+    raw: true,
+  });
+
+  const partes = [];
+  for (const nome of wb.SheetNames) {
+    const ws = wb.Sheets[nome];
+    if (!ws) continue;
+
+    // O "!ref" as vezes vem inflado ("A1:IV65536") e varrer tudo aquilo trava o
+    // servidor. O que vale e ate onde existe celula de verdade.
+    let ultimaLinha = -1;
+    let ultimaColuna = -1;
+    for (const chave of Object.keys(ws)) {
+      if (chave.startsWith('!')) continue;
+      const { r, c } = XLSX.utils.decode_cell(chave);
+      if (r > ultimaLinha) ultimaLinha = r;
+      if (c > ultimaColuna) ultimaColuna = c;
+    }
+
+    const linhas = [];
+    for (let r = 0; r <= ultimaLinha; r++) {
+      const celulas = [];
+      for (let c = 0; c <= ultimaColuna; c++) {
+        celulas.push(celulaAntigaEmTexto(ws[XLSX.utils.encode_cell({ r, c })]));
+      }
+      const linha = linhaEmTexto(r + 1, celulas);
+      if (linha) linhas.push(linha);
+    }
+    if (linhas.length) partes.push(`--- aba "${nome}" ---\n${linhas.join('\n')}`);
+  }
+
+  return partes.join('\n\n');
+}
 
 const INSTRUCOES = `Voce le Relatorios de Despesas de Viagem (RDV) da DISO Comercio de Alimentos
 e transcreve o conteudo para dados estruturados. Voce NAO julga o relatorio nesta
@@ -204,17 +341,48 @@ export async function extrairDoRdv(anexosDoRdv, mesEsperado) {
     }
 
     const ext = path.extname(a.nome_original).toLowerCase();
-    const dados = fs.readFileSync(caminho).toString('base64');
 
     if (IMAGENS[ext]) {
       conteudo.push({
         type: 'image',
-        source: { type: 'base64', media_type: IMAGENS[ext], data: dados },
+        source: {
+          type: 'base64',
+          media_type: IMAGENS[ext],
+          data: fs.readFileSync(caminho).toString('base64'),
+        },
       });
     } else if (ext === '.pdf') {
       conteudo.push({
         type: 'document',
-        source: { type: 'base64', media_type: 'application/pdf', data: dados },
+        source: {
+          type: 'base64',
+          media_type: 'application/pdf',
+          data: fs.readFileSync(caminho).toString('base64'),
+        },
+      });
+    } else if (PLANILHAS.has(ext)) {
+      try {
+        const texto = await planilhaEmTexto(caminho, ext);
+        if (!texto.trim()) {
+          ignorados.push(`${a.nome_original} (planilha sem nenhuma celula preenchida)`);
+          continue;
+        }
+        conteudo.push({
+          type: 'text',
+          text: `Conteudo da planilha "${a.nome_original}", uma linha por linha da tabela:\n\n${texto}`,
+        });
+      } catch (e) {
+        ignorados.push(`${a.nome_original} (nao consegui abrir a planilha: ${e.message})`);
+      }
+    } else if (TEXTO.has(ext)) {
+      const texto = fs.readFileSync(caminho, 'utf8');
+      if (!texto.trim()) {
+        ignorados.push(`${a.nome_original} (chegou sem conteudo)`);
+        continue;
+      }
+      conteudo.push({
+        type: 'text',
+        text: `Conteudo do arquivo "${a.nome_original}":\n\n${texto}`,
       });
     } else {
       ignorados.push(`${a.nome_original} (formato ${ext || 'desconhecido'} nao pode ser lido)`);
@@ -224,7 +392,7 @@ export async function extrairDoRdv(anexosDoRdv, mesEsperado) {
   if (conteudo.length === 1) {
     throw new Error(
       `Nenhum arquivo legivel entre os anexados como relatorio. ${ignorados.join('; ')}. ` +
-        'Envie o RDV em PDF ou como foto (JPG/PNG).',
+        'Envie o RDV em PDF, planilha (XLSX, XLSM ou XLS) ou como foto (JPG/PNG).',
     );
   }
 
@@ -326,4 +494,75 @@ function normalizar(d, mesEsperado) {
 function num(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * O arquivo que a pessoa acabou de anexar pode ser lido?
+ *
+ * Roda no momento do envio, antes de o anexo virar registro. Existe porque um
+ * RDV em planilha protegida por senha passava batido: entrava como comprovante
+ * valido, e so semanas depois - na conferencia ou na hora de imprimir - se
+ * descobria que ninguem consegue abrir. A pessoa ja tinha ido embora do mes.
+ *
+ * Devolve null quando esta tudo bem, ou o recado pronto para a tela.
+ * So checa o que da para checar barato: planilha e PDF. Imagem e texto passam.
+ */
+export async function motivoDeNaoConseguirLer(caminho, ext) {
+  if (PLANILHAS_CONFERIDAS.has(ext)) {
+    try {
+      const texto = await planilhaEmTexto(caminho, ext);
+      if (!String(texto).trim()) {
+        return 'A planilha abriu vazia - nenhuma linha foi encontrada. '
+          + 'Confira se salvou a aba certa, ou envie o RDV em PDF.';
+      }
+    } catch (e) {
+      if (/password|encrypt/i.test(e.message)) {
+        return 'Essa planilha esta protegida por senha e o portal nao consegue abrir. '
+          + 'Salve o RDV como PDF (Arquivo > Salvar como > PDF) e anexe o PDF.';
+      }
+      return 'Nao foi possivel ler essa planilha - o arquivo parece danificado ou '
+        + 'nao e uma planilha de verdade. Se ela abre normalmente no seu Excel, '
+        + `salve como PDF e anexe o PDF. (${resumoTecnico(e)})`;
+    }
+  }
+
+  if (ext === '.pdf') {
+    try {
+      const { PDFDocument } = await import('pdf-lib');
+      const doc = await PDFDocument.load(fs.readFileSync(caminho), { ignoreEncryption: true });
+
+      // PDF trancado passava por aqui: `ignoreEncryption` manda o pdf-lib abrir
+      // assim mesmo, e o arquivo era aceito. So que a API da Anthropic recusa a
+      // chamada INTEIRA quando recebe um documento protegido - e a conferencia
+      // do relatorio morria por causa dele. Melhor barrar no envio, com a
+      // pessoa ainda de posse do arquivo.
+      if (doc.isEncrypted) {
+        return 'Esse PDF esta protegido por senha e o portal nao consegue ler. '
+          + 'Abra o arquivo, salve uma copia sem senha (Imprimir > Salvar como PDF) '
+          + 'e anexe essa copia.';
+      }
+      if (doc.getPageCount() === 0) return 'Esse PDF chegou sem nenhuma pagina. Gere o arquivo de novo.';
+    } catch (e) {
+      return 'Esse PDF esta danificado e nao abre. Gere o arquivo de novo e anexe. '
+        + `(${resumoTecnico(e)})`;
+    }
+  }
+
+  return null;
+}
+
+const PLANILHAS_CONFERIDAS = new Set(['.xlsx', '.xlsm', '.xls']);
+
+/**
+ * A parte tecnica do erro, curta e sem lixo.
+ *
+ * O recado vai para o celular de um vendedor: as bibliotecas gostam de devolver
+ * URL de documentacao e paragrafos inteiros, e isso so assusta. Fica a primeira
+ * frase, cortada, so para dar uma pista se alguem precisar investigar.
+ */
+function resumoTecnico(e) {
+  return String(e.message || 'erro desconhecido')
+    .split(/[.:]\s|https?:\/\//)[0]
+    .trim()
+    .slice(0, 80);
 }

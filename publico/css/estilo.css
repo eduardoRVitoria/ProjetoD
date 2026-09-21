@@ -1,6 +1,11 @@
 /* Portal RDV - folha unica, pensada primeiro para o celular. */
 
 :root {
+  /* Diz ao navegador em que tema desenhar o que e DELE: o calendario do
+     input[type=date], as setinhas do number, a barra de rolagem. Sem isso o
+     calendario abre branco por cima da tela escura. */
+  color-scheme: light dark;
+
   --fundo: #f4f6f9;
   --superficie: #ffffff;
   --superficie-2: #eef1f6;
@@ -108,7 +113,11 @@ input, select, textarea, button {
   color: var(--texto);
 }
 
+/* Todo campo de digitar precisa estar nesta lista. O que fica de fora herda so
+   a cor do texto da regra acima e mantem o fundo padrao do navegador - branco.
+   No tema escuro isso vira texto branco em fundo branco, invisivel. */
 input[type=text], input[type=password], input[type=number], input[type=month],
+input[type=date], input[type=search],
 input[type=email], select, textarea {
   width: 100%;
   padding: 11px 12px;
@@ -189,25 +198,30 @@ button.pequeno { padding: 7px 12px; font-size: 13px; border-radius: 7px; }
   white-space: nowrap;
   border-left: 3px solid;
 }
-.emp.DISO { background: #e7eefa; color: #1c4e80; border-color: #1c4e80; }
-.emp.DSO  { background: #f3e8f7; color: #6b3080; border-color: #6b3080; }
+.emp.DISO       { background: #e7eefa; color: #1c4e80; border-color: #1c4e80; }
+.emp.DSO        { background: #f3e8f7; color: #6b3080; border-color: #6b3080; }
+.emp.PROMOTORES { background: #e4f3ea; color: #1f6b43; border-color: #1f6b43; }
 
 @media (prefers-color-scheme: dark) {
-  .emp.DISO { background: #1b2a3d; color: #7fb3e0; border-color: #5b9bd5; }
-  .emp.DSO  { background: #2b1c35; color: #c79ad9; border-color: #9a5cb8; }
+  .emp.DISO       { background: #1b2a3d; color: #7fb3e0; border-color: #5b9bd5; }
+  .emp.DSO        { background: #2b1c35; color: #c79ad9; border-color: #9a5cb8; }
+  .emp.PROMOTORES { background: #182e23; color: #86cca3; border-color: #4fa877; }
 }
 
 /* Faixa colorida na borda da linha, separando as empresas na tabela. */
-tr.de-DISO td:first-child { box-shadow: inset 4px 0 0 #1c4e80; }
-tr.de-DSO  td:first-child { box-shadow: inset 4px 0 0 #6b3080; }
+tr.de-DISO       td:first-child { box-shadow: inset 4px 0 0 #1c4e80; }
+tr.de-DSO        td:first-child { box-shadow: inset 4px 0 0 #6b3080; }
+tr.de-PROMOTORES td:first-child { box-shadow: inset 4px 0 0 #1f6b43; }
 
 /* Cada empresa vira um cartao proprio, com a cor dela na borda de cima. */
-.cartao.empresa-DISO { border-top: 4px solid #1c4e80; }
-.cartao.empresa-DSO  { border-top: 4px solid #6b3080; }
+.cartao.empresa-DISO       { border-top: 4px solid #1c4e80; }
+.cartao.empresa-DSO        { border-top: 4px solid #6b3080; }
+.cartao.empresa-PROMOTORES { border-top: 4px solid #1f6b43; }
 
 @media (prefers-color-scheme: dark) {
-  .cartao.empresa-DISO { border-top-color: #5b9bd5; }
-  .cartao.empresa-DSO  { border-top-color: #9a5cb8; }
+  .cartao.empresa-DISO       { border-top-color: #5b9bd5; }
+  .cartao.empresa-DSO        { border-top-color: #9a5cb8; }
+  .cartao.empresa-PROMOTORES { border-top-color: #4fa877; }
 }
 
 .titulo-empresa {
@@ -383,6 +397,37 @@ tbody tr:hover { background: var(--superficie-2); }
 .achado.aviso { background: var(--amarelo-fundo);  color: var(--amarelo); }
 .achado .icone { font-weight: 800; }
 
+/* O corpo do achado: a mensagem, e embaixo dela o que resolve a pendencia -
+   o botao de justificar e a caixa de escrever. */
+.achado .corpo {
+  flex: 1; display: flex; flex-direction: column; gap: 10px; align-items: flex-start;
+}
+/* Qual comprovante tem o problema. Herda a cor do achado (vermelho ou
+   amarelo) para nao competir com a mensagem, e o link sublinha para nao ficar
+   so a cor dizendo que da para clicar. */
+.achado .anexo-do-achado { font-size: 13px; opacity: .9; word-break: break-all; }
+.achado .anexo-do-achado a { color: inherit; text-decoration: underline; font-weight: 600; }
+
+.achado .resposta {
+  background: var(--superficie); color: var(--texto);
+  border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.5;
+}
+
+.caixa-justificativa {
+  width: 100%;
+  background: var(--superficie); color: var(--texto);
+  border: 1px solid var(--borda); border-radius: 10px; padding: 12px;
+}
+.caixa-justificativa label { margin-bottom: 8px; }
+.caixa-justificativa textarea { margin-bottom: 8px; }
+.caixa-justificativa .conta {
+  font-size: 13px; color: var(--texto-fraco); margin: 0 0 10px; line-height: 1.5;
+}
+.caixa-justificativa .dica { font-size: 12px; color: var(--texto-fraco); margin: 0 0 12px; }
+.caixa-justificativa .erro-caixa {
+  font-size: 13px; color: var(--vermelho); margin: 0 0 12px; font-weight: 600;
+}
+
 /* ------------------------------------------------------------------ abas */
 
 .abas { display: flex; gap: 6px; margin-bottom: 16px; overflow-x: auto; }
@@ -425,3 +470,53 @@ tbody tr:hover { background: var(--superficie-2); }
 .rodape-fixo button { margin-left: auto; }
 
 .carregando { color: var(--texto-fraco); font-size: 14px; padding: 24px; text-align: center; }
+
+/* Caixa que pede o KM da foto do odometro. Aqui a foto e o que importa: o
+   numero do painel costuma sair pequeno na tela do celular, entao ela fica com
+   todo o espaco que sobra depois dos campos. */
+.foto-odometro {
+  width: 100%;
+  max-height: min(56vh, 520px);
+  object-fit: contain;
+  border-radius: 10px;
+  background: var(--superficie-2);
+  margin-bottom: 6px;
+  cursor: zoom-in;
+}
+
+/* Quando ainda assim nao der para ler, um toque abre a foto na tela inteira. */
+.lupa {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(8, 14, 22, .92);
+  display: flex; align-items: center; justify-content: center;
+  padding: 12px; cursor: zoom-out;
+}
+.lupa img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+/* Explicacao da despesa depois das 18h: so aparece quando a hora informada
+   passa do expediente, logo abaixo da linha do dia. */
+.depois-das-18 {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--amarelo);
+  background: rgba(180, 83, 9, .10);
+  border-radius: 0 8px 8px 0;
+}
+.depois-das-18 label { display: block; font-size: 13px; margin-bottom: 4px; }
+.depois-das-18 input { width: 100%; }
+
+/* Parecer dado antes das regras atuais. Informacao, nao erro - por isso nao
+   usa o vermelho: o relatorio nao esta errado, so nao passou pelas regras
+   de hoje. */
+.regras-antigas {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: var(--amarelo);
+  border: 1px solid var(--amarelo);
+  border-radius: 999px;
+  padding: 1px 8px;
+  cursor: help;
+}

@@ -2,7 +2,7 @@
 
 import {
   api, mostrarRecado, escapar, brl, numeroBr, dataBr, dataHoraBr,
-  tamanhoBr, mesAtual, sair, ROTULO_ANEXO,
+  tamanhoBr, mesAtual, sair, ROTULO_ANEXO, marcarAmbiente, anexoDoAchado, placaParaTela,
 } from '/js/comum.js';
 
 const $ = (id) => document.getElementById(id);
@@ -17,6 +17,23 @@ const filtro = (id, padrao = '') => {
 };
 const ligar = (id, evento, fn) => $(id)?.addEventListener(evento, fn);
 
+// Clique que dispara funcao `async` PRECISA de .catch.
+//
+// Sem ele, qualquer erro depois do primeiro `await` vira uma promise rejeitada
+// que ninguem pega: o navegador engole, a tela nao abre, nao aparece recado
+// nenhum e a pessoa fica olhando o mesmo painel achando que o botao nao
+// funciona. Era o caso do "Abrir": o try/catch de abrirDetalhe cobria so a
+// chamada da API - montar o modal, os anexos e os lancamentos ficava de fora.
+const aoClicar = (elemento, fn, oQue) =>
+  elemento.addEventListener('click', () =>
+    Promise.resolve()
+      .then(fn)
+      .catch((e) => {
+        console.error(`falha ao ${oQue}`, e);
+        mostrarRecado('recado', `Não foi possível ${oQue}: ${e?.message || e}`, 'erro');
+      }),
+  );
+
 // Normaliza para busca: sem acento, minusculo.
 const chave = (s) =>
   String(s || '')
@@ -26,28 +43,43 @@ const chave = (s) =>
 
 // As tres frentes. Um vendedor e um Adm DISO nao tem nada a ver um com o outro,
 // entao nao faz sentido aparecerem na mesma lista.
+// Vendedor e promotor ficam em secoes separadas porque agora moram em janelas
+// diferentes: promotor so existe na PROMOTORES. Cada secao vazia some sozinha,
+// entao a DISO mostra "Vendedores" e a PROMOTORES mostra "Promotores".
 const SECOES = [
-  { titulo: 'Vendedores e promotores', funcoes: ['Vendedor', 'Promotor'] },
+  { titulo: 'Vendedores', funcoes: ['Vendedor'] },
+  { titulo: 'Promotores', funcoes: ['Promotor'] },
   { titulo: 'Supervisores', funcoes: ['Supervisor'] },
   { titulo: 'Administrativo', funcoes: ['Adm Promotor', 'Adm DISO', 'Adm DSO'] },
 ];
 
 const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO', 'Adm DSO'];
+const EMPRESAS = ['DISO', 'DSO', 'PROMOTORES'];
 
 // ATENCAO: tudo que for `const`/`let` e usado durante a inicializacao precisa
 // ficar ACIMA dos `await` de topo de modulo. O `await` pausa a avaliacao do
 // modulo, entao uma constante declarada depois ainda nao existe quando o
 // carregarPainel() roda - e o erro que sai e "Cannot access X before
 // initialization", que derruba o modulo inteiro e todas as abas junto.
-let mes = mesAtual();
+// O mes escolhido fica guardado no navegador. Antes, recarregar a pagina
+// voltava para o mes corrente - quem estava conferindo agosto perdia o lugar a
+// cada F5 e achava que os relatorios tinham sumido.
+let mes = localStorage.getItem('rdv-mes') || mesAtual();
 let painel = null;
 let usuarios = [];
 
 // ------------------------------------------------------------------- inicio
 
+let souSuper = false;
+
 try {
   const dados = await api('/api/eu');
   $('meu-nome').textContent = dados.usuario.nome;
+  souSuper = dados.usuario.papel === 'super';
+  marcarAmbiente(dados.ambiente);
+  // Backup e restauracao sao do dono do sistema. As rotas ja recusam quem nao
+  // e super; esconder o cartao evita oferecer um botao que so devolve 403.
+  if (!souSuper) $('cartao-backup')?.remove();
 } catch {
   location.href = '/';
 }
@@ -56,12 +88,21 @@ $('mes').value = mes;
 $('botao-sair').addEventListener('click', sair);
 $('mes').addEventListener('change', () => {
   mes = $('mes').value;
+  try { localStorage.setItem('rdv-mes', mes); } catch {}
   carregarPainel();
 });
 $('botao-conferir-todos').addEventListener('click', () => conferirPendentes(false));
 $('botao-demo').addEventListener('click', () => conferirPendentes(true));
+aoClicar(
+  $('botao-reconferir-antigos'),
+  reconferirAntigos,
+  'reconferir os relatórios com regras antigas',
+);
 $('botao-exportar').addEventListener('click', () => {
   location.href = `/api/admin/exportar?mes=${mes}`;
+});
+$('botao-imprimir-mes').addEventListener('click', () => {
+  location.href = `/api/admin/impressao?mes=${mes}`;
 });
 $('botao-criar-usuario').addEventListener('click', criarUsuario);
 
@@ -109,6 +150,81 @@ for (const b of document.querySelectorAll('.abas button')) {
 // morrem junto. Foi exatamente o que aconteceu quando o desenho da tabela
 // estourou: a aba Colaboradores passou a dar "Cannot access 'usuarios' before
 // initialization", porque o modulo nunca chegou ao fim.
+/**
+ * O painel se atualiza sozinho.
+ *
+ * A conferencia comeca no envio e leva uns 30 segundos, entao o que esta na
+ * tela envelhece sozinho: um relatorio entra, outro sai de "Em conferencia", e
+ * quem estava olhando nao via nada mudar sem apertar F5.
+ *
+ * Tres cuidados para a atualizacao nao atrapalhar quem esta trabalhando:
+ *  - modal aberto nao e interrompido: ninguem quer o relatorio fechando na cara
+ *    enquanto le o parecer;
+ *  - campo em foco tambem segura, senao a busca ou o filtro perde o que a
+ *    pessoa esta digitando;
+ *  - aba escondida nao consulta nada - nao adianta gastar chamada para uma tela
+ *    que ninguem esta vendo, e ao voltar ela atualiza na hora.
+ */
+const INTERVALO_ATUALIZACAO = 60000;
+
+/**
+ * Diz de quando e o que esta na tela - e avisa quando parou de atualizar.
+ *
+ * O painel congela de proposito enquanto uma janela de relatorio esta aberta,
+ * e isso era invisivel: uma conferente ficou um dia inteiro decidindo em cima
+ * da tela do dia anterior, achando que os vendedores nao tinham enviado nada,
+ * porque a janela de um relatorio tinha ficado aberta. Dado velho sem aviso e
+ * pior que tela vazia: ninguem desconfia dele.
+ */
+let atualizadoEm = null;
+
+function marcarAtualizacao() {
+  atualizadoEm = new Date();
+  mostrarIdade();
+}
+
+function mostrarIdade() {
+  const alvo = $('atualizado-em');
+  if (!alvo || !atualizadoEm) return;
+
+  const minutos = Math.floor((Date.now() - atualizadoEm.getTime()) / 60000);
+  const hora = atualizadoEm.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  // Dois minutos ja passam do intervalo de um minuto: se chegou ate aqui, o
+  // painel esta parado por algum motivo, e a pessoa precisa saber qual.
+  if (minutos >= 2) {
+    const porque = document.querySelector('.fundo-modal')
+      ? 'enquanto a janela de um relatório está aberta'
+      : 'enquanto você está digitando em um campo';
+    alvo.innerHTML = `<span style="color:var(--amarelo); font-weight:600">
+      Esta tela é de ${hora} (${minutos} min atrás). O painel não atualiza ${porque}.</span>`;
+    return;
+  }
+  alvo.textContent = `Atualizado às ${hora}.`;
+}
+
+// A idade da tela corre sozinha: sem isto, "Atualizado as 14:39" continuaria
+// parecendo recente as 17h.
+setInterval(mostrarIdade, 30000);
+
+function podeAtualizarAgora() {
+  if (document.hidden) return false;
+  if (document.querySelector('.fundo-modal')) return false;
+  const focado = document.activeElement;
+  if (focado && ['INPUT', 'TEXTAREA', 'SELECT'].includes(focado.tagName)) return false;
+  // So faz sentido no Painel do mes; nas outras abas ele nem esta na tela.
+  return !$('aba-painel')?.classList.contains('esconde');
+}
+
+setInterval(() => {
+  if (podeAtualizarAgora()) carregarPainel({ silencioso: true }).catch(() => {});
+}, INTERVALO_ATUALIZACAO);
+
+// Voltou para a aba depois de um tempo fora: atualiza sem esperar o intervalo.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && podeAtualizarAgora()) carregarPainel({ silencioso: true }).catch(() => {});
+});
+
 carregarPainel().catch((e) => {
   console.error('falha ao carregar o painel', e);
   const t = $('tabela');
@@ -120,8 +236,10 @@ carregarPainel().catch((e) => {
 
 // ------------------------------------------------------------------- painel
 
-async function carregarPainel() {
-  $('tabela').innerHTML = `<p class="carregando">Carregando...</p>`;
+async function carregarPainel({ silencioso = false } = {}) {
+  // A atualizacao automatica nao pisca "Carregando..." na tabela: de minuto em
+  // minuto isso viraria um flash constante na cara de quem esta lendo a lista.
+  if (!silencioso) $('tabela').innerHTML = `<p class="carregando">Carregando...</p>`;
   try {
     painel = await api(`/api/admin/painel?mes=${mes}`);
   } catch (e) {
@@ -157,6 +275,7 @@ async function carregarPainel() {
     </div>`;
 
   desenharTabela();
+  marcarAtualizacao();
 
   $('nao-enviaram').innerHTML = painel.nao_enviaram.length
     ? painel.nao_enviaram
@@ -230,10 +349,15 @@ function desenharTabela() {
     </table>`;
 
   for (const b of $('tabela').querySelectorAll('[data-ver]')) {
-    b.addEventListener('click', () => abrirDetalhe(Number(b.dataset.ver)));
+    aoClicar(b, () => abrirDetalhe(Number(b.dataset.ver)), 'abrir este relatório');
   }
   for (const b of $('tabela').querySelectorAll('[data-conferir]')) {
     b.addEventListener('click', () => conferirUm(Number(b.dataset.conferir), b));
+  }
+  for (const b of $('tabela').querySelectorAll('[data-imprimir-rel]')) {
+    b.addEventListener('click', () => {
+      location.href = `/api/admin/impressao?mes=${mes}&usuario_id=${b.dataset.imprimirRel}`;
+    });
   }
 }
 
@@ -248,7 +372,7 @@ function linhaTabela(r) {
   const pendente = r.status === 'ENVIADO' || r.status === 'CONFERINDO';
 
   return `<tr class="de-${escapar(r.empresa || 'DISO')}">
-    <td><span class="selo ${r.status}">${escapar(r.rotulo_status)}</span></td>
+    <td><span class="selo ${r.status}">${escapar(r.rotulo_status)}</span>${r.regras_antigas ? `<br><span class="regras-antigas" title="Este parecer foi dado antes das regras atuais. Conferir de novo aplica as de hoje.">regras antigas</span>` : ''}</td>
     <td>
       ${escapar(r.nome)}<br>
       <span class="emp ${escapar(r.empresa || 'DISO')}">${escapar(r.cracha || r.empresa || '')}</span>
@@ -261,6 +385,8 @@ function linhaTabela(r) {
     <td style="white-space:nowrap">
       <button class="secundario pequeno" data-ver="${r.id}">Abrir</button>
       ${pendente ? `<button class="pequeno" data-conferir="${r.id}">Conferir</button>` : ''}
+      <button class="secundario pequeno" data-imprimir-rel="${r.usuario_id}"
+              title="PDF com o RDV, a nota de abastecimento e o pedágio deste vendedor no mês">Imprimir</button>
     </td>
   </tr>`;
 }
@@ -287,6 +413,57 @@ async function conferirUm(id, botao, demo = false) {
       botao.textContent = 'Conferir';
     }
   }
+}
+
+/**
+ * Reconfere os relatorios deste mes que foram julgados por regras antigas.
+ *
+ * Nao pega "todos" ao pe da letra: quem ja esta na versao atual seria conferido
+ * de novo para dar exatamente o mesmo parecer, gastando IA e tempo a toa. O
+ * alvo sao os que a tela marca como "regras antigas" - que e justamente o que
+ * este botao existe para limpar.
+ *
+ * Relatorio de antes do lancamento dia a dia recusa com 409 e nao ha o que
+ * fazer por aqui: entra na lista de falhas com o motivo, em vez de sumir.
+ */
+async function reconferirAntigos() {
+  const antigos = (painel?.relatorios || []).filter((r) => r.regras_antigas);
+  if (!antigos.length) {
+    return mostrarRecado('recado', 'Nenhum relatório deste mês está com regras antigas.', 'info');
+  }
+
+  if (!confirm(
+    `Reconferir ${antigos.length} relatório(s) julgado(s) com regras antigas?\n\n`
+      + 'Cada um leva uns 20 segundos e consome créditos da API.\n\n'
+      + 'ATENÇÃO: o parecer novo substitui o antigo. Relatório aprovado pode '
+      + 'passar a reprovado, e o colaborador vê isso na tela dele.',
+  )) return;
+
+  const botao = $('botao-reconferir-antigos');
+  const rotulo = botao.textContent;
+  botao.disabled = true;
+  let feitos = 0;
+  const falhas = [];
+
+  for (const r of antigos) {
+    botao.textContent = `Reconferindo ${feitos + 1} de ${antigos.length}...`;
+    try {
+      await api('/api/admin/conferir', { metodo: 'POST', corpo: { relatorio_id: r.id } });
+      feitos++;
+    } catch (e) {
+      falhas.push(`${r.nome}: ${e.message}`);
+    }
+  }
+
+  botao.disabled = false;
+  botao.textContent = rotulo;
+  mostrarRecado(
+    'recado',
+    `${feitos} de ${antigos.length} reconferido(s).`
+      + (falhas.length ? ` Não deu para reconferir: ${falhas.join(' | ')}` : ''),
+    falhas.length ? 'atencao' : 'ok',
+  );
+  await carregarPainel();
 }
 
 async function conferirPendentes(demo = false) {
@@ -360,7 +537,7 @@ async function abrirDetalhe(id) {
       <p class="sub">
         ${escapar(r.mes_extenso)} ·
         <span class="selo ${r.status}">${escapar(r.rotulo_status)}</span>
-        ${r.placas ? ` · placas: ${escapar(r.placas)}` : ' · sem placa declarada'}
+        ${r.placas ? ` · placas: ${escapar(placaParaTela(r.placas))}` : " · sem placa declarada"}
       </p>
 
       <div class="numeros" style="margin-bottom:16px">
@@ -377,6 +554,8 @@ async function abrirDetalhe(id) {
       ${r.observacao ? `<div class="aviso info"><strong>Observação do colaborador:</strong><br>${escapar(r.observacao)}</div>` : ''}
 
       ${blocoAssinatura(r)}
+      ${blocoPendenciasAgora(d.pendencias_agora, d)}
+      ${r.regras_antigas ? `<div class="aviso atencao">Este parecer foi dado com <strong>regras anteriores</strong> as de hoje. Use \"Conferir de novo com IA\" para aplicar as regras atuais.</div>` : ''}
       ${blocoAchados(r)}
       ${blocoParecer(r)}
 
@@ -431,19 +610,44 @@ async function abrirDetalhe(id) {
         <button data-status="SO_FALTA_DANFE" style="background:var(--amarelo)">Só falta DANFE</button>
         <button data-status="ERRADA" class="perigo">Reprovar</button>
         ${
-          r.status === 'ENVIADO' || r.status === 'CONFERINDO'
-            ? `<button class="secundario" id="conferir-daqui">Conferir com IA</button>`
-            : ''
+          // Vale para qualquer status, nao so para o pendente. Um relatorio ja
+          // conferido ficava com o parecer preso para sempre: quando a regra de
+          // conferencia mudava, o unico jeito de atualizar o texto era reescrever
+          // na mao. Reconferir regrava o parecer com as regras de agora.
+          r.status === 'RASCUNHO'
+            ? ''
+            : `<button class="secundario" id="conferir-daqui">${
+                r.conferido_em ? 'Conferir de novo com IA' : 'Conferir com IA'
+              }</button>`
         }
+        <button class="secundario" id="imprimir-daqui"
+                title="PDF com o RDV, a nota de abastecimento e o pedágio deste vendedor no mês">Imprimir este</button>
       </div>
     </div>`;
 
   document.body.appendChild(fundo);
 
-  const fechar = () => fundo.remove();
+  // Fechar a janela atualiza o painel na hora.
+  //
+  // Enquanto ela esta aberta o painel NAO atualiza, de proposito - ninguem quer
+  // o relatorio fechando na cara no meio da leitura. So que sem esta linha a
+  // tela ficava velha ate o proximo minuto, e uma janela esquecida aberta
+  // congelava tudo em silencio: uma conferente passou um dia inteiro vendo os
+  // relatorios como "rascunho" porque a tela dela era de ontem.
+  const fechar = () => {
+    fundo.remove();
+    carregarPainel({ silencioso: true }).catch(() => {});
+  };
   fundo.querySelector('#fechar').addEventListener('click', fechar);
   fundo.addEventListener('click', (ev) => {
     if (ev.target === fundo) fechar();
+  });
+
+  // O mes vem do relatorio aberto, nao do seletor do painel: sao sempre o
+  // mesmo hoje, mas se um dia deixarem de ser, imprimir o mes errado sem avisar
+  // seria o pior desfecho.
+  fundo.querySelector('#imprimir-daqui')?.addEventListener('click', () => {
+    location.href = `/api/admin/impressao?mes=${r.mes_ref}&usuario_id=${r.usuario_id}`;
   });
 
   fundo.querySelector('#conferir-daqui')?.addEventListener('click', async (ev) => {
@@ -513,14 +717,60 @@ function blocoAssinatura(r) {
   return `<h2 style="margin-top:4px">Assinatura digital</h2>${cartoes}`;
 }
 
+/**
+ * O que está pendente NESTE MOMENTO, recalculado ao abrir o relatório.
+ *
+ * Não confundir com `blocoAchados`, logo abaixo: aquele mostra o parecer
+ * GRAVADO, que só existe depois que alguém conferiu. Este roda as regras na
+ * hora, e por isso é o único que diz alguma coisa num rascunho ou num
+ * relatório enviado que ninguém olhou ainda.
+ *
+ * Só existe aqui, na tela do admin. O colaborador não recebe este dado.
+ */
+function blocoPendenciasAgora(pendencias, d) {
+  if (!pendencias) return '';
+
+  // "Pendente" aqui e o que FALTA CHEGAR, nao o que esta errado.
+  //
+  // O bloco listava todos os achados, e isso duplicava o parecer logo abaixo -
+  // km invertido, fim de semana e afins sao problema do que ja veio, nao coisa
+  // faltando. O que interessa nesta linha do painel e: ja da para conferir
+  // este relatorio, ou ainda estou esperando documento?
+  const falta = [];
+  if (!d.linhas.length) falta.push('os lançamentos do dia a dia');
+  if (!d.anexos.some((a) => a.tipo === 'rdv')) falta.push('o arquivo do RDV');
+  if (!d.anexos.some((a) => a.tipo === 'danfe')) falta.push('a nota de abastecimento');
+  if (!d.anexos.some((a) => a.tipo === 'odometro')) falta.push('as fotos do odômetro');
+
+  const declarado = Number(pendencias.totalDeclarado || 0);
+  if (declarado > 0 && !d.anexos.some((a) => a.tipo === 'pedagio')) {
+    falta.push('o comprovante de pedágio/estacionamento');
+  }
+
+  const corpo = falta.length
+    ? falta
+        .map((f) => `<div class="achado erro"><span class="icone">✕</span>
+            <span>Falta ${escapar(f)}.</span></div>`)
+        .join('')
+    : '<div class="aviso ok">Chegou tudo. Pode conferir.</div>';
+
+  return `<h2 style="margin-top:4px">O que falta chegar</h2>
+    <p class="sub">Documentos e lançamentos que ainda não vieram. O que está
+       errado no que já chegou aparece no parecer, abaixo.</p>
+    ${corpo}`;
+}
+
 function blocoAchados(r) {
   if (!r.achados?.length) return '';
   return `<h2 style="margin-top:4px">O que foi encontrado</h2>
-    ${r.achados
+    ${(r.achados || [])
       .map(
         (a) => `<div class="achado ${a.gravidade}">
           <span class="icone">${a.gravidade === 'erro' ? '✕' : '!'}</span>
-          <span>${escapar(a.mensagem)}</span></div>`,
+          <div class="corpo">
+            <span>${escapar(a.mensagem)}</span>
+            ${anexoDoAchado(a)}
+          </div></div>`,
       )
       .join('')}`;
 }
@@ -680,8 +930,9 @@ function linhaUsuario(u) {
     </td>
     <td>
       <select data-empresa="${u.id}" style="margin:0; padding:5px 8px; font-size:13px; width:auto">
-        <option value="DISO"${u.empresa === 'DISO' ? ' selected' : ''}>DISO</option>
-        <option value="DSO"${u.empresa === 'DSO' ? ' selected' : ''}>DSO</option>
+        ${EMPRESAS.map(
+          (e) => `<option value="${e}"${u.empresa === e ? ' selected' : ''}>${e}</option>`,
+        ).join('')}
       </select>
     </td>
     <td>
@@ -692,7 +943,7 @@ function linhaUsuario(u) {
       </select>
     </td>
     <td>${escapar(u.login)}</td>
-    <td>${escapar(u.placas || '—')}</td>
+    <td>${escapar(placaParaTela(u.placas) || "—")}</td>
     <td class="num">${u.anexos}</td>
     <td>${
       u.ativo
@@ -706,9 +957,17 @@ function linhaUsuario(u) {
              <button class="secundario pequeno" data-historico="${u.id}"
                      title="Planilha com todos os meses deste colaborador">Histórico</button>
              <button class="secundario pequeno" data-pacote="${u.id}"
-                     title="Baixa uma pasta com tudo deste colaborador">Baixar pasta</button>`
+                     title="Baixa uma pasta com tudo deste colaborador">Baixar pasta</button>
+             <button class="secundario pequeno" data-imprimir="${u.id}"
+                     title="PDF único com RDV, nota de abastecimento e pedágio do mês, pronto para imprimir">Imprimir mês</button>`
           : ''
       }
+      <button class="secundario pequeno" data-nome="${u.id}"
+              title="Corrige o nome que aparece no painel e nas planilhas.">Editar nome</button>
+      <button class="secundario pequeno" data-placa="${u.id}"
+              title="Corrige a placa, ou apaga o que estiver errado no campo.">Editar placa</button>
+      <button class="secundario pequeno" data-login="${u.id}"
+              title="Corrige o login de acesso. O cadastro e os relatórios continuam os mesmos.">Trocar login</button>
       <button class="secundario pequeno" data-senha="${u.id}">Nova senha</button>
       <button class="secundario pequeno" data-ativo="${u.id}" data-valor="${u.ativo ? 0 : 1}">
         ${u.ativo ? 'Desativar' : 'Reativar'}
@@ -742,16 +1001,118 @@ function ligarBotoesDeUsuario() {
     s.addEventListener('change', () => salvarCracha(s, 'funcao'));
   }
   for (const b of raiz.querySelectorAll('[data-galeria]')) {
-    b.addEventListener('click', () => abrirGaleria(Number(b.dataset.galeria)));
+    aoClicar(b, () => abrirGaleria(Number(b.dataset.galeria)), 'abrir a galeria');
   }
   for (const b of raiz.querySelectorAll('[data-pacote]')) {
     b.addEventListener('click', () => {
       location.href = `/api/admin/pacote?usuario_id=${b.dataset.pacote}`;
     });
   }
+  for (const b of raiz.querySelectorAll('[data-imprimir]')) {
+    b.addEventListener('click', () => {
+      location.href = `/api/admin/impressao?mes=${mes}&usuario_id=${b.dataset.imprimir}`;
+    });
+  }
   for (const b of raiz.querySelectorAll('[data-historico]')) {
     b.addEventListener('click', () => {
       location.href = `/api/admin/historico?usuario_id=${b.dataset.historico}`;
+    });
+  }
+
+  for (const b of raiz.querySelectorAll('[data-placa]')) {
+    b.addEventListener('click', async () => {
+      const id = Number(b.dataset.placa);
+      const u = usuarios.find((x) => x.id === id);
+      if (!u) return;
+
+      // O valor atual entra no prompt cortado: um cadastro sujo pode ter
+      // milhares de caracteres, e ninguem edita isso dentro de um prompt.
+      // Apagar (deixar vazio) resolve, e a pessoa digita a placa certa depois.
+      const atual = String(u.placas || '');
+      const nova = prompt(
+        `Placa de ${u.nome}.\n\n`
+          + 'Letras e números, até 60 caracteres. Dois carros: separe por vírgula.\n'
+          + 'Para apagar a placa, deixe o campo vazio e confirme.',
+        atual.length > 60 ? '' : atual,
+      );
+      if (nova === null) return;
+
+      try {
+        const r = await api('/api/admin/usuario-placa', {
+          metodo: 'POST',
+          corpo: { usuario_id: id, placas: nova },
+        });
+        mostrarRecado(
+          'recado-usuario',
+          r.placas ? `Placa de ${u.nome} agora é ${r.placas}.` : `Placa de ${u.nome} apagada.`,
+          'ok',
+        );
+        carregarUsuarios();
+      } catch (e) {
+        mostrarRecado('recado-usuario', e.message, 'erro');
+      }
+    });
+  }
+
+  for (const b of raiz.querySelectorAll('[data-nome]')) {
+    b.addEventListener('click', async () => {
+      const id = Number(b.dataset.nome);
+      const u = usuarios.find((x) => x.id === id);
+      if (!u) return;
+
+      const novo = prompt(
+        `Nome de ${u.nome}.\n\n`
+          + 'Muda como a pessoa aparece no painel, na galeria e nas planilhas — '
+          + 'inclusive nos relatórios que ela já enviou.\n'
+          + 'O login e a senha não mudam.',
+        u.nome,
+      );
+      if (!novo || novo.trim() === u.nome) return;
+
+      try {
+        const r = await api('/api/admin/usuario-nome', {
+          metodo: 'POST',
+          corpo: { usuario_id: id, nome: novo },
+        });
+        mostrarRecado('recado-usuario', `Nome alterado de "${r.anterior}" para "${r.nome}".`, 'ok');
+        carregarUsuarios();
+      } catch (e) {
+        mostrarRecado('recado-usuario', e.message, 'erro');
+      }
+    });
+  }
+
+  for (const b of raiz.querySelectorAll('[data-login]')) {
+    b.addEventListener('click', async () => {
+      const id = Number(b.dataset.login);
+      const u = usuarios.find((x) => x.id === id);
+      if (!u) return;
+
+      const novo = prompt(
+        `Novo login de acesso para ${u.nome}.\n\n`
+          + `Login atual: ${u.login}\n\n`
+          + 'Só letras, números, ponto, hífen e sublinhado — sem espaço.\n'
+          + 'Os relatórios e anexos continuam com a pessoa; só muda o que ela digita para entrar.',
+        u.login,
+      );
+      if (!novo || novo.trim().toLowerCase() === u.login) return;
+
+      try {
+        const r = await api('/api/admin/usuario-login', {
+          metodo: 'POST',
+          corpo: { usuario_id: id, login: novo },
+        });
+        // A pessoa cai da sessao na troca: quem avisa e o admin, aqui.
+        mostrarRecado(
+          'recado-usuario',
+          `Login alterado de "${r.anterior}" para "${r.login}". `
+            + 'Avise a pessoa — ela foi desconectada e entra com o login novo.',
+          'ok',
+        );
+        carregarUsuarios();
+      } catch (e) {
+        mostrarRecado('recado-usuario', e.message, 'erro');
+      }
     });
   }
 
@@ -852,7 +1213,7 @@ async function abrirGaleria(usuarioId) {
       <p class="sub">
         ${escapar(g.usuario.cracha || g.usuario.empresa)} · ${escapar(g.usuario.funcao || '')}
         · ${escapar(g.usuario.login)}
-        ${g.usuario.placas ? ` · placas: ${escapar(g.usuario.placas)}` : ''}
+        ${g.usuario.placas ? ` · placas: ${escapar(placaParaTela(g.usuario.placas))}` : ''}
       </p>
 
       <div class="numeros" style="margin-bottom:16px">
@@ -993,7 +1354,91 @@ async function carregarConfig() {
   } catch (e) {
     mostrarRecado('recado-config', e.message, 'erro');
   }
+  carregarResumoBackup();
 }
+
+// ------------------------------------------------------------------ backup
+
+/**
+ * O que existe hoje e quando foi o último backup.
+ *
+ * O aviso por tempo é o ponto do cartão: backup que depende de alguém lembrar
+ * só funciona se alguém for lembrado. Sem isso a tela viraria mais um botão
+ * que ninguém aperta — e a cópia mais recente teria sempre meses.
+ */
+async function carregarResumoBackup() {
+  const alvo = $('resumo-backup');
+  if (!alvo) return;
+  try {
+    const d = await api('/api/admin/dados');
+    const mb = (d.tamanho_anexos / 1048576).toFixed(1);
+
+    let quando;
+    let tom = 'ok';
+    if (!d.ultimo_backup_em) {
+      quando = 'Nunca foi feito backup por aqui.';
+      tom = 'atencao';
+    } else {
+      const dias = Math.floor((Date.now() - new Date(d.ultimo_backup_em)) / 86400000);
+      const data = new Date(d.ultimo_backup_em).toLocaleString('pt-BR');
+      quando = dias === 0
+        ? `Último backup: hoje, ${data}.`
+        : `Último backup: ${data} — há ${dias} dia(s).`;
+      if (dias >= 7) tom = 'atencao';
+    }
+
+    alvo.innerHTML = `
+      <div class="aviso ${tom}">
+        ${escapar(quando)}<br>
+        Hoje o portal tem <strong>${d.usuarios}</strong> colaboradores,
+        <strong>${d.relatorios}</strong> relatórios e
+        <strong>${d.anexos}</strong> anexos (${mb} MB).
+      </div>`;
+  } catch (e) {
+    alvo.innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
+  }
+}
+
+$('botao-baixar-backup')?.addEventListener('click', () => {
+  mostrarRecado('recado-backup', 'Gerando o arquivo... pode demorar um pouco com muitos anexos.', 'info');
+  location.href = '/api/admin/backup';
+  // O download não avisa quando termina; a data vem do servidor na recarga.
+  setTimeout(() => {
+    mostrarRecado('recado-backup', 'Backup gerado. Guarde o arquivo fora do servidor.', 'ok');
+    carregarResumoBackup();
+  }, 3000);
+});
+
+$('botao-restaurar')?.addEventListener('click', async () => {
+  const arquivo = $('arquivo-restaurar').files?.[0];
+  if (!arquivo) {
+    return mostrarRecado('recado-backup', 'Escolha primeiro o arquivo .zip do backup.', 'atencao');
+  }
+
+  // Duas confirmacoes porque nao ha volta: o banco atual e substituido inteiro.
+  if (!confirm(
+    `Restaurar a partir de "${arquivo.name}"?\n\n`
+      + 'ISSO SUBSTITUI TUDO que está no portal agora — colaboradores, relatórios e anexos '
+      + 'passam a ser os do arquivo.\n\nO que existe hoje será perdido.',
+  )) return;
+  if (!confirm('Tem certeza mesmo? Esta ação não tem desfazer.')) return;
+
+  mostrarRecado('recado-backup', 'Enviando e restaurando... não feche esta página.', 'info');
+  try {
+    const r = await fetch('/api/admin/restaurar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/zip' },
+      body: arquivo,
+      credentials: 'same-origin',
+    });
+    const dados = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(dados.erro || 'Falha ao restaurar.');
+    mostrarRecado('recado-backup', dados.aviso || 'Dados restaurados.', 'ok');
+    carregarResumoBackup();
+  } catch (e) {
+    mostrarRecado('recado-backup', e.message, 'erro');
+  }
+});
 
 async function salvarKm() {
   try {

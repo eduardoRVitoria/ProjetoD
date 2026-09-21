@@ -11,8 +11,22 @@ export function responderJson(res, dados, status = 200, cabecalhos = {}) {
   res.end(corpo);
 }
 
-export function erro(res, mensagem, status = 400) {
-  responderJson(res, { erro: mensagem }, status);
+export function erro(res, mensagem, status = 400, cabecalhos = {}) {
+  responderJson(res, { erro: mensagem }, status, cabecalhos);
+}
+
+/**
+ * De onde veio o pedido.
+ *
+ * Atras do proxy da Railway o socket sempre mostra um IP interno, entao o que
+ * vale e o primeiro nome do X-Forwarded-For - o cliente de verdade.
+ *
+ * Morava no servidor.js. Veio para ca porque agora o rotas.js tambem precisa:
+ * e a chave das regras de limite de login.
+ */
+export function ipDoPedido(req) {
+  const encaminhado = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return encaminhado || req.socket.remoteAddress || '?';
 }
 
 export async function lerCorpo(req, limite = 25 * 1024 * 1024) {
@@ -74,6 +88,34 @@ export function mesPorExtenso(mes) {
   return `${NOMES_MES[m - 1]} de ${ano}`;
 }
 
+/**
+ * A placa, limpa - ou `null` quando o que veio nao e placa.
+ *
+ * Nasceu de um estrago real: a leitura do RDV gravava `extraido.placas` direto
+ * no cadastro, sem conferir nada. Um dia a extracao devolveu 3.314 caracteres
+ * de payload de ferramenta, com o JSON dos lancamentos dentro, e isso foi para
+ * o campo placa de um vendedor. A janela do relatorio imprime a placa embaixo
+ * do nome, entao virou um muro de texto - e, como o painel para de atualizar
+ * enquanto uma janela esta aberta, a conferente passou um dia lendo dados do
+ * dia anterior sem saber.
+ *
+ * A regra e estreita de proposito: uma linha curta, letras, numeros e os
+ * separadores que as pessoas usam quando tem dois carros. Qualquer coisa fora
+ * disso devolve `null`, e quem chama NAO grava - melhor cadastro sem placa que
+ * cadastro com lixo. O que uma pessoa digita errado ela mesma corrige; o que
+ * um modelo escreve errado fica la para sempre.
+ */
+export function placaLimpa(bruto) {
+  const texto = String(bruto ?? '').trim();
+  if (!texto) return null;
+  if (texto.length > 60) return null;
+  // Letras, numeros, espaco e os separadores de "tenho dois carros".
+  if (!/^[A-Za-z0-9\-,/ ]+$/.test(texto)) return null;
+  // Placa tem numero. Sem isso, "o carro do colega de rota" passaria.
+  if (!/[0-9]/.test(texto)) return null;
+  return texto.toUpperCase();
+}
+
 export function nomeDeArquivoSeguro(nome) {
   return String(nome || 'arquivo')
     .normalize('NFD')
@@ -90,3 +132,48 @@ export const ROTULO_STATUS = {
   SO_FALTA_DANFE: 'So falta a nota de abastecimento',
   ERRADA: 'Reprovado - precisa corrigir',
 };
+
+/**
+ * O JSON guardado no banco virando lista, sempre.
+ *
+ * Os `achados` sao gravados como texto JSON e lidos com JSON.parse espalhado
+ * por varias rotas. Bastou um deles devolver outra coisa - texto ainda nao
+ * parseado, objeto solto, JSON quebrado pela metade - para a tela estourar num
+ * `.map is not a function` e sumir inteira, com o vendedor sem entender nada.
+ *
+ * Aqui o formato errado vira lista vazia: a tela perde um aviso, que e ruim,
+ * mas continua de pe, que e o que importa no meio do fechamento.
+ */
+export function listaDeJson(bruto) {
+  if (bruto == null) return null;
+  if (Array.isArray(bruto)) return bruto;
+  try {
+    const v = typeof bruto === 'string' ? JSON.parse(bruto) : bruto;
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Limpa o texto que a IA escreveu antes de gravar.
+ *
+ * O modelo as vezes deixa escapar fragmento da propria estrutura da chamada -
+ * apareceu um "</parameter>" solto dentro do "o que o colaborador precisa
+ * fazer", que foi parar na tela do vendedor. Corta tambem o tamanho, porque
+ * pedir no prompt para ser curto nem sempre e obedecido.
+ */
+export function textoDaIa(bruto, limite = 220) {
+  let t = String(bruto ?? '')
+    // fragmento de marcacao que vazou da chamada de ferramenta
+    .replace(/<\/?[a-z_:][\w:.-]*[^>]*>/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (t.length > limite) {
+    // Corta na ultima frase inteira que couber, para nao terminar no meio.
+    const pedaco = t.slice(0, limite);
+    const fim = Math.max(pedaco.lastIndexOf('. '), pedaco.lastIndexOf('! '));
+    t = (fim > limite * 0.5 ? pedaco.slice(0, fim + 1) : pedaco.trim() + '...').trim();
+  }
+  return t;
+}
