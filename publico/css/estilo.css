@@ -352,7 +352,8 @@ input:focus, select:focus, textarea:focus {
 input::placeholder, textarea::placeholder { color: var(--texto-fraco); }
 textarea { min-height: 88px; resize: vertical; }
 input[type=checkbox] { accent-color: var(--tinta); }
-input[type=month] { min-width: 200px; }
+/* A largura minima fica na caixa em volta do campo, nao no campo: com ela no
+   campo, a caixa encolhia e a data vazava por baixo do botao ao lado. */
 
 button {
   border: 1px solid var(--tinta);
