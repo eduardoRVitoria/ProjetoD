@@ -511,11 +511,19 @@ function normalizar(d, mesEsperado) {
     mes_do_documento: mesDoDoc,
     placas: String(d.placas || '').trim(),
     linhas,
+    // Esta lista tem que acompanhar o esquema la em cima. Ela e uma copia
+    // campo a campo, entao um campo novo no esquema que nao entre aqui e lido
+    // pelo modelo e jogado fora em silencio - foi o que aconteceu com hotel e
+    // outros: o RDV do Felipe trazia R$ 159,00 e o portal fechava R$ 159,00
+    // abaixo do documento, sem apontar nada.
     totais_declarados: {
       total_km: valor(t.total_km),
       taxa_por_km: valor(t.taxa_por_km),
       valor_total_km: valor(t.valor_total_km),
       pedagio_estacionamento: valor(t.pedagio_estacionamento),
+      hotel: valor(t.hotel),
+      outros: valor(t.outros),
+      outros_descricao: String(t.outros_descricao || '').trim() || null,
     },
     confianca: ['alta', 'media', 'baixa'].includes(d.confianca) ? d.confianca : 'baixa',
     problemas_de_leitura: problemas,
