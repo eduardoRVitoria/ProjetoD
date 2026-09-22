@@ -14,19 +14,14 @@ const $ = (id) => document.getElementById(id);
 const seletor = $('seletor');
 let tipoEmUso = null;
 
-// Luzes-espia do painel de bordo. Cada uma responde uma pergunta ("mandei a
-// nota?") com a cor do painel do carro, e o toque leva para a etapa onde
-// aquilo se resolve.
-const ICONES = {
-  rdv: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4"/>',
-  nota: '<path d="M5 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16M3.5 21h13M15 9h2a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V8.5L19.5 6M8 7h4"/>',
-  pedagio: '<path d="M5 21V5M3 21h4M5 9h15.5l-1 3.5H5M9.5 9l-1 3.5M14 9l-1 3.5M18.5 9l-1 3.5"/>',
-  odometro: '<path d="M3.5 17a8.5 8.5 0 1 1 17 0M12 17l4.5-5.5M7 12.5l1 .5M12 8.5v1M17 12.5l-1 .5"/><circle cx="12" cy="17" r="1.3"/>',
-  pendencia: '<path d="M12 3.5 2.5 20h19zM12 10v4.5M12 17.3v.2"/>',
+// Lista "para enviar" do resumo do mes. Cada item responde uma pergunta
+// ("mandei a nota?") e o clique leva para a etapa onde aquilo se resolve.
+const MARCA_DO_ITEM = {
+  ok: '<path d="m7 12.5 3.2 3.2L17 9"/>',
+  alerta: '<path d="M12 7.5v5.5M12 16.5v.1"/>',
+  falha: '<path d="m8.5 8.5 7 7M15.5 8.5l-7 7"/>',
 };
 const DO_ODOMETRO = /odometro|foto|troca_de_carro/;
-const C_MEDIDOR = 276.5; // 2 x pi x 44, o raio do anel
-let jaLigou = false;
 
 // O que o seletor de arquivo oferece. Precisa citar a extensao E o mime: o
 // Android costuma casar pelo mime, e o iPhone pela extensao.
@@ -124,6 +119,8 @@ try {
   const dados = await api('/api/eu');
   eu = dados.usuario;
   $('meu-nome').textContent = eu.nome;
+  $('minhas-iniciais').textContent = String(eu.nome || '')
+    .split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
   marcarAmbiente(dados.ambiente);
   if (eu.trocar_senha) pedirTrocaDeSenha();
 } catch {
@@ -144,7 +141,7 @@ for (const [id, passo] of [['mes-antes', -1], ['mes-depois', 1]]) {
   });
 }
 
-// Toque numa luz do painel: vai para a etapa onde aquilo se resolve.
+// Clique num item da lista: vai para a etapa onde aquilo se resolve.
 $('luzes').addEventListener('click', (ev) => {
   const luz = ev.target.closest('[data-ir]');
   if (luz) trocarAba(luz.dataset.ir);
@@ -1123,7 +1120,7 @@ async function enviar() {
   }
 }
 
-// ------------------------------------------------------------ painel de bordo
+// ------------------------------------------------------------ resumo do mes
 
 function luzesDoMes() {
   const p = estado.previa;
@@ -1159,7 +1156,7 @@ function luzesDoMes() {
         : p.totalDeclarado > 0 ? `${brl(p.totalDeclarado)} comprovado` : 'Nada lançado',
     },
     {
-      icone: 'odometro', ir: 'comprovantes', titulo: 'Fotos do painel',
+      icone: 'odometro', ir: 'comprovantes', titulo: 'Fotos do odômetro',
       estado: doOdometro.some((a) => a.gravidade === 'erro') ? 'falha' : doOdometro.length ? 'alerta' : 'ok',
       texto: fotos ? `${fotos} foto${fotos > 1 ? 's' : ''}${doOdometro.length ? ', confira' : ''}` : 'Nenhuma foto',
     },
@@ -1178,22 +1175,16 @@ function desenharPainel() {
   const r = estado.relatorio;
   const luzes = luzesDoMes();
 
-  // Odometro: um digito por celula, o ponto de milhar fica solto.
-  $('odometro').innerHTML = numeroBr(p.totalKm || 0)
-    .split('')
-    .map((c) => (/\d/.test(c) ? `<span class="d">${c}</span>` : `<span class="sep">${escapar(c)}</span>`))
-    .join('') + '<span class="unid">km</span>';
+  $('titulo-mes').textContent = `Relatório de ${r.mes_extenso || 'viagem'}`;
+  $('odometro').textContent = `${numeroBr(p.totalKm || 0)} km`;
+  $('cifra-pedagio').textContent = brl(p.totalDeclarado || 0);
+  $('a-receber').textContent = brl(p.totalDoMes || 0);
 
-  const [moeda, valor] = brl(p.totalDoMes || 0).split(/\s+/);
-  $('a-receber').innerHTML = `<small>${escapar(moeda)}</small>${escapar(valor || '')}`;
-  $('detalhe-receber').textContent =
-    `${brl(p.valorKm || 0)} de km + ${brl(p.totalDeclarado || 0)} de pedágio e estacionamento`;
-
-  // Ponteiro: quanto do mes ja esta pronto para enviar.
+  // Quanto do mes ja esta pronto para enviar.
   const prontos = luzes.filter((l) => l.estado === 'ok').length;
-  $('medidor-arco').style.strokeDashoffset = String(C_MEDIDOR * (1 - prontos / luzes.length));
-  $('medidor').classList.toggle('tudo', prontos === luzes.length);
-  $('medidor-quanto').innerHTML = `${prontos}<span>/${luzes.length}</span>`;
+  $('medidor-barra').style.width = `${Math.round((prontos / luzes.length) * 100)}%`;
+  $('medidor-barra').classList.toggle('completo', prontos === luzes.length);
+  $('medidor-quanto').textContent = `${prontos} de ${luzes.length}`;
   const falta = luzes.length - prontos;
   $('medidor-frase').textContent =
     r.status === 'CERTA' ? 'Relatório aprovado'
@@ -1203,32 +1194,25 @@ function desenharPainel() {
 
   $('luzes').innerHTML = luzes
     .map((l) => `
-      <button class="luz ${l.estado}" data-ir="${l.ir}" title="Abrir ${escapar(l.titulo.toLowerCase())}">
-        <svg viewBox="0 0 24 24" aria-hidden="true">${ICONES[l.icone]}</svg>
+      <li><button class="item ${l.estado}" data-ir="${l.ir}">
+        <svg viewBox="0 0 24 24" aria-hidden="true">${MARCA_DO_ITEM[l.estado]}</svg>
         <span><span class="t">${escapar(l.titulo)}</span><span class="s">${escapar(l.texto)}</span></span>
-      </button>`)
+      </button></li>`)
     .join('');
 
-  // A ignicao so acontece na primeira vez: redesenhar depois de salvar nao
-  // pode fazer o painel piscar de novo.
-  if (!jaLigou) {
-    jaLigou = true;
-    $('luzes').classList.add('ignicao');
-    setTimeout(() => $('luzes').classList.remove('ignicao'), 1600);
-  }
-
-  // O estado de cada parada da rota.
+  // O estado de cada etapa.
   const [rdv, nota, pedagio, fotos, pend] = luzes;
   const comprov = [nota, pedagio, fotos].filter((l) => l.estado === 'ok').length;
-  paradaEm('estado-lancamentos', rdv.estado, rdv.estado === 'ok' ? 'lido' : 'falta');
-  paradaEm('estado-comprovantes', comprov === 3 ? 'ok' : 'falha', `${comprov} de 3`);
-  paradaEm('estado-conferencia', pend.estado, pend.texto.toLowerCase());
+  const nErros = (p.achados || []).filter((a) => a.gravidade === 'erro').length;
+  paradaEm('estado-lancamentos', rdv.estado, rdv.estado === 'ok' ? 'Lido' : 'Falta');
+  paradaEm('estado-comprovantes', comprov === 3 ? 'ok' : 'falha', `${comprov}/3`);
+  paradaEm('estado-conferencia', pend.estado, nErros ? String(nErros) : pend.estado === 'ok' ? 'Ok' : '!');
 }
 
 function paradaEm(id, estadoLuz, texto) {
   const alvo = $(id);
   if (!alvo) return;
-  alvo.className = `estado-parada ${estadoLuz}`;
+  alvo.className = `estado-etapa ${estadoLuz}`;
   alvo.textContent = texto;
 }
 
