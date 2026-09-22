@@ -1,14 +1,16 @@
 /* Portal RDV - folha unica, pensada primeiro para o celular.
 
-   Visual tirado de um painel de agenda de partidas: canvas cinza neutro com
-   superficies brancas flutuando, acento verde-oliva, cantos largos e sombras
-   quase invisiveis. As abas sao sublinhadas, nao pastilhas.
+   Visual de sinalizacao rodoviaria: o mundo de quem preenche isto e estrada,
+   pedagio e odometro. A barra lateral e uma placa verde de rodovia, com o
+   filete branco por dentro, e o item ativo leva a faixa amarela tracejada da
+   pista. E o unico lugar ousado da tela - o resto fica quieto: fundo de
+   concreto, cartoes brancos sem sombra, asfalto no texto e nos botoes.
 
-   A marca e azul. Ele nao colide com os status (verde CERTA, amarelo SO FALTA
-   DANFE, vermelho ERRADA) e fica mais saturado e mais claro que o azul-marinho
-   da DISO (#1c4e80), que marca empresa na tabela - sao papeis diferentes: a
-   marca aparece em botao solido e no item ativo do menu, a empresa so em
-   etiqueta pequena. */
+   Tipo: Overpass, desenhada a partir da Highway Gothic das placas de estrada,
+   com digitos de largura igual nos numeros, alinhados como num odometro.
+
+   O amarelo da faixa so aparece dentro da placa verde. Fora dela o amarelo e
+   o de "atencao" (SO FALTA DANFE), e os dois nao podem se confundir. */
 
 :root {
   /* Diz ao navegador em que tema desenhar o que e DELE: o calendario do
@@ -16,19 +18,25 @@
      calendario abre branco por cima da tela escura. */
   color-scheme: light dark;
 
-  --fundo: #eaeaea;
+  --fonte: Overpass, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+
+  --fundo: #e7e9e5;
   --superficie: #ffffff;
-  --superficie-2: #f4f4f4;
-  --borda: #ececec;
-  --borda-forte: #e0e0e0;
-  --texto: #1f1f1f;
-  /* A referencia usa um cinza bem claro no texto secundario. Este aqui e o mais
-     claro que ainda passa em contraste (4,6:1) - abaixo disso o rotulo some. */
-  --texto-fraco: #6f7378;
-  --marca: #6e9438;
-  --marca-forte: #5b7c2d;
-  --marca-clara: #eef4e2;
-  --marca-anel: rgba(110, 148, 56, .25);
+  --superficie-2: #f1f3ef;
+  --borda: #dadcd6;
+  --borda-forte: #c9ccc5;
+  --texto: #2a2e33;
+  --texto-fraco: #5d6369;
+  /* Asfalto: botao principal e texto forte. */
+  --marca: #2a2e33;
+  --marca-forte: #15181b;
+  --marca-clara: #e3eee7;
+  --marca-anel: rgba(11, 90, 54, .28);
+  /* A placa. */
+  --placa: #0b5a36;
+  --placa-escura: #084a2c;
+  --placa-texto: #ffffff;
+  --faixa: #f4c21a;
   --verde: #0b7a3b;
   --verde-fundo: #e3f5ea;
   --amarelo: #9a6b0a;
@@ -36,51 +44,46 @@
   --vermelho: #c22e45;
   --vermelho-fundo: #fce7eb;
 
-  /* Sombra quase invisivel: na referencia os cartoes se separam do fundo pelo
-     branco contra o cinza, nao por relevo. */
-  --sombra-sutil: 0 1px 2px rgba(16, 16, 20, .04);
-  --sombra: 0 1px 2px rgba(16, 16, 20, .03), 0 6px 20px -10px rgba(16, 16, 20, .10);
-  --sombra-alta: 0 30px 70px -20px rgba(16, 16, 20, .30);
+  /* Cartao nao tem sombra: separa do concreto pelo branco e por um fio. So o
+     que flutua de verdade (menu, gaveta) ganha relevo. */
+  --sombra-sutil: none;
+  --sombra: none;
+  --sombra-alta: 0 24px 60px -18px rgba(20, 24, 22, .35);
 
-  --raio: 16px;
-  --raio-p: 10px;
+  --raio: 14px;
+  --raio-p: 8px;
 
-  /* Barra lateral: painel branco flutuando sobre o cinza, com margem e cantos
-     proprios - como na referencia. O oliva e a unica cor dela, no item ativo. */
   --lateral: 236px;
   --lateral-margem: 12px;
-  --lateral-fundo: #ffffff;
-  --lateral-texto: #6f7378;
-  --lateral-forte: #1f1f1f;
-  --lateral-hover: #f4f4f4;
+  --lateral-fundo: var(--placa);
+  --lateral-texto: rgba(255, 255, 255, .78);
+  --lateral-forte: #ffffff;
+  --lateral-hover: rgba(255, 255, 255, .09);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --fundo: #141416;
-    --superficie: #1d1d20;
-    --superficie-2: #26262a;
-    --borda: #303036;
-    --borda-forte: #3d3d45;
-    --texto: #ececef;
-    --texto-fraco: #9a9aa3;
-    --marca: #9ec45f;
-    --marca-forte: #b4d77a;
-    --marca-clara: #232a19;
-    --marca-anel: rgba(158, 196, 95, .26);
+    --fundo: #16191b;
+    --superficie: #202427;
+    --superficie-2: #292e31;
+    --borda: #33393d;
+    --borda-forte: #434a4f;
+    --texto: #e8ebe7;
+    --texto-fraco: #a0a8ad;
+    /* No escuro o botao principal inverte: placa de fundo claro. */
+    --marca: #e8ebe7;
+    --marca-forte: #ffffff;
+    --marca-clara: #1b2e24;
+    --marca-anel: rgba(120, 200, 160, .30);
+    --placa: #0d6640;
+    --placa-escura: #0a5534;
     --verde: #5ec98d;
     --verde-fundo: #12301f;
     --amarelo: #e8b44a;
     --amarelo-fundo: #33280d;
     --vermelho: #f08a94;
     --vermelho-fundo: #3a171c;
-    --sombra-sutil: 0 1px 2px rgba(0, 0, 0, .4);
-    --sombra: 0 1px 2px rgba(0, 0, 0, .35), 0 6px 20px -10px rgba(0, 0, 0, .6);
     --sombra-alta: 0 30px 70px -20px rgba(0, 0, 0, .75);
-    --lateral-fundo: #1d1d20;
-    --lateral-texto: #9a9aa3;
-    --lateral-forte: #ececef;
-    --lateral-hover: rgba(255, 255, 255, .06);
   }
 }
 
@@ -90,7 +93,7 @@ body {
   margin: 0;
   background: var(--fundo);
   color: var(--texto);
-  font: 15px/1.55 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 15.5px/1.55 var(--fonte);
   -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
 }
@@ -98,9 +101,10 @@ body {
 /* O foco tem que aparecer em qualquer coisa que receba teclado, nao so nos
    campos. */
 :focus-visible {
-  outline: 2px solid var(--marca);
+  outline: 2px solid var(--placa);
   outline-offset: 2px;
 }
+.lateral :focus-visible { outline-color: var(--faixa); }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
@@ -122,10 +126,11 @@ body {
   flex: 0 0 var(--lateral);
   background: var(--lateral-fundo);
   color: var(--lateral-texto);
-  border: 1px solid var(--borda);
+  border: 0;
   border-radius: var(--raio);
-  box-shadow: var(--sombra);
-  padding: 18px 12px;
+  /* O filete branco por dentro da borda, como em toda placa de rodovia. */
+  box-shadow: inset 0 0 0 5px var(--placa), inset 0 0 0 7px rgba(255, 255, 255, .92);
+  padding: 22px 14px;
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -137,13 +142,14 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 2px 6px;
+  padding: 2px 8px;
   color: var(--lateral-forte);
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 19px;
+  font-weight: 800;
   letter-spacing: -.2px;
+  line-height: 1.1;
 }
-.lateral-marca svg { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 9px; }
+.lateral-marca svg { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 7px; }
 
 .area {
   flex: 1;
@@ -173,10 +179,11 @@ body {
 .topo.larga { max-width: min(1900px, 100%); }
 
 .topo h1 {
-  font-size: 28px;
+  font-size: 32px;
   margin: 0;
-  font-weight: 600;
-  letter-spacing: -.7px;
+  font-weight: 800;
+  letter-spacing: -.6px;
+  line-height: 1.1;
 }
 .topo .quem {
   margin-left: auto;
@@ -211,20 +218,20 @@ body {
 .cartao {
   background: var(--superficie);
   border: 1px solid var(--borda);
-  border-radius: 14px;
-  padding: 20px;
-  margin-bottom: 12px;
-  box-shadow: var(--sombra-sutil);
+  border-radius: 10px;
+  padding: 22px;
+  margin-bottom: 14px;
 }
 
-/* Titulo pequeno em cinza medio no topo; o que interessa e o conteudo
-   embaixo dele. */
+/* O titulo do cartao diz o que fazer ali ("Envie o seu RDV"): tem que ser
+   lido primeiro, entao e escuro e forte, nao um rotulo cinza. */
 .cartao h2 {
-  margin: 0 0 14px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: .1px;
-  color: var(--texto-fraco);
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -.2px;
+  line-height: 1.25;
+  color: var(--texto);
 }
 
 .sub { color: var(--texto-fraco); font-size: 14px; margin: 0 0 18px; max-width: 72ch; }
@@ -255,7 +262,7 @@ input[type=email], select, textarea {
 
 input:focus, select:focus, textarea:focus {
   outline: none;
-  border-color: var(--marca);
+  border-color: var(--placa);
   box-shadow: 0 0 0 3px var(--marca-anel);
 }
 
@@ -267,10 +274,9 @@ button {
   padding: 10px 18px;
   background: var(--marca);
   color: #fff;
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: 700;
+  font-size: 14.5px;
   cursor: pointer;
-  box-shadow: var(--sombra-sutil);
   transition: background .12s;
 }
 button:hover { background: var(--marca-forte); }
@@ -286,9 +292,9 @@ button.perigo { background: var(--vermelho); }
 button.perigo:hover { background: var(--vermelho); filter: brightness(.92); }
 button.pequeno { padding: 7px 13px; font-size: 13px; border-radius: 8px; }
 
-/* No tema escuro o oliva e claro: texto branco por cima nao le. */
+/* No tema escuro o botao principal e claro: texto branco por cima nao le. */
 @media (prefers-color-scheme: dark) {
-  button { color: #161a10; }
+  button { color: #16191b; }
   button.secundario { color: var(--texto); }
   button.perigo { color: #2a0d13; }
 }
@@ -311,14 +317,15 @@ button.pequeno { padding: 7px 13px; font-size: 13px; border-radius: 8px; }
 
 /* -------------------------------------------------------------- selo/status */
 
-/* Pastilha de fundo claro, como o "Upcoming" da referencia. */
+/* Plaquinha retangular, com a borda da propria cor - le como sinal, nao como
+   etiqueta de aplicativo. */
 .selo {
   display: inline-block;
-  padding: 4px 11px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: .1px;
+  padding: 3px 9px 2px;
+  border-radius: 5px;
+  border: 1.5px solid currentColor;
+  font-size: 12.5px;
+  font-weight: 700;
   white-space: nowrap;
 }
 .selo.CERTA          { background: var(--verde-fundo);    color: var(--verde); }
@@ -407,10 +414,8 @@ tr.inativo td:first-child .emp { text-decoration: none; }
 .grupo-empresa td {
   background: var(--superficie-2);
   font-weight: 700;
-  font-size: 12px;
-  letter-spacing: .4px;
-  text-transform: uppercase;
-  color: var(--texto-fraco);
+  font-size: 13.5px;
+  color: var(--texto);
   border-top: 1px solid var(--borda);
 }
 
@@ -589,27 +594,31 @@ tr.inativo td:first-child .emp { text-decoration: none; }
 .numero {
   background: var(--superficie);
   border: 1px solid var(--borda);
-  border-radius: 12px;
-  padding: 14px 16px;
+  border-radius: 8px;
+  padding: 14px 16px 12px;
 }
 .numero .rotulo {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--texto-fraco);
-  font-weight: 500;
+  font-weight: 600;
   margin-bottom: 6px;
 }
+/* Digitos de largura igual (tabular), como no odometro: da para comparar dois
+   numeros de olho, casa por casa. */
 .numero .valor {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -.8px;
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -.4px;
   font-variant-numeric: tabular-nums;
-  line-height: 1.15;
+  line-height: 1.2;
 }
+/* O numero que importa (o que a pessoa recebe) fica na placa verde. */
 .numero.destaque {
-  background: var(--marca-clara);
-  border-color: transparent;
+  background: var(--placa);
+  border-color: var(--placa);
 }
-.numero.destaque .valor { color: var(--marca-forte); }
+.numero.destaque .rotulo { color: rgba(255, 255, 255, .8); }
+.numero.destaque .valor { color: #fff; }
 
 /* --------------------------------------------------------------- tabela */
 
@@ -618,9 +627,10 @@ tr.inativo td:first-child .emp { text-decoration: none; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { padding: 13px 12px; text-align: left; border-bottom: 1px solid var(--borda); }
 th {
-  font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+  font-size: 13px;
   color: var(--texto-fraco); font-weight: 600; white-space: nowrap;
   background: var(--superficie); position: sticky; top: 0;
+  border-bottom: 2px solid var(--borda-forte);
 }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tbody tr:hover { background: var(--superficie-2); }
@@ -642,8 +652,7 @@ tbody tr:hover { background: var(--superficie-2); }
 }
 .dia .cabeca .semana { color: var(--texto-fraco); font-weight: 400; font-size: 13px; }
 .dia .cabeca .marca-dia {
-  margin-left: auto; font-size: 11px; font-weight: 600; letter-spacing: .4px;
-  text-transform: uppercase; color: var(--amarelo);
+  margin-left: auto; font-size: 12.5px; font-weight: 700; color: var(--amarelo);
 }
 .dia .campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .dia .campos .largo { grid-column: 1 / -1; }
@@ -678,9 +687,12 @@ tbody tr:hover { background: var(--superficie-2); }
   transition: border-color .12s, color .12s, background .12s;
 }
 .solta:hover, .solta.sobre {
-  border-color: var(--marca);
-  color: var(--marca-forte);
+  border-color: var(--placa);
+  color: var(--placa);
   background: var(--marca-clara);
+}
+@media (prefers-color-scheme: dark) {
+  .solta:hover, .solta.sobre { color: var(--verde); border-color: var(--verde); }
 }
 
 /* ---------------------------------------------------------------- achados */
@@ -750,22 +762,36 @@ tbody tr:hover { background: var(--superficie-2); }
   border: 0;
   border-radius: var(--raio-p);
   box-shadow: none;
-  padding: 11px 12px;
-  font-size: 14px;
-  font-weight: 500;
+  padding: 11px 12px 10px 14px;
+  font-size: 15.5px;
+  font-weight: 600;
+  position: relative;
 }
 .abas button svg {
-  width: 18px; height: 18px; flex: 0 0 18px;
-  fill: none; stroke: currentColor; stroke-width: 1.7;
+  width: 19px; height: 19px; flex: 0 0 19px;
+  fill: none; stroke: currentColor; stroke-width: 1.9;
   stroke-linecap: round; stroke-linejoin: round;
 }
 .abas button:hover { background: var(--lateral-hover); color: var(--lateral-forte); }
+/* Onde voce esta: a faixa amarela tracejada da pista na borda do item. */
 .abas button.ativa {
-  background: var(--marca);
+  background: rgba(0, 0, 0, .18);
   color: #fff;
-  font-weight: 600;
+  font-weight: 800;
 }
-.abas button.ativa:hover { background: var(--marca); }
+.abas button.ativa::before {
+  content: "";
+  position: absolute;
+  left: 3px; top: 7px; bottom: 7px;
+  width: 4px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(to bottom, var(--faixa) 0 6px, transparent 6px 10px);
+}
+.abas button.ativa:hover { background: rgba(0, 0, 0, .18); }
+@media (prefers-color-scheme: dark) {
+  .abas button { color: var(--lateral-texto); }
+  .abas button.ativa, .abas button:hover { color: #fff; }
+}
 
 /* ---------------------------------------------------------------- gaveta */
 
