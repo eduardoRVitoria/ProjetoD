@@ -1,547 +1,627 @@
 /* Portal RDV - folha unica, pensada primeiro para o celular.
 
-   Visual de sinalizacao rodoviaria: o mundo de quem preenche isto e estrada,
-   pedagio e odometro. A barra lateral e uma placa verde de rodovia, com o
-   filete branco por dentro, e o item ativo leva a faixa amarela tracejada da
-   pista. E o unico lugar ousado da tela - o resto fica quieto: fundo de
-   concreto, cartoes brancos sem sombra, asfalto no texto e nos botoes.
+   Conceito: PAINEL DE BORDO. Quem usa isto passa o mes dentro de um carro, e
+   o painel do carro e a interface que ele ja sabe ler sem manual: um
+   odometro, luzes que acendem quando falta alguma coisa (verde = ok, ambar =
+   atencao, vermelho = problema) e um ponteiro que diz quanto falta. A tela do
+   vendedor copia isso - o HUD no topo responde "o que falta para eu enviar?"
+   antes de ele ler qualquer texto.
 
-   Tipo: Overpass, desenhada a partir da Highway Gothic das placas de estrada,
-   com digitos de largura igual nos numeros, alinhados como num odometro.
+   Cabine noturna: fundo petroleo escuro, instrumentos em luz ciano-gelo, e as
+   tres cores de luz-espia com o sentido que elas tem no carro. Nenhuma cor
+   aqui e decoracao - ciano e "leitura/acao", o resto e estado.
 
-   O amarelo da faixa so aparece dentro da placa verde. Fora dela o amarelo e
-   o de "atencao" (SO FALTA DANFE), e os dois nao podem se confundir. */
+   Tipo: Saira, uma familia so, com eixo de largura: larga e normal no texto,
+   condensada nos numeros do painel (odometro, reais), como nos mostradores.
+
+   Movimento: um unico momento - a "ignicao". Ao abrir, as luzes acendem em
+   sequencia e o ponteiro varre ate o valor, como o autoteste do carro. Fora
+   disso, so o que responde a um toque. */
 
 :root {
-  /* Diz ao navegador em que tema desenhar o que e DELE: o calendario do
-     input[type=date], as setinhas do number, a barra de rolagem. Sem isso o
-     calendario abre branco por cima da tela escura. */
-  color-scheme: light dark;
+  color-scheme: dark;
 
-  --fonte: Overpass, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --fonte: Saira, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
 
-  --fundo: #e7e9e5;
-  --superficie: #ffffff;
-  --superficie-2: #f1f3ef;
-  --borda: #dadcd6;
-  --borda-forte: #c9ccc5;
-  --texto: #2a2e33;
-  --texto-fraco: #5d6369;
-  /* Asfalto: botao principal e texto forte. */
-  --marca: #2a2e33;
-  --marca-forte: #15181b;
-  --marca-clara: #e3eee7;
-  --marca-anel: rgba(11, 90, 54, .28);
-  /* A placa. */
-  --placa: #0b5a36;
-  --placa-escura: #084a2c;
-  --placa-texto: #ffffff;
-  --faixa: #f4c21a;
-  --verde: #0b7a3b;
-  --verde-fundo: #e3f5ea;
-  --amarelo: #9a6b0a;
-  --amarelo-fundo: #fdf2d9;
-  --vermelho: #c22e45;
-  --vermelho-fundo: #fce7eb;
+  --noite: #0b1418;          /* fundo */
+  --painel: #111e24;         /* superficie */
+  --painel-2: #172830;       /* superficie elevada / campo */
+  --fio: #22363f;            /* divisoria */
+  --fio-forte: #2f4853;
+  --texto: #e3eff2;
+  --fraco: #8ba4ac;
 
-  /* Cartao nao tem sombra: separa do concreto pelo branco e por um fio. So o
-     que flutua de verdade (menu, gaveta) ganha relevo. */
-  --sombra-sutil: none;
-  --sombra: none;
-  --sombra-alta: 0 24px 60px -18px rgba(20, 24, 22, .35);
+  --luz: #7fe3f0;            /* instrumento: leitura e acao */
+  --luz-escura: #0b3a42;
+  --luz-brilho: rgba(127, 227, 240, .35);
 
+  --ok: #3ddc97;
+  --ok-fundo: rgba(61, 220, 151, .12);
+  --alerta: #ffb547;
+  --alerta-fundo: rgba(255, 181, 71, .12);
+  --falha: #ff5c6c;
+  --falha-fundo: rgba(255, 92, 108, .12);
+
+  /* Nomes antigos que o JS e o HTML ainda usam em estilo inline. */
+  --fundo: var(--noite);
+  --superficie: var(--painel);
+  --superficie-2: var(--painel-2);
+  --borda: var(--fio);
+  --borda-forte: var(--fio-forte);
+  --texto-fraco: var(--fraco);
+  --marca: var(--luz);
+  --marca-forte: var(--luz);
+  --marca-clara: var(--luz-escura);
+  --marca-anel: var(--luz-brilho);
+  --verde: var(--ok);
+  --verde-fundo: var(--ok-fundo);
+  --amarelo: var(--alerta);
+  --amarelo-fundo: var(--alerta-fundo);
+  --vermelho: var(--falha);
+  --vermelho-fundo: var(--falha-fundo);
+
+  --sombra-alta: 0 30px 80px -20px rgba(0, 0, 0, .8);
   --raio: 14px;
-  --raio-p: 8px;
-
-  --lateral: 236px;
-  --lateral-margem: 12px;
-  --lateral-fundo: var(--placa);
-  --lateral-texto: rgba(255, 255, 255, .78);
-  --lateral-forte: #ffffff;
-  --lateral-hover: rgba(255, 255, 255, .09);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fundo: #16191b;
-    --superficie: #202427;
-    --superficie-2: #292e31;
-    --borda: #33393d;
-    --borda-forte: #434a4f;
-    --texto: #e8ebe7;
-    --texto-fraco: #a0a8ad;
-    /* No escuro o botao principal inverte: placa de fundo claro. */
-    --marca: #e8ebe7;
-    --marca-forte: #ffffff;
-    --marca-clara: #1b2e24;
-    --marca-anel: rgba(120, 200, 160, .30);
-    --placa: #0d6640;
-    --placa-escura: #0a5534;
-    --verde: #5ec98d;
-    --verde-fundo: #12301f;
-    --amarelo: #e8b44a;
-    --amarelo-fundo: #33280d;
-    --vermelho: #f08a94;
-    --vermelho-fundo: #3a171c;
-    --sombra-alta: 0 30px 70px -20px rgba(0, 0, 0, .75);
-  }
+  --raio-p: 9px;
+  --lateral: 92px;
 }
 
 * { box-sizing: border-box; }
 
+html { background: var(--noite); }
+
 body {
   margin: 0;
-  background: var(--fundo);
+  min-height: 100dvh;
   color: var(--texto);
   font: 15.5px/1.55 var(--fonte);
   -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
+  /* O brilho frio do painel vem de cima, como a luz do cluster no rosto. */
+  background:
+    radial-gradient(1200px 520px at 50% -180px, rgba(127, 227, 240, .10), transparent 70%),
+    var(--noite);
 }
 
-/* O foco tem que aparecer em qualquer coisa que receba teclado, nao so nos
-   campos. */
-:focus-visible {
-  outline: 2px solid var(--placa);
-  outline-offset: 2px;
-}
-.lateral :focus-visible { outline-color: var(--faixa); }
+:focus-visible { outline: 2px solid var(--luz); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
 
-/* ---------------------------------------------------------- esqueleto */
+a { color: var(--luz); }
 
-/* Duas colunas: a barra fixa na esquerda e o resto da tela deslocado para a
-   direita pela margem - nunca por cima, para a rolagem do conteudo nao passar
-   por baixo da barra. */
+/* ============================================================ CABINE
+   Topo da tela do vendedor: marca, o mes (com setas, que e o que mais se
+   troca), a pessoa. */
+
+.cabine {
+  position: sticky;
+  top: 0;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px max(22px, calc((100vw - 1180px) / 2));
+  background: rgba(11, 20, 24, .86);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--fio);
+}
+.cabine .marca {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 700; font-size: 17px; letter-spacing: .2px;
+  white-space: nowrap;
+}
+.cabine .marca svg { width: 30px; height: 30px; }
+
+.seletor-mes {
+  display: flex; align-items: center; gap: 4px;
+  margin: 0 auto;
+  background: var(--painel);
+  border: 1px solid var(--fio);
+  border-radius: 999px;
+  padding: 4px;
+}
+.seletor-mes input[type=month] {
+  width: auto; margin: 0; border: 0; background: transparent;
+  font-weight: 600; font-size: 15px; text-align: center;
+  padding: 6px 8px; min-width: 170px;
+}
+.seletor-mes input[type=month]:focus { box-shadow: none; }
+.seta {
+  width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center;
+  background: transparent; color: var(--fraco); font-size: 18px; line-height: 1;
+}
+.seta:hover { background: var(--painel-2); color: var(--luz); }
+
+.cabine .quem {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 14px; color: var(--fraco); white-space: nowrap;
+}
+
+/* ============================================================== HUD
+   O painel de instrumentos. Tres mostradores e a fileira de luzes-espia. */
+
+.hud {
+  display: grid;
+  grid-template-columns: 1.15fr 1.15fr .9fr;
+  gap: 14px;
+  margin: 22px 0 14px;
+}
+
+.mostrador {
+  position: relative;
+  background: linear-gradient(180deg, var(--painel-2), var(--painel));
+  border: 1px solid var(--fio);
+  border-radius: 18px;
+  padding: 18px 20px 16px;
+  overflow: hidden;
+}
+.mostrador .nome-mostrador { font-size: 13.5px; color: var(--fraco); font-weight: 500; }
+
+/* Odometro: digitos condensados em celulas, como o contador mecanico. */
+.odometro {
+  display: flex; gap: 4px; margin-top: 10px;
+  font-stretch: 75%;
+  font-weight: 600;
+  font-size: 40px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.odometro .d {
+  min-width: .72em;
+  padding: 8px 4px 5px;
+  text-align: center;
+  background: #061015;
+  border: 1px solid var(--fio);
+  border-radius: 6px;
+  box-shadow: inset 0 10px 14px -10px rgba(0, 0, 0, .9);
+}
+.odometro .sep { align-self: flex-end; color: var(--fraco); padding: 0 1px 4px; }
+.odometro .unid {
+  align-self: flex-end; font-size: 16px; color: var(--fraco);
+  font-stretch: 100%; padding: 0 0 6px 6px; font-weight: 500;
+}
+
+.leitura {
+  margin-top: 10px;
+  font-stretch: 80%;
+  font-weight: 600;
+  font-size: 44px;
+  line-height: 1.05;
+  color: var(--luz);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 22px var(--luz-brilho);
+}
+.leitura small { font-size: 20px; color: var(--fraco); text-shadow: none; margin-right: 4px; }
+.mostrador .detalhe { margin-top: 6px; font-size: 13.5px; color: var(--fraco); }
+
+/* Ponteiro: anel que enche conforme o que ja esta pronto. */
+.medidor { display: flex; align-items: center; gap: 16px; }
+.medidor svg { width: 104px; height: 104px; flex: 0 0 104px; transform: rotate(-90deg); }
+.medidor .trilho { stroke: #061015; }
+.medidor .arco {
+  stroke: var(--luz);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1.1s cubic-bezier(.2, .8, .2, 1), stroke .3s;
+  filter: drop-shadow(0 0 6px var(--luz-brilho));
+}
+.medidor.tudo .arco { stroke: var(--ok); }
+.medidor .quanto { font-stretch: 80%; font-weight: 700; font-size: 32px; line-height: 1; }
+.medidor .quanto span { font-size: 18px; color: var(--fraco); }
+.medidor .frase { font-size: 15px; font-weight: 600; margin-top: 6px; line-height: 1.3; }
+
+/* Luzes-espia: cada uma diz uma coisa e leva para onde se resolve. */
+.luzes {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.luz {
+  display: flex; align-items: center; gap: 11px;
+  width: 100%;
+  text-align: left;
+  padding: 11px 13px;
+  background: var(--painel);
+  border: 1px solid var(--fio);
+  border-radius: 12px;
+  color: var(--texto);
+  font-weight: 500;
+  cursor: pointer;
+}
+.luz:hover { background: var(--painel-2); }
+.luz svg {
+  width: 26px; height: 26px; flex: 0 0 26px;
+  fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+  color: #3a525c;
+  transition: color .25s, filter .25s;
+}
+.luz .t { display: block; font-size: 14px; font-weight: 700; line-height: 1.2; }
+.luz .s { display: block; font-size: 12.5px; color: var(--fraco); line-height: 1.3; margin-top: 2px; }
+.luz.ok svg     { color: var(--ok);     filter: drop-shadow(0 0 6px rgba(61, 220, 151, .55)); }
+.luz.alerta svg { color: var(--alerta); filter: drop-shadow(0 0 6px rgba(255, 181, 71, .6)); }
+.luz.falha svg  { color: var(--falha);  filter: drop-shadow(0 0 7px rgba(255, 92, 108, .65)); }
+.luz.falha { border-color: rgba(255, 92, 108, .35); }
+
+/* Ignicao: todas acendem juntas e cada uma assenta no seu estado. */
+.ignicao .luz svg { animation: autoteste 1.1s ease-out both; }
+.ignicao .luz:nth-child(2) svg { animation-delay: .08s; }
+.ignicao .luz:nth-child(3) svg { animation-delay: .16s; }
+.ignicao .luz:nth-child(4) svg { animation-delay: .24s; }
+.ignicao .luz:nth-child(5) svg { animation-delay: .32s; }
+@keyframes autoteste {
+  0%   { color: var(--alerta); filter: drop-shadow(0 0 10px rgba(255, 181, 71, .9)); }
+  45%  { color: var(--alerta); filter: drop-shadow(0 0 10px rgba(255, 181, 71, .9)); }
+}
+
+/* O motivo da reprovacao, logo abaixo das luzes: fica num bloco proprio, com
+   titulos do tamanho de subtitulo - nao pode competir com o painel. */
+#painel-status:not(:empty) {
+  background: var(--painel);
+  border: 1px solid var(--fio);
+  border-radius: var(--raio);
+  padding: 18px 20px 10px;
+  margin-bottom: 22px;
+}
+#painel-status h2 { font-size: 15.5px !important; margin: 14px 0 8px !important; font-weight: 700; }
+#painel-status .aviso { margin-bottom: 8px; }
+
+/* ============================================================== ROTA
+   As abas viram o trajeto: quatro paradas numa linha, cada uma dizendo o seu
+   estado. E uma sequencia de verdade (anexa, confere, envia), por isso tem
+   numero. */
+
+.rota {
+  display: flex;
+  gap: 0;
+  margin: 0 0 18px;
+  padding: 0;
+  counter-reset: parada;
+}
+.rota button {
+  flex: 1;
+  position: relative;
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px 12px 12px;
+  background: transparent;
+  color: var(--fraco);
+  border: 0;
+  border-bottom: 2px solid var(--fio);
+  border-radius: 0;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+}
+.rota button::before {
+  counter-increment: parada;
+  content: counter(parada);
+  flex: 0 0 28px;
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--fio-forte);
+  font-size: 13.5px; font-weight: 700;
+}
+.rota button:hover { color: var(--texto); background: transparent; }
+.rota button.ativa { color: var(--texto); border-bottom-color: var(--luz); }
+.rota button.ativa::before {
+  background: var(--luz); color: #04161b; border-color: var(--luz);
+  box-shadow: 0 0 14px var(--luz-brilho);
+}
+.rota .estado-parada { margin-left: auto; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.rota .estado-parada.ok { color: var(--ok); }
+.rota .estado-parada.alerta { color: var(--alerta); }
+.rota .estado-parada.falha { color: var(--falha); }
+
+/* ======================================================== ESQUELETO
+   Admin mantem a barra lateral; o vendedor usa a cabine. */
+
 .apl { display: flex; min-height: 100dvh; }
 
 .lateral {
   position: fixed;
-  top: var(--lateral-margem);
-  left: var(--lateral-margem);
-  bottom: var(--lateral-margem);
+  top: 0; left: 0; bottom: 0;
   width: var(--lateral);
-  flex: 0 0 var(--lateral);
-  background: var(--lateral-fundo);
-  color: var(--lateral-texto);
-  border: 0;
-  border-radius: var(--raio);
-  /* O filete branco por dentro da borda, como em toda placa de rodovia. */
-  box-shadow: inset 0 0 0 5px var(--placa), inset 0 0 0 7px rgba(255, 255, 255, .92);
-  padding: 22px 14px;
+  background: #08111a;
+  background: #081015;
+  border-right: 1px solid var(--fio);
+  padding: 18px 10px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  overflow-y: auto;
+  align-items: center;
+  gap: 24px;
   z-index: 40;
 }
+.lateral-marca { display: grid; place-items: center; }
+.lateral-marca span { display: none; }
+.lateral-marca svg { width: 36px; height: 36px; }
 
-.lateral-marca {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 2px 8px;
-  color: var(--lateral-forte);
-  font-size: 19px;
-  font-weight: 800;
-  letter-spacing: -.2px;
-  line-height: 1.1;
+.lateral .abas { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.lateral .abas button {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  width: 100%;
+  padding: 10px 4px 9px;
+  background: transparent;
+  color: var(--fraco);
+  border: 0;
+  border-radius: 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
 }
-.lateral-marca svg { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 7px; }
+.lateral .abas button svg {
+  width: 22px; height: 22px;
+  fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.lateral .abas button:hover { background: var(--painel); color: var(--texto); }
+.lateral .abas button.ativa { background: var(--luz-escura); color: var(--luz); }
 
 .area {
   flex: 1;
   min-width: 0;
-  margin-left: calc(var(--lateral) + var(--lateral-margem) * 2);
+  margin-left: var(--lateral);
   display: flex;
   flex-direction: column;
 }
 
-/* ------------------------------------------------------------- cabecalho */
-
-/* Na referencia nao ha barra de titulo: o nome da tela fica solto sobre o
-   cinza, grande, e o conteudo comeca logo abaixo. */
 .topo {
-  background: transparent;
-  color: var(--texto);
+  width: 100%; max-width: 1180px; margin: 0 auto;
   padding: 26px 22px 14px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border: 0;
+  display: flex; align-items: center; gap: 12px;
 }
-
-/* Acompanha a mesma coluna do conteudo, senao o titulo fica encostado na
-   esquerda enquanto os cartoes ficam centralizados. */
-.topo { width: 100%; max-width: 1100px; margin: 0 auto; }
 .topo.larga { max-width: min(1900px, 100%); }
+.topo h1 { font-size: 30px; margin: 0; font-weight: 700; letter-spacing: -.3px; line-height: 1.1; }
+.topo .quem { margin-left: auto; font-size: 13.5px; color: var(--fraco); text-align: right; }
 
-.topo h1 {
-  font-size: 32px;
-  margin: 0;
-  font-weight: 800;
-  letter-spacing: -.6px;
-  line-height: 1.1;
-}
-.topo .quem {
-  margin-left: auto;
-  font-size: 13px;
-  color: var(--texto-fraco);
-  text-align: right;
-}
-.topo a, .topo button.link {
+.topo a, .topo button.link, .cabine button.link {
   color: var(--texto);
   text-decoration: none;
-  font-size: 13px;
-  font-weight: 500;
-  background: var(--superficie);
-  border: 1px solid var(--borda-forte);
-  padding: 6px 12px;
-  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  background: transparent;
+  border: 1px solid var(--fio-forte);
+  padding: 6px 13px;
+  border-radius: 999px;
   cursor: pointer;
   font-family: inherit;
 }
-.topo a:hover, .topo button.link:hover { background: var(--superficie-2); }
+.topo button.link:hover, .cabine button.link:hover { border-color: var(--luz); color: var(--luz); background: transparent; }
 
-.conteudo { max-width: 1100px; margin: 0 auto; padding: 0 22px 108px; }
-
-/* A area do administrador tem tabelas largas (colaboradores tem 8 colunas),
-   entao usa quase a tela inteira em vez dos 1100px do app do colaborador. */
+.conteudo { width: 100%; max-width: 1180px; margin: 0 auto; padding: 0 22px 120px; }
 .conteudo.larga { max-width: min(1900px, 100%); }
 
-/* ---------------------------------------------------------------- cartao */
+/* ============================================================ CARTAO */
 
-/* Na referencia o cartao tem um fio de borda quase imperceptivel e sombra
-   minima - o que o separa do fundo e o branco contra o cinza. */
 .cartao {
-  background: var(--superficie);
-  border: 1px solid var(--borda);
-  border-radius: 10px;
+  background: var(--painel);
+  border: 1px solid var(--fio);
+  border-radius: var(--raio);
   padding: 22px;
   margin-bottom: 14px;
 }
-
-/* O titulo do cartao diz o que fazer ali ("Envie o seu RDV"): tem que ser
-   lido primeiro, entao e escuro e forte, nao um rotulo cinza. */
 .cartao h2 {
-  margin: 0 0 12px;
-  font-size: 18px;
+  margin: 0 0 10px;
+  font-size: 19px;
   font-weight: 700;
-  letter-spacing: -.2px;
+  letter-spacing: -.1px;
   line-height: 1.25;
-  color: var(--texto);
 }
+.sub { color: var(--fraco); font-size: 14.5px; margin: 0 0 18px; max-width: 72ch; }
+.sub strong { color: var(--texto); }
 
-.sub { color: var(--texto-fraco); font-size: 14px; margin: 0 0 18px; max-width: 72ch; }
+/* ======================================================== FORMULARIO */
 
-/* ------------------------------------------------------------ formulario */
+label { display: block; font-size: 13.5px; font-weight: 500; margin-bottom: 7px; color: var(--fraco); }
 
-label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 7px; color: var(--texto-fraco); }
+input, select, textarea, button { font: inherit; color: var(--texto); }
 
-input, select, textarea, button {
-  font: inherit;
-  color: var(--texto);
-}
-
-/* Todo campo de digitar precisa estar nesta lista. O que fica de fora herda so
-   a cor do texto da regra acima e mantem o fundo padrao do navegador - branco.
-   No tema escuro isso vira texto branco em fundo branco, invisivel. */
 input[type=text], input[type=password], input[type=number], input[type=month],
-input[type=date], input[type=search],
-input[type=email], select, textarea {
+input[type=date], input[type=search], input[type=email], select, textarea {
   width: 100%;
   padding: 11px 13px;
-  border: 1px solid var(--borda-forte);
+  border: 1px solid var(--fio-forte);
   border-radius: var(--raio-p);
-  background: var(--superficie);
+  background: #0a171c;
   margin-bottom: 16px;
   transition: border-color .12s, box-shadow .12s;
 }
-
 input:focus, select:focus, textarea:focus {
   outline: none;
-  border-color: var(--placa);
-  box-shadow: 0 0 0 3px var(--marca-anel);
+  border-color: var(--luz);
+  box-shadow: 0 0 0 3px var(--luz-brilho);
 }
-
+input::placeholder, textarea::placeholder { color: #5e767e; }
 textarea { min-height: 88px; resize: vertical; }
+input[type=checkbox] { accent-color: var(--luz); }
 
 button {
   border: 0;
   border-radius: var(--raio-p);
   padding: 10px 18px;
-  background: var(--marca);
-  color: #fff;
+  background: var(--luz);
+  color: #04161b;
   font-weight: 700;
   font-size: 14.5px;
   cursor: pointer;
-  transition: background .12s;
+  transition: background .12s, box-shadow .12s, border-color .12s, color .12s;
 }
-button:hover { background: var(--marca-forte); }
-button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+button:hover { background: #a6eef7; box-shadow: 0 0 18px var(--luz-brilho); }
+button:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
 button.secundario {
-  background: var(--superficie);
+  background: transparent;
   color: var(--texto);
-  border: 1px solid var(--borda-forte);
-  font-weight: 500;
+  border: 1px solid var(--fio-forte);
+  font-weight: 600;
 }
-button.secundario:hover { background: var(--superficie-2); }
-button.perigo { background: var(--vermelho); }
-button.perigo:hover { background: var(--vermelho); filter: brightness(.92); }
-button.pequeno { padding: 7px 13px; font-size: 13px; border-radius: 8px; }
-
-/* No tema escuro o botao principal e claro: texto branco por cima nao le. */
-@media (prefers-color-scheme: dark) {
-  button { color: #16191b; }
-  button.secundario { color: var(--texto); }
-  button.perigo { color: #2a0d13; }
-}
+button.secundario:hover { border-color: var(--luz); color: var(--luz); box-shadow: none; background: transparent; }
+button.perigo { background: var(--falha); color: #2a0409; }
+button.perigo:hover { background: #ff7a88; box-shadow: none; }
+button.pequeno { padding: 7px 13px; font-size: 13.5px; }
 
 .linha-botoes { display: flex; gap: 10px; flex-wrap: wrap; }
 
-/* --------------------------------------------------------------- avisos */
+/* ============================================================ AVISOS */
 
 .aviso {
   padding: 13px 15px;
-  border-radius: 12px;
+  border-radius: 11px;
   margin-bottom: 16px;
-  font-size: 14px;
-  border-left: 3px solid currentColor;
+  font-size: 14.5px;
+  border: 1px solid currentColor;
+  border-left-width: 4px;
 }
-.aviso.ok   { background: var(--verde-fundo);   color: var(--verde); }
-.aviso.erro { background: var(--vermelho-fundo); color: var(--vermelho); }
-.aviso.atencao { background: var(--amarelo-fundo); color: var(--amarelo); }
-.aviso.info { background: var(--marca-clara); color: var(--marca-forte); }
+.aviso strong { font-weight: 700; }
+.aviso.ok      { background: var(--ok-fundo);     color: var(--ok); }
+.aviso.erro    { background: var(--falha-fundo);  color: var(--falha); }
+.aviso.atencao { background: var(--alerta-fundo); color: var(--alerta); }
+.aviso.info    { background: rgba(127, 227, 240, .08); color: var(--luz); }
 
-/* -------------------------------------------------------------- selo/status */
+/* ============================================================ STATUS
+   Selo com o ponto aceso na frente, como a luz do painel. */
 
-/* Plaquinha retangular, com a borda da propria cor - le como sinal, nao como
-   etiqueta de aplicativo. */
 .selo {
-  display: inline-block;
-  padding: 3px 9px 2px;
-  border-radius: 5px;
-  border: 1.5px solid currentColor;
-  font-size: 12.5px;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 11px 3px 9px;
+  border-radius: 999px;
+  font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
+  border: 1px solid currentColor;
 }
-.selo.CERTA          { background: var(--verde-fundo);    color: var(--verde); }
-.selo.SO_FALTA_DANFE { background: var(--amarelo-fundo);  color: var(--amarelo); }
-.selo.ERRADA         { background: var(--vermelho-fundo); color: var(--vermelho); }
+.selo::before {
+  content: "";
+  width: 7px; height: 7px; border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+.selo.CERTA          { color: var(--ok);     background: var(--ok-fundo); }
+.selo.SO_FALTA_DANFE { color: var(--alerta); background: var(--alerta-fundo); }
+.selo.ERRADA         { color: var(--falha);  background: var(--falha-fundo); }
 .selo.ENVIADO,
-.selo.CONFERINDO     { background: var(--marca-clara);    color: var(--marca-forte); }
-.selo.RASCUNHO       { background: var(--superficie-2);   color: var(--texto-fraco); }
+.selo.CONFERINDO     { color: var(--luz);    background: rgba(127, 227, 240, .08); }
+.selo.RASCUNHO       { color: var(--fraco);  background: transparent; }
 
-/* ---------------------------------------------------- empresa e funcao */
+/* ================================================== EMPRESA E FUNCAO */
 
-/* Cada empresa tem a sua cor, para bater o olho e saber de quem e a linha. */
 .emp {
   display: inline-block;
-  padding: 3px 9px;
+  padding: 2px 8px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 700;
-  letter-spacing: .3px;
   white-space: nowrap;
-  border-left: 3px solid;
+  border: 1px solid;
 }
-.emp.DISO       { background: #e7eefa; color: #1c4e80; border-color: #1c4e80; }
-.emp.DSO        { background: #f3e8f7; color: #6b3080; border-color: #6b3080; }
-.emp.PROMOTORES { background: #e4f3ea; color: #1f6b43; border-color: #1f6b43; }
+.emp.DISO       { color: #8cc2ff; border-color: rgba(140, 194, 255, .5); background: rgba(140, 194, 255, .08); }
+.emp.DSO        { color: #d3a3ff; border-color: rgba(211, 163, 255, .5); background: rgba(211, 163, 255, .08); }
+.emp.PROMOTORES { color: #86e0b0; border-color: rgba(134, 224, 176, .5); background: rgba(134, 224, 176, .08); }
 
-@media (prefers-color-scheme: dark) {
-  .emp.DISO       { background: #1b2a3d; color: #7fb3e0; border-color: #5b9bd5; }
-  .emp.DSO        { background: #2b1c35; color: #c79ad9; border-color: #9a5cb8; }
-  .emp.PROMOTORES { background: #182e23; color: #86cca3; border-color: #4fa877; }
-}
+tr.de-DISO       td:first-child { box-shadow: inset 3px 0 0 #8cc2ff; }
+tr.de-DSO        td:first-child { box-shadow: inset 3px 0 0 #d3a3ff; }
+tr.de-PROMOTORES td:first-child { box-shadow: inset 3px 0 0 #86e0b0; }
 
-/* Faixa colorida na borda da linha, separando as empresas na tabela. */
-tr.de-DISO       td:first-child { box-shadow: inset 4px 0 0 #1c4e80; }
-tr.de-DSO        td:first-child { box-shadow: inset 4px 0 0 #6b3080; }
-tr.de-PROMOTORES td:first-child { box-shadow: inset 4px 0 0 #1f6b43; }
+.cartao.empresa-DISO       { border-top: 2px solid #8cc2ff; }
+.cartao.empresa-DSO        { border-top: 2px solid #d3a3ff; }
+.cartao.empresa-PROMOTORES { border-top: 2px solid #86e0b0; }
 
-/* Cada empresa vira um cartao proprio, com a cor dela na borda de cima. */
-.cartao.empresa-DISO       { border-top: 3px solid #1c4e80; }
-.cartao.empresa-DSO        { border-top: 3px solid #6b3080; }
-.cartao.empresa-PROMOTORES { border-top: 3px solid #1f6b43; }
+.titulo-empresa { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 0 0 4px; }
+.titulo-empresa .sigla { font-size: 26px; font-weight: 700; font-stretch: 85%; }
+.cartao.empresa-DISO .titulo-empresa .sigla { color: #8cc2ff; }
+.cartao.empresa-DSO  .titulo-empresa .sigla { color: #d3a3ff; }
+.cartao.empresa-PROMOTORES .titulo-empresa .sigla { color: #86e0b0; }
+.titulo-empresa .quantos { color: var(--fraco); font-size: 14px; }
 
-@media (prefers-color-scheme: dark) {
-  .cartao.empresa-DISO       { border-top-color: #5b9bd5; }
-  .cartao.empresa-DSO        { border-top-color: #9a5cb8; }
-  .cartao.empresa-PROMOTORES { border-top-color: #4fa877; }
-}
-
-.titulo-empresa {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin: 0 0 4px;
-}
-.titulo-empresa .sigla {
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: -.6px;
-}
-.cartao.empresa-DISO .titulo-empresa .sigla { color: #1c4e80; }
-.cartao.empresa-DSO  .titulo-empresa .sigla { color: #6b3080; }
-@media (prefers-color-scheme: dark) {
-  .cartao.empresa-DISO .titulo-empresa .sigla { color: #7fb3e0; }
-  .cartao.empresa-DSO  .titulo-empresa .sigla { color: #c79ad9; }
-}
-.titulo-empresa .quantos { color: var(--texto-fraco); font-size: 14px; }
-
-/* Secoes dentro do cartao da empresa: vendedores, supervisores, adm. */
 .secao {
   margin: 24px 0 10px;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -.1px;
-  color: var(--texto);
+  font-size: 15px;
+  font-weight: 700;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--borda);
+  border-bottom: 1px solid var(--fio);
 }
 .secao:first-of-type { margin-top: 14px; }
-.secao .n { color: var(--texto-fraco); font-weight: 500; }
+.secao .n { color: var(--fraco); font-weight: 500; }
 
-/* Linha de quem foi desativado: continua legivel, so com o nome riscado. */
 tr.inativo td:first-child { text-decoration: line-through; text-decoration-thickness: 1px; }
 tr.inativo td:first-child .emp { text-decoration: none; }
 
 .grupo-empresa td {
-  background: var(--superficie-2);
+  background: var(--painel-2);
   font-weight: 700;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--texto);
-  border-top: 1px solid var(--borda);
 }
 
-/* ----------------------------------------------------- lista de pessoas */
+/* ================================================== LISTA DE PESSOAS */
 
-/* Cada colaborador e uma faixa branca de altura fixa. Antes era uma tabela de
-   8 colunas que so cabia rolando de lado, com sete botoes de acao por linha
-   ocupando mais espaco do que a propria pessoa. */
 .pessoas { display: flex; flex-direction: column; gap: 8px; }
-
 .pessoa {
-  display: flex;
-  align-items: center;
-  gap: 14px;
+  display: flex; align-items: center; gap: 14px;
   min-height: 64px;
   padding: 10px 10px 10px 14px;
-  background: var(--superficie);
-  border: 1px solid var(--borda);
+  background: var(--painel);
+  border: 1px solid var(--fio);
   border-radius: 12px;
-  box-shadow: var(--sombra-sutil);
 }
-
 .avatar {
-  flex: 0 0 40px;
-  width: 40px;
-  height: 40px;
+  flex: 0 0 40px; width: 40px; height: 40px;
   border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: .3px;
-  background: var(--superficie-2);
-  color: var(--texto-fraco);
+  display: grid; place-items: center;
+  font-size: 13.5px; font-weight: 700;
+  background: var(--painel-2); color: var(--fraco);
+  border: 1px solid var(--fio-forte);
 }
-/* A inicial herda a cor da empresa: da para varrer a lista e achar o pessoal de
-   uma empresa sem ler nada. */
-.avatar.DISO       { background: #e7eefa; color: #1c4e80; }
-.avatar.DSO        { background: #f3e8f7; color: #6b3080; }
-.avatar.PROMOTORES { background: #e4f3ea; color: #1f6b43; }
-
-@media (prefers-color-scheme: dark) {
-  .avatar.DISO       { background: #1b2a3d; color: #7fb3e0; }
-  .avatar.DSO        { background: #2b1c35; color: #c79ad9; }
-  .avatar.PROMOTORES { background: #182e23; color: #86cca3; }
-}
+.avatar.DISO       { color: #8cc2ff; border-color: rgba(140, 194, 255, .5); }
+.avatar.DSO        { color: #d3a3ff; border-color: rgba(211, 163, 255, .5); }
+.avatar.PROMOTORES { color: #86e0b0; border-color: rgba(134, 224, 176, .5); }
 
 .pessoa-id { flex: 1; min-width: 0; }
-.pessoa-nome {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  font-size: 15px; font-weight: 600; letter-spacing: -.1px;
-}
-.pessoa-sub {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  margin-top: 3px;
-  font-size: 12.5px;
-  color: var(--texto-fraco);
-}
+.pessoa-nome { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 15.5px; font-weight: 600; }
+.pessoa-sub { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 3px; font-size: 13px; color: var(--fraco); }
+.pessoa-meta { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.pessoa-meta select { margin: 0; width: auto; padding: 6px 9px; font-size: 13px; }
 
-.pessoa-meta {
-  display: flex; align-items: center; justify-content: flex-end;
-  gap: 8px; flex-wrap: wrap;
-}
-.pessoa-meta select {
-  margin: 0; width: auto;
-  padding: 6px 9px; font-size: 12.5px; border-radius: 8px;
-}
-
-.pessoa.de-DISO       { border-left: 3px solid #1c4e80; }
-.pessoa.de-DSO        { border-left: 3px solid #6b3080; }
-.pessoa.de-PROMOTORES { border-left: 3px solid #1f6b43; }
-
-/* Desativado fica marcado, nao apagado. */
+.pessoa.de-DISO       { border-left: 3px solid #8cc2ff; }
+.pessoa.de-DSO        { border-left: 3px solid #d3a3ff; }
+.pessoa.de-PROMOTORES { border-left: 3px solid #86e0b0; }
 .pessoa.inativo .pessoa-nome { text-decoration: line-through; text-decoration-thickness: 1px; }
 .pessoa.inativo .pessoa-nome .selo { text-decoration: none; }
 
-/* ------------------------------------------------- menu de tres pontos */
+/* ==================================================== MENU DE ACOES */
 
 .menu { position: relative; flex: 0 0 auto; }
-
 .menu-botao {
   width: 34px; height: 34px; padding: 0;
   display: grid; place-items: center;
-  background: transparent;
-  border: 0; border-radius: 50%;
-  box-shadow: none;
-  color: var(--texto-fraco);
+  background: transparent; border: 0; border-radius: 50%;
+  color: var(--fraco);
 }
 .menu-botao svg { width: 18px; height: 18px; fill: currentColor; }
-.menu-botao:hover,
-.menu-botao[aria-expanded="true"] { background: var(--superficie-2); color: var(--texto); }
-
+.menu-botao:hover, .menu-botao[aria-expanded="true"] { background: var(--painel-2); color: var(--texto); box-shadow: none; }
 .menu-lista {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  min-width: 210px;
-  display: flex;
-  flex-direction: column;
+  position: absolute; right: 0; top: calc(100% + 6px);
+  min-width: 220px;
+  display: flex; flex-direction: column;
   padding: 6px;
-  background: var(--superficie);
-  border: 1px solid var(--borda);
+  background: var(--painel-2);
+  border: 1px solid var(--fio-forte);
   border-radius: 12px;
   box-shadow: var(--sombra-alta);
   z-index: 45;
 }
 .menu-lista[hidden] { display: none; }
-
 .menu-lista button {
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  color: var(--texto);
-  border: 0;
-  box-shadow: none;
-  padding: 9px 10px;
-  border-radius: 8px;
-  font-size: 13.5px;
-  font-weight: 500;
+  width: 100%; text-align: left;
+  background: transparent; color: var(--texto);
+  border: 0; padding: 9px 10px; border-radius: 8px;
+  font-size: 14px; font-weight: 500;
 }
-.menu-lista button:hover { background: var(--superficie-2); }
-
-.menu-risco { height: 1px; background: var(--borda); margin: 6px 4px; }
-
-.menu-lista button.menu-perigo { color: var(--vermelho); }
-.menu-lista button.menu-perigo:hover { background: var(--vermelho-fundo); }
+.menu-lista button:hover { background: var(--painel); box-shadow: none; }
+.menu-risco { height: 1px; background: var(--fio); margin: 6px 4px; }
+.menu-lista button.menu-perigo { color: var(--falha); }
+.menu-lista button.menu-perigo:hover { background: var(--falha-fundo); }
 
 @media (max-width: 720px) {
   .pessoa { flex-wrap: wrap; align-items: flex-start; padding: 12px; }
@@ -550,365 +630,269 @@ tr.inativo td:first-child .emp { text-decoration: none; }
   .pessoa-meta { order: 3; flex: 1 1 100%; justify-content: flex-start; }
 }
 
-/* ------------------------------------------------------------- filtros */
+/* ============================================================ FILTROS */
 
-/* Sem caixa cinza em volta: na referencia os filtros sao pastilhas brancas
-   soltas sobre o painel. */
-.filtros {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-  margin-bottom: 18px;
-  padding: 0;
-  background: transparent;
-}
-.filtros input, .filtros select {
-  margin: 0;
-  padding: 8px 12px;
-  font-size: 13px;
-  width: auto;
-  background: var(--superficie);
-  border-color: var(--borda-forte);
-  border-radius: 8px;
-}
+.filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+.filtros input, .filtros select { margin: 0; padding: 8px 12px; font-size: 13.5px; width: auto; }
 .filtros input[type=search] { flex: 1; min-width: 190px; }
-.filtros .contagem {
-  margin-left: auto;
-  font-size: 13px;
-  color: var(--texto-fraco);
-  font-weight: 500;
-  white-space: nowrap;
-}
-.filtros button { padding: 8px 13px; font-size: 13px; }
+.filtros .contagem { margin-left: auto; font-size: 13.5px; color: var(--fraco); font-weight: 500; white-space: nowrap; }
+.filtros button { padding: 8px 13px; font-size: 13.5px; }
 .filtros label { margin: 0; }
 
-/* -------------------------------------------------------------- numeros */
+/* ============================================================ NUMEROS
+   Mostradores pequenos: o mesmo condensado do odometro. */
 
-.numeros {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-  margin-bottom: 4px;
-}
+.numeros { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 4px; }
 .numero {
-  background: var(--superficie);
-  border: 1px solid var(--borda);
-  border-radius: 8px;
-  padding: 14px 16px 12px;
+  background: var(--painel-2);
+  border: 1px solid var(--fio);
+  border-radius: 12px;
+  padding: 13px 16px 12px;
 }
-.numero .rotulo {
-  font-size: 13px;
-  color: var(--texto-fraco);
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-/* Digitos de largura igual (tabular), como no odometro: da para comparar dois
-   numeros de olho, casa por casa. */
+.numero .rotulo { font-size: 13px; color: var(--fraco); font-weight: 500; margin-bottom: 4px; }
 .numero .valor {
-  font-size: 27px;
-  font-weight: 800;
-  letter-spacing: -.4px;
+  font-stretch: 80%;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
-  line-height: 1.2;
 }
-/* O numero que importa (o que a pessoa recebe) fica na placa verde. */
-.numero.destaque {
-  background: var(--placa);
-  border-color: var(--placa);
-}
-.numero.destaque .rotulo { color: rgba(255, 255, 255, .8); }
-.numero.destaque .valor { color: #fff; }
+.numero.destaque { border-color: rgba(127, 227, 240, .45); background: rgba(127, 227, 240, .06); }
+.numero.destaque .valor { color: var(--luz); text-shadow: 0 0 18px var(--luz-brilho); }
 
-/* --------------------------------------------------------------- tabela */
+/* ============================================================= TABELA */
 
 .rolagem { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-
-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-th, td { padding: 13px 12px; text-align: left; border-bottom: 1px solid var(--borda); }
+table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+th, td { padding: 13px 12px; text-align: left; border-bottom: 1px solid var(--fio); }
 th {
-  font-size: 13px;
-  color: var(--texto-fraco); font-weight: 600; white-space: nowrap;
-  background: var(--superficie); position: sticky; top: 0;
-  border-bottom: 2px solid var(--borda-forte);
+  font-size: 13px; color: var(--fraco); font-weight: 600; white-space: nowrap;
+  background: var(--painel); position: sticky; top: 0;
+  border-bottom: 1px solid var(--fio-forte);
 }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-tbody tr:hover { background: var(--superficie-2); }
+tbody tr:hover { background: rgba(127, 227, 240, .03); }
 
-/* ------------------------------------------------------- grade de lancamento */
+/* ================================================== GRADE DE LANCAMENTO */
 
 .dia {
-  border: 1px solid var(--borda);
+  border: 1px solid var(--fio);
   border-radius: 12px;
   padding: 14px;
   margin-bottom: 10px;
-  background: var(--superficie);
+  background: var(--painel-2);
 }
-.dia.folga { background: var(--superficie-2); opacity: .75; }
-.dia.feriado { border-left: 3px solid var(--amarelo); }
-.dia .cabeca {
-  display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;
-  font-weight: 600; font-size: 14px;
-}
-.dia .cabeca .semana { color: var(--texto-fraco); font-weight: 400; font-size: 13px; }
-.dia .cabeca .marca-dia {
-  margin-left: auto; font-size: 12.5px; font-weight: 700; color: var(--amarelo);
-}
+.dia.folga { opacity: .6; }
+.dia.feriado { border-left: 3px solid var(--alerta); }
+.dia .cabeca { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; font-weight: 700; font-size: 15px; }
+.dia .cabeca .semana { color: var(--fraco); font-weight: 500; font-size: 13.5px; }
+.dia .cabeca .marca-dia { margin-left: auto; font-size: 12.5px; font-weight: 700; color: var(--alerta); }
 .dia .campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .dia .campos .largo { grid-column: 1 / -1; }
 .dia input { margin-bottom: 0; }
-.dia label { font-size: 12px; color: var(--texto-fraco); font-weight: 500; }
-.dia .rodou {
-  grid-column: 1 / -1; font-size: 13px; color: var(--texto-fraco);
-  font-variant-numeric: tabular-nums;
-}
+.dia label { font-size: 12.5px; }
+.dia .rodou { grid-column: 1 / -1; font-size: 13.5px; color: var(--luz); font-variant-numeric: tabular-nums; }
 
-/* ---------------------------------------------------------------- anexos */
+/* ============================================================= ANEXOS */
 
 .anexo {
   display: flex; align-items: center; gap: 10px;
-  padding: 11px 13px; border: 1px solid var(--borda);
-  border-radius: 12px; margin-bottom: 8px; background: var(--superficie);
-  font-size: 14px;
+  padding: 11px 13px;
+  border: 1px solid var(--fio);
+  border-radius: 11px;
+  margin-bottom: 8px;
+  background: var(--painel-2);
+  font-size: 14.5px;
 }
 .anexo .nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.anexo .peso { color: var(--texto-fraco); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.anexo a { color: var(--marca-forte); font-weight: 500; }
+.anexo .peso { color: var(--fraco); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.anexo a { color: var(--luz); font-weight: 600; }
 
+/* Area de soltar arquivo: tracejado aceso, como zona de encaixe. */
 .solta {
-  border: 1px dashed var(--borda-forte);
-  border-radius: 12px;
-  padding: 24px;
+  border: 1.5px dashed var(--fio-forte);
+  border-radius: 13px;
+  padding: 26px;
   text-align: center;
-  color: var(--texto-fraco);
-  font-size: 14px;
+  color: var(--fraco);
+  font-size: 15px;
+  font-weight: 500;
   cursor: pointer;
-  background: var(--superficie-2);
-  transition: border-color .12s, color .12s, background .12s;
+  background: rgba(127, 227, 240, .025);
+  transition: border-color .15s, color .15s, background .15s;
 }
 .solta:hover, .solta.sobre {
-  border-color: var(--placa);
-  color: var(--placa);
-  background: var(--marca-clara);
-}
-@media (prefers-color-scheme: dark) {
-  .solta:hover, .solta.sobre { color: var(--verde); border-color: var(--verde); }
+  border-color: var(--luz);
+  color: var(--luz);
+  background: rgba(127, 227, 240, .07);
 }
 
-/* ---------------------------------------------------------------- achados */
+/* ============================================================ ACHADOS */
 
 .achado {
-  display: flex; gap: 10px; padding: 12px 14px; border-radius: 12px;
-  margin-bottom: 8px; font-size: 14px; align-items: flex-start;
-  border-left: 3px solid currentColor;
+  display: flex; gap: 11px;
+  padding: 12px 14px;
+  border-radius: 11px;
+  margin-bottom: 8px;
+  font-size: 14.5px;
+  align-items: flex-start;
+  border: 1px solid;
+  border-left-width: 4px;
+  color: var(--texto);
 }
-.achado.erro  { background: var(--vermelho-fundo); color: var(--vermelho); }
-.achado.aviso { background: var(--amarelo-fundo);  color: var(--amarelo); }
-.achado .icone { font-weight: 700; }
-
-/* O corpo do achado: a mensagem, e embaixo dela o que resolve a pendencia -
-   o botao de justificar e a caixa de escrever. */
-.achado .corpo {
-  flex: 1; display: flex; flex-direction: column; gap: 10px; align-items: flex-start;
-}
-/* Qual comprovante tem o problema. Herda a cor do achado (vermelho ou
-   amarelo) para nao competir com a mensagem, e o link sublinha para nao ficar
-   so a cor dizendo que da para clicar. */
-.achado .anexo-do-achado { font-size: 13px; opacity: .9; word-break: break-all; }
-.achado .anexo-do-achado a { color: inherit; text-decoration: underline; font-weight: 600; }
-
+.achado.erro  { background: var(--falha-fundo);  border-color: rgba(255, 92, 108, .45); border-left-color: var(--falha); }
+.achado.aviso { background: var(--alerta-fundo); border-color: rgba(255, 181, 71, .4);  border-left-color: var(--alerta); }
+.achado .icone { font-weight: 800; }
+.achado.erro .icone  { color: var(--falha); }
+.achado.aviso .icone { color: var(--alerta); }
+.achado .corpo { flex: 1; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.achado .anexo-do-achado { font-size: 13.5px; color: var(--fraco); word-break: break-all; }
+.achado .anexo-do-achado a { color: var(--luz); text-decoration: underline; font-weight: 600; }
 .achado .resposta {
-  background: var(--superficie); color: var(--texto);
-  border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.55;
+  background: var(--painel); color: var(--texto);
+  border: 1px solid var(--fio);
+  border-radius: 8px; padding: 10px 12px; font-size: 13.5px; line-height: 1.55;
 }
 
 .caixa-justificativa {
   width: 100%;
-  background: var(--superficie); color: var(--texto);
-  border: 1px solid var(--borda); border-radius: 12px; padding: 14px;
+  background: var(--painel); color: var(--texto);
+  border: 1px solid var(--fio-forte); border-radius: 12px; padding: 14px;
 }
-.caixa-justificativa label { margin-bottom: 8px; }
+.caixa-justificativa label { margin-bottom: 8px; color: var(--texto); font-weight: 600; }
 .caixa-justificativa textarea { margin-bottom: 8px; }
-.caixa-justificativa .conta {
-  font-size: 13px; color: var(--texto-fraco); margin: 0 0 10px; line-height: 1.55;
-}
-.caixa-justificativa .dica { font-size: 12px; color: var(--texto-fraco); margin: 0 0 12px; }
-.caixa-justificativa .erro-caixa {
-  font-size: 13px; color: var(--vermelho); margin: 0 0 12px; font-weight: 600;
-}
+.caixa-justificativa .conta { font-size: 13.5px; color: var(--fraco); margin: 0 0 10px; line-height: 1.55; }
+.caixa-justificativa .dica { font-size: 12.5px; color: var(--fraco); margin: 0 0 12px; }
+.caixa-justificativa .erro-caixa { font-size: 13.5px; color: var(--falha); margin: 0 0 12px; font-weight: 600; }
 
-/* ------------------------------------------------------------------ abas */
-
-/* O menu da barra lateral. Continua sendo `.abas button[data-aba]` porque e
-   isso que o JS procura para trocar de secao - mudou o lugar e a pintura, nao
-   o contrato. */
-.abas {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  background: transparent;
-  border: 0;
-}
-.abas button {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  color: var(--lateral-texto);
-  border: 0;
-  border-radius: var(--raio-p);
-  box-shadow: none;
-  padding: 11px 12px 10px 14px;
-  font-size: 15.5px;
-  font-weight: 600;
-  position: relative;
-}
-.abas button svg {
-  width: 19px; height: 19px; flex: 0 0 19px;
-  fill: none; stroke: currentColor; stroke-width: 1.9;
-  stroke-linecap: round; stroke-linejoin: round;
-}
-.abas button:hover { background: var(--lateral-hover); color: var(--lateral-forte); }
-/* Onde voce esta: a faixa amarela tracejada da pista na borda do item. */
-.abas button.ativa {
-  background: rgba(0, 0, 0, .18);
-  color: #fff;
-  font-weight: 800;
-}
-.abas button.ativa::before {
-  content: "";
-  position: absolute;
-  left: 3px; top: 7px; bottom: 7px;
-  width: 4px;
-  border-radius: 2px;
-  background: repeating-linear-gradient(to bottom, var(--faixa) 0 6px, transparent 6px 10px);
-}
-.abas button.ativa:hover { background: rgba(0, 0, 0, .18); }
-@media (prefers-color-scheme: dark) {
-  .abas button { color: var(--lateral-texto); }
-  .abas button.ativa, .abas button:hover { color: #fff; }
-}
-
-/* ---------------------------------------------------------------- gaveta */
+/* ============================================================= GAVETA */
 
 .fundo-modal {
-  position: fixed; inset: 0; background: rgba(10, 10, 12, .45);
+  position: fixed; inset: 0;
+  background: rgba(3, 8, 10, .7);
+  backdrop-filter: blur(3px);
   display: flex; align-items: flex-end; justify-content: center; z-index: 50;
 }
 .modal {
-  background: var(--superficie); width: 100%; max-width: 760px;
+  background: var(--painel); width: 100%; max-width: 760px;
+  border: 1px solid var(--fio-forte);
   border-radius: 20px 20px 0 0; padding: 24px;
   max-height: 92vh; overflow-y: auto;
   box-shadow: var(--sombra-alta);
 }
+.modal h2 { margin-top: 0; }
 @media (min-width: 700px) {
   .fundo-modal { align-items: center; }
   .modal { border-radius: 20px; }
 }
-/* A galeria e o detalhe do relatorio tem tabela e miniaturas: precisam de
-   mais espaco que a caixa padrao de 760px. */
 @media (min-width: 1000px) {
   .modal { max-width: min(1400px, 92vw); }
 }
 
 .esconde { display: none !important; }
 
+/* Doca de baixo: o total e os dois botoes, sempre a mao. */
 .rodape-fixo {
-  position: fixed; left: calc(var(--lateral) + var(--lateral-margem) * 2); right: 0; bottom: 0;
-  background: var(--superficie); border-top: 1px solid var(--borda);
-  padding: 12px 22px calc(12px + env(safe-area-inset-bottom));
+  position: fixed; left: 0; right: 0; bottom: 0;
+  background: rgba(10, 19, 23, .92);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--fio);
+  padding: 12px max(22px, calc((100vw - 1180px) / 2)) calc(12px + env(safe-area-inset-bottom));
   display: flex; gap: 10px; align-items: center;
-  box-shadow: 0 -8px 28px -14px rgba(16, 16, 20, .18); z-index: 30;
+  z-index: 30;
 }
-.rodape-fixo .resumo { font-size: 13px; color: var(--texto-fraco); line-height: 1.35; }
+.apl .rodape-fixo { left: var(--lateral); }
+.rodape-fixo .resumo { font-size: 13.5px; color: var(--fraco); line-height: 1.35; }
+.rodape-fixo .resumo strong { color: var(--texto); font-size: 15px; }
 .rodape-fixo button { margin-left: auto; }
+.rodape-fixo #botao-enviar { padding: 11px 24px; font-size: 15px; box-shadow: 0 0 22px var(--luz-brilho); }
 
-.carregando { color: var(--texto-fraco); font-size: 14px; padding: 28px; text-align: center; }
+.carregando { color: var(--fraco); font-size: 14.5px; padding: 28px; text-align: center; }
 
-/* Caixa que pede o KM da foto do odometro. Aqui a foto e o que importa: o
-   numero do painel costuma sair pequeno na tela do celular, entao ela fica com
-   todo o espaco que sobra depois dos campos. */
 .foto-odometro {
   width: 100%;
   max-height: min(56vh, 520px);
   object-fit: contain;
   border-radius: 12px;
-  background: var(--superficie-2);
+  background: #061015;
   margin-bottom: 6px;
   cursor: zoom-in;
 }
-
-/* Quando ainda assim nao der para ler, um toque abre a foto na tela inteira. */
 .lupa {
   position: fixed; inset: 0; z-index: 60;
-  background: rgba(10, 10, 12, .93);
+  background: rgba(3, 8, 10, .95);
   display: flex; align-items: center; justify-content: center;
   padding: 12px; cursor: zoom-out;
 }
 .lupa img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
-/* Explicacao da despesa depois das 18h: so aparece quando a hora informada
-   passa do expediente, logo abaixo da linha do dia. */
 .depois-das-18 {
   margin-top: 10px;
   padding: 12px 14px;
-  border-left: 3px solid var(--amarelo);
-  background: var(--amarelo-fundo);
+  border-left: 3px solid var(--alerta);
+  background: var(--alerta-fundo);
   border-radius: 0 12px 12px 0;
 }
-.depois-das-18 label { display: block; font-size: 13px; margin-bottom: 4px; }
+.depois-das-18 label { display: block; font-size: 13.5px; margin-bottom: 4px; color: var(--alerta); }
 .depois-das-18 input { width: 100%; }
 
-/* Parecer dado antes das regras atuais. Informacao, nao erro - por isso nao
-   usa o vermelho: o relatorio nao esta errado, so nao passou pelas regras
-   de hoje. */
 .regras-antigas {
   display: inline-block;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
-  letter-spacing: .02em;
-  color: var(--amarelo);
-  border: 1px solid var(--amarelo);
+  color: var(--alerta);
+  border: 1px solid var(--alerta);
   border-radius: 999px;
   padding: 1px 8px;
   cursor: help;
 }
 
-/* ---------------------------------------------------------------- celular */
+/* ============================================================ CELULAR */
 
-/* No celular a barra da esquerda nao cabe: ela deita e vira uma faixa no topo,
-   com o mesmo grafite e o mesmo item ativo. O portal e preenchido no celular -
-   essa faixa nao pode virar um menu escondido atras de um botao. */
+@media (max-width: 980px) {
+  .hud { grid-template-columns: 1fr 1fr; }
+  .hud .mostrador:last-child { grid-column: 1 / -1; }
+  .luzes { grid-template-columns: repeat(3, 1fr); }
+}
+
 @media (max-width: 900px) {
+  /* Admin: a barra vira faixa no topo. */
   .apl { flex-direction: column; }
   .lateral {
-    position: static;
-    width: auto;
-    flex: none;
+    position: sticky; top: 0;
+    width: auto; bottom: auto;
     flex-direction: row;
-    align-items: center;
-    gap: 14px;
-    margin: var(--lateral-margem) var(--lateral-margem) 0;
-    padding: 10px 12px;
+    padding: 8px 12px;
+    gap: 12px;
+    border-right: 0; border-bottom: 1px solid var(--fio);
     overflow-x: auto;
   }
-  .lateral-marca { flex: 0 0 auto; padding: 0 4px; }
-  .lateral-marca span { display: none; }
+  .lateral .abas { flex-direction: row; width: auto; }
+  .lateral .abas button { flex-direction: row; font-size: 13.5px; padding: 8px 12px; white-space: nowrap; }
+  .lateral .abas button svg { width: 18px; height: 18px; }
   .area { margin-left: 0; }
-  .abas { flex-direction: row; gap: 6px; }
-  .abas button { width: auto; white-space: nowrap; padding: 9px 13px; }
-  .rodape-fixo { left: 0; }
+  .apl .rodape-fixo { left: 0; }
+}
+
+@media (max-width: 720px) {
+  .cabine { flex-wrap: wrap; gap: 10px; padding: 10px 16px; }
+  .cabine .marca span { display: none; }
+  .seletor-mes { order: 3; flex: 1 1 100%; justify-content: space-between; }
+  .cabine .quem { margin-left: auto; }
+  .hud { grid-template-columns: 1fr; margin-top: 16px; }
+  .odometro { font-size: 34px; }
+  .leitura { font-size: 38px; }
+  .luzes { grid-template-columns: 1fr 1fr; }
+  .rota { overflow-x: auto; }
+  .rota button { flex: 0 0 auto; }
+  .rota .estado-parada { display: none; }
 }
 
 @media (max-width: 640px) {
-  .conteudo { padding: 0 16px 108px; }
+  .conteudo { padding: 0 16px 120px; }
   .cartao { padding: 16px; }
   .topo { padding: 18px 16px 12px; }
-  .topo h1 { font-size: 23px; letter-spacing: -.5px; }
-  .numero .valor { font-size: 23px; }
+  .topo h1 { font-size: 24px; }
+  .numero .valor { font-size: 26px; }
 }

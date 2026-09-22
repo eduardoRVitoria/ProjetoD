@@ -14,6 +14,20 @@ const $ = (id) => document.getElementById(id);
 const seletor = $('seletor');
 let tipoEmUso = null;
 
+// Luzes-espia do painel de bordo. Cada uma responde uma pergunta ("mandei a
+// nota?") com a cor do painel do carro, e o toque leva para a etapa onde
+// aquilo se resolve.
+const ICONES = {
+  rdv: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4"/>',
+  nota: '<path d="M5 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16M3.5 21h13M15 9h2a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V8.5L19.5 6M8 7h4"/>',
+  pedagio: '<path d="M5 21V5M3 21h4M5 9h15.5l-1 3.5H5M9.5 9l-1 3.5M14 9l-1 3.5M18.5 9l-1 3.5"/>',
+  odometro: '<path d="M3.5 17a8.5 8.5 0 1 1 17 0M12 17l4.5-5.5M7 12.5l1 .5M12 8.5v1M17 12.5l-1 .5"/><circle cx="12" cy="17" r="1.3"/>',
+  pendencia: '<path d="M12 3.5 2.5 20h19zM12 10v4.5M12 17.3v.2"/>',
+};
+const DO_ODOMETRO = /odometro|foto|troca_de_carro/;
+const C_MEDIDOR = 276.5; // 2 x pi x 44, o raio do anel
+let jaLigou = false;
+
 // O que o seletor de arquivo oferece. Precisa citar a extensao E o mime: o
 // Android costuma casar pelo mime, e o iPhone pela extensao.
 const ACEITOS = [
@@ -118,6 +132,23 @@ try {
 
 $('mes').value = mes;
 $('botao-sair').addEventListener('click', sair);
+
+// As setas do lado do mes: andar um mes para tras ou para frente e o que mais
+// se faz aqui, e o calendario do navegador pede tres toques para isso.
+for (const [id, passo] of [['mes-antes', -1], ['mes-depois', 1]]) {
+  $(id).addEventListener('click', () => {
+    const [a, m] = $('mes').value.split('-').map(Number);
+    const d = new Date(Date.UTC(a, m - 1 + passo, 1));
+    $('mes').value = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    $('mes').dispatchEvent(new Event('change'));
+  });
+}
+
+// Toque numa luz do painel: vai para a etapa onde aquilo se resolve.
+$('luzes').addEventListener('click', (ev) => {
+  const luz = ev.target.closest('[data-ir]');
+  if (luz) trocarAba(luz.dataset.ir);
+});
 $('mes').addEventListener('change', async () => {
   if (sujo && !confirm('Você tem alterações não salvas. Trocar de mês mesmo assim?')) {
     $('mes').value = mes;
@@ -139,7 +170,7 @@ $('botao-ler').addEventListener('click', lerRdv);
 $('botao-manual').addEventListener('click', () => {
   modoManual = true;
   $('cartao-lido').style.display = '';
-  $('cartao-lido').querySelector('h2').textContent = '2. Preencha os dias';
+  $('cartao-lido').querySelector('h2').textContent = 'Preencha os dias';
   desenharGrade();
   mostrarRecado(
     'recado-leitura',
@@ -1092,8 +1123,118 @@ async function enviar() {
   }
 }
 
+// ------------------------------------------------------------ painel de bordo
+
+function luzesDoMes() {
+  const p = estado.previa;
+  const achados = p.achados || [];
+  const tem = (t) => estado.anexos.some((a) => a.tipo === t);
+  const lido = estado.grade.some((d) => d.km_inicial || d.km_final);
+  const erros = achados.filter((a) => a.gravidade === 'erro');
+  const avisos = achados.filter((a) => a.gravidade === 'aviso');
+  const doOdometro = achados.filter((a) => DO_ODOMETRO.test(a.codigo));
+  const fotos = p.qtdFotosOdometro || 0;
+  // A luz do pedagio olha a conferencia, nao so o arquivo: extrato anexado com
+  // diferenca de valor continua sendo problema.
+  const doPedagio = achados.filter((a) => a.codigo.startsWith('pedagio') && a.gravidade === 'erro');
+  const semNota = achados.some((a) => a.codigo === 'sem_danfe');
+
+  return [
+    {
+      icone: 'rdv', ir: 'lancamentos', titulo: 'RDV',
+      estado: lido ? 'ok' : tem('rdv') ? 'alerta' : 'falha',
+      texto: lido ? `${numeroBr(p.totalKm)} km lidos` : tem('rdv') ? 'Anexado, falta ler' : 'Anexe o PDF',
+    },
+    {
+      icone: 'nota', ir: 'comprovantes', titulo: 'Nota do combustível',
+      estado: tem('danfe') && !semNota ? 'ok' : 'falha',
+      texto: tem('danfe') && !semNota ? 'Enviada' : 'Falta enviar',
+    },
+    {
+      icone: 'pedagio', ir: p.totalDeclarado > 0 && !tem('pedagio') ? 'comprovantes' : 'conferencia',
+      titulo: 'Pedágio',
+      estado: doPedagio.length ? 'falha' : 'ok',
+      texto: p.totalDeclarado > 0 && !tem('pedagio') ? 'Falta o extrato'
+        : doPedagio.length ? 'Valor não bate'
+        : p.totalDeclarado > 0 ? `${brl(p.totalDeclarado)} comprovado` : 'Nada lançado',
+    },
+    {
+      icone: 'odometro', ir: 'comprovantes', titulo: 'Fotos do painel',
+      estado: doOdometro.some((a) => a.gravidade === 'erro') ? 'falha' : doOdometro.length ? 'alerta' : 'ok',
+      texto: fotos ? `${fotos} foto${fotos > 1 ? 's' : ''}${doOdometro.length ? ', confira' : ''}` : 'Nenhuma foto',
+    },
+    {
+      icone: 'pendencia', ir: 'conferencia', titulo: 'Pendências',
+      estado: erros.length ? 'falha' : avisos.length ? 'alerta' : 'ok',
+      texto: erros.length
+        ? `${erros.length} para corrigir`
+        : avisos.length ? `${avisos.length} aviso${avisos.length > 1 ? 's' : ''}` : 'Nenhuma',
+    },
+  ];
+}
+
+function desenharPainel() {
+  const p = estado.previa;
+  const r = estado.relatorio;
+  const luzes = luzesDoMes();
+
+  // Odometro: um digito por celula, o ponto de milhar fica solto.
+  $('odometro').innerHTML = numeroBr(p.totalKm || 0)
+    .split('')
+    .map((c) => (/\d/.test(c) ? `<span class="d">${c}</span>` : `<span class="sep">${escapar(c)}</span>`))
+    .join('') + '<span class="unid">km</span>';
+
+  const [moeda, valor] = brl(p.totalDoMes || 0).split(/\s+/);
+  $('a-receber').innerHTML = `<small>${escapar(moeda)}</small>${escapar(valor || '')}`;
+  $('detalhe-receber').textContent =
+    `${brl(p.valorKm || 0)} de km + ${brl(p.totalDeclarado || 0)} de pedágio e estacionamento`;
+
+  // Ponteiro: quanto do mes ja esta pronto para enviar.
+  const prontos = luzes.filter((l) => l.estado === 'ok').length;
+  $('medidor-arco').style.strokeDashoffset = String(C_MEDIDOR * (1 - prontos / luzes.length));
+  $('medidor').classList.toggle('tudo', prontos === luzes.length);
+  $('medidor-quanto').innerHTML = `${prontos}<span>/${luzes.length}</span>`;
+  const falta = luzes.length - prontos;
+  $('medidor-frase').textContent =
+    r.status === 'CERTA' ? 'Relatório aprovado'
+    : r.status === 'ENVIADO' || r.status === 'CONFERINDO' ? 'Enviado, aguardando a conferência'
+    : falta === 0 ? 'Tudo pronto para enviar'
+    : `Falta${falta > 1 ? 'm' : ''} ${falta} ${falta > 1 ? 'itens' : 'item'} para enviar`;
+
+  $('luzes').innerHTML = luzes
+    .map((l) => `
+      <button class="luz ${l.estado}" data-ir="${l.ir}" title="Abrir ${escapar(l.titulo.toLowerCase())}">
+        <svg viewBox="0 0 24 24" aria-hidden="true">${ICONES[l.icone]}</svg>
+        <span><span class="t">${escapar(l.titulo)}</span><span class="s">${escapar(l.texto)}</span></span>
+      </button>`)
+    .join('');
+
+  // A ignicao so acontece na primeira vez: redesenhar depois de salvar nao
+  // pode fazer o painel piscar de novo.
+  if (!jaLigou) {
+    jaLigou = true;
+    $('luzes').classList.add('ignicao');
+    setTimeout(() => $('luzes').classList.remove('ignicao'), 1600);
+  }
+
+  // O estado de cada parada da rota.
+  const [rdv, nota, pedagio, fotos, pend] = luzes;
+  const comprov = [nota, pedagio, fotos].filter((l) => l.estado === 'ok').length;
+  paradaEm('estado-lancamentos', rdv.estado, rdv.estado === 'ok' ? 'lido' : 'falta');
+  paradaEm('estado-comprovantes', comprov === 3 ? 'ok' : 'falha', `${comprov} de 3`);
+  paradaEm('estado-conferencia', pend.estado, pend.texto.toLowerCase());
+}
+
+function paradaEm(id, estadoLuz, texto) {
+  const alvo = $(id);
+  if (!alvo) return;
+  alvo.className = `estado-parada ${estadoLuz}`;
+  alvo.textContent = texto;
+}
+
 function atualizarRodape() {
   if (!estado) return;
+  desenharPainel();
   const p = estado.previa;
   const editavel = estado.relatorio.editavel;
   $('resumo-rodape').innerHTML = `
