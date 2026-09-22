@@ -196,26 +196,21 @@ function mascararCpf(cpf) {
 export function achadosDaAssinatura(r, nomeDoColaborador) {
   const achados = [];
 
+  // Sem assinatura reprova desde a versao 5 das regras.
   if (!r.assinado) {
     achados.push({
-      gravidade: 'aviso',
+      gravidade: 'erro',
       codigo: 'sem_assinatura',
-      mensagem: 'O RDV nao esta assinado digitalmente.',
+      mensagem: 'O RDV nao esta assinado digitalmente. Assine no gov.br e envie de novo.',
       data: null,
     });
     return achados;
   }
 
+  // Assinatura que nao deu para ler ou verificar nao vira mais pendencia
+  // (versao 5): so a alterada depois de assinar e a de outra pessoa reprovam.
   for (const a of r.assinaturas) {
-    if (a.erro) {
-      achados.push({
-        gravidade: 'aviso',
-        codigo: 'assinatura_ilegivel',
-        mensagem: a.erro,
-        data: null,
-      });
-      continue;
-    }
+    if (a.erro) continue;
 
     if (a.integridade === 'alterado') {
       achados.push({
@@ -225,15 +220,6 @@ export function achadosDaAssinatura(r, nomeDoColaborador) {
         data: null,
       });
       continue;
-    }
-
-    if (a.integridade === 'nao_verificavel') {
-      achados.push({
-        gravidade: 'aviso',
-        codigo: 'assinatura_nao_verificada',
-        mensagem: `Assinatura de ${a.signatario || 'signatario desconhecido'} encontrada, mas nao foi possivel confirmar a integridade do arquivo.`,
-        data: null,
-      });
     }
 
     if (!a.gov) {

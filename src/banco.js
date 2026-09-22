@@ -255,7 +255,7 @@ export function chaveDaApi() {
 export const agora = () => new Date().toISOString();
 
 // Quanto o mes pode subir em relacao ao anterior sem precisar de explicacao.
-export const MARGEM_AUMENTO = 200;
+export const MARGEM_AUMENTO = 100;
 
 // ------------------------------------------------------------------- perfis
 //

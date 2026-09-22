@@ -64,7 +64,31 @@ const PEDEM_JUSTIFICATIVA = new Map([
   ['aumento_sem_justificativa', 'mes'],
   ['aumento_justificado', 'mes'],
   ['despesa_noturna_sem_justificativa', 'dia'],
+  ['foto_nao_bate_com_o_dia', 'dia'],
+  ['foto_nao_bate_justificada', 'dia'],
+  ['fotos_em_ordem_errada', 'dia'],
+  ['troca_de_carro_justificada', 'dia'],
 ]);
+
+// O que a caixa pergunta, por tipo de pendencia. A justificativa e a mesma do
+// dia (um campo por dia), mas a pergunta muda com o motivo.
+const PERGUNTA_DO_DIA = {
+  foto_nao_bate_com_o_dia: {
+    rotulo: 'Por que a foto do painel não é o KM inicial nem o final desse dia?',
+    exemplo: 'Ex.: tirei a foto depois de ir ao posto, o painel já tinha andado 4 km.',
+  },
+  fotos_em_ordem_errada: {
+    rotulo: 'Trocou de carro? Explique por que o painel andou para trás.',
+    exemplo: 'Ex.: o carro foi para a oficina e usei o reserva, placa ABC1D23, de 10/09 a 12/09.',
+  },
+  noturna: {
+    rotulo: 'Por que essa despesa aconteceu depois das 18h?',
+    exemplo: 'Ex.: a visita terminou às 20h e voltei direto para casa.',
+  },
+};
+PERGUNTA_DO_DIA.foto_nao_bate_justificada = PERGUNTA_DO_DIA.foto_nao_bate_com_o_dia;
+PERGUNTA_DO_DIA.troca_de_carro_justificada = PERGUNTA_DO_DIA.fotos_em_ordem_errada;
+const perguntaDo = (codigo) => PERGUNTA_DO_DIA[codigo] || PERGUNTA_DO_DIA.noturna;
 
 let modoManual = false;
 let relogio = null;
@@ -806,7 +830,7 @@ function linhaDeAchado(a, chavesUsadas = null) {
   const aberta = podeJustificar && justificando?.chave === chave;
 
   const botao = !podeJustificar || aberta ? '' : `
-    <button class="pequeno" data-abrir-justificativa="${chave}">
+    <button class="pequeno" data-abrir-justificativa="${chave}" data-codigo="${escapar(a.codigo)}">
       ${escrito ? 'Editar a justificativa' : 'Escrever a justificativa'}
     </button>`;
 
@@ -850,13 +874,13 @@ function caixaDeJustificativa(chave) {
       <label for="campo-justificativa">
         ${doMes
           ? 'Por que este mês ficou mais caro que o anterior?'
-          : 'Por que essa despesa aconteceu depois das 18h?'}
+          : perguntaDo(justificando.codigo).rotulo}
       </label>
       ${comparacao}
       <textarea id="campo-justificativa" data-campo-justificativa
         placeholder="${doMes
           ? 'Ex.: assumi a rota do litoral no lugar de um colega afastado, foram três viagens a Santos no mês.'
-          : 'Ex.: a visita terminou às 20h e voltei direto para casa.'}">${escapar(justificando.texto)}</textarea>
+          : perguntaDo(justificando.codigo).exemplo}">${escapar(justificando.texto)}</textarea>
       <p class="dica" data-dica-justificativa>${dicaDaCaixa(chave)}</p>
       <p class="erro-caixa esconde" data-erro-justificativa></p>
       <div class="linha-botoes">
@@ -871,7 +895,9 @@ function caixaDeJustificativa(chave) {
 function dicaDaCaixa(chave) {
   const texto = (justificando?.texto || '').trim();
   if (chave !== 'mes') {
-    return 'Vale para todas as passagens desse dia. Escreva o que te fez estar na rua àquela hora.';
+    return PERGUNTA_DO_DIA[justificando?.codigo]
+      ? 'Quem confere lê exatamente este texto. É a mesma explicação do dia, vale para as pendências dele.'
+      : 'Vale para todas as passagens desse dia. Escreva o que te fez estar na rua àquela hora.';
   }
   const faltam = 15 - texto.length;
   return faltam > 0
@@ -881,7 +907,7 @@ function dicaDaCaixa(chave) {
 
 function cliqueNaConferencia(ev) {
   const abrir = ev.target.closest('[data-abrir-justificativa]');
-  if (abrir) return abrirJustificativa(abrir.dataset.abrirJustificativa);
+  if (abrir) return abrirJustificativa(abrir.dataset.abrirJustificativa, abrir.dataset.codigo);
 
   if (ev.target.closest('[data-cancelar-justificativa]')) {
     justificando = null;
@@ -903,8 +929,8 @@ function digitandoJustificativa(ev) {
   if (erro) erro.classList.add('esconde');
 }
 
-function abrirJustificativa(chave) {
-  justificando = { chave, texto: textoJaEscrito(chave), focar: true };
+function abrirJustificativa(chave, codigo = null) {
+  justificando = { chave, codigo, texto: textoJaEscrito(chave), focar: true };
   trocarAba('conferencia');
   desenharConferencia();
 }
@@ -922,7 +948,7 @@ async function enviarJustificativa() {
     if (erro) {
       erro.textContent = chave === 'mes'
         ? `Escreva pelo menos 15 letras — está com ${texto.length}. Quem confere precisa entender o motivo sem te ligar.`
-        : 'Escreva o motivo do horário antes de enviar.';
+        : 'Escreva o motivo antes de enviar.';
       erro.classList.remove('esconde');
     }
     return;

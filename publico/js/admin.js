@@ -814,7 +814,20 @@ function blocoParecer(p) {
             .map((i) => `${escapar(i.descricao)} (${brl(i.valor)})`)
             .join(', ')}</p>`
         : ''
+    }
+    ${
+      (ia.passagens_fora || []).length
+        ? `<p class="sub"><strong>Passagens do extrato fora da soma:</strong> ${ia.passagens_fora
+            .map((p) => `${escapar(dataCurta(p.data))} ${escapar(p.local || '')} ${brl(Number(p.valor || 0))} — ${escapar(p.motivo || '')}`)
+            .join('; ')}</p>`
+        : ''
     }`;
+}
+
+// AAAA-MM-DD -> DD/MM. Texto vindo do modelo: se nao tiver o formato, sai como veio.
+function dataCurta(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+  return m ? `${m[3]}/${m[2]}` : String(iso || '');
 }
 
 // ---------------------------------------------------------------- usuarios

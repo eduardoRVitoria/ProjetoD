@@ -336,6 +336,21 @@ function anexosDo(relId) {
     .all(relId);
 }
 
+// A conferencia por regra depende da empresa do dono do relatorio (fim de
+// semana e 18h so sao aviso na DSO). Todo lugar que confere passa por aqui,
+// para nenhum esquecer de mandar a empresa.
+function conferirRel(rel, linhas, anexos) {
+  const dono = db.prepare('SELECT empresa FROM usuarios WHERE id = ?').get(rel.usuario_id);
+  return conferir(
+    rel,
+    linhas,
+    anexos,
+    valorDoKm(),
+    mesAnteriorDe(rel.usuario_id, rel.mes_ref),
+    dono?.empresa ?? null,
+  );
+}
+
 // Monta a grade do mes: todo dia do mes, com o que ja foi preenchido.
 function gradeDoMes(mes, linhas) {
   const porData = new Map(linhas.map((l) => [l.data, l]));
@@ -365,7 +380,7 @@ function pegarRelatorio(req, res, url, usuario) {
   const anexos = anexosDo(rel.id);
   // "previa": e a aba que o colaborador ve enquanto preenche. A cobranca de
   // DANFE e de foto de odometro sai dali e volta na hora do envio.
-  const resultado = conferir(rel, linhas, anexos, valorDoKm(), mesAnteriorDe(rel.usuario_id, rel.mes_ref));
+  const resultado = conferirRel(rel, linhas, anexos);
 
   responderJson(res, {
     relatorio: {
@@ -418,8 +433,10 @@ async function salvarRelatorio(req, res, usuario) {
       const horaRecebida = String(l.hora_pedagio || '').trim();
       const hora = /^\d{1,2}:\d{2}$/.test(horaRecebida) ? horaRecebida : null;
       const porQue = String(l.justificativa_hora || '').trim().slice(0, 500) || null;
-      // Dia totalmente em branco nao vira linha.
-      if (ki === 0 && kf === 0 && ped === 0 && est === 0 && !itin) continue;
+      // Dia totalmente em branco nao vira linha. Justificativa escrita conta
+      // como preenchido: a foto de um sabado sem lancamento tambem pode pedir
+      // explicacao (troca de carro), e ela nao pode se perder no salvar.
+      if (ki === 0 && kf === 0 && ped === 0 && est === 0 && !itin && !porQue) continue;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(l.data || ''))) continue;
       if (!String(l.data).startsWith(mes)) continue;
       inserir.run(rel.id, l.data, ki, kf, itin, ped, est, ordem++, hora, porQue);
@@ -427,7 +444,7 @@ async function salvarRelatorio(req, res, usuario) {
 
     const linhas = linhasDo(rel.id);
     const anexos = anexosDo(rel.id);
-    const r = conferir(rel, linhas, anexos, valorDoKm(), mesAnteriorDe(rel.usuario_id, rel.mes_ref));
+    const r = conferirRel(rel, linhas, anexos);
 
     db.prepare(
       `UPDATE relatorios
@@ -452,7 +469,7 @@ async function salvarRelatorio(req, res, usuario) {
     responderJson(res, {
       ok: true,
       relatorio: atualizado,
-      previa: conferir(atualizado, linhas, anexos, valorDoKm(), mesAnteriorDe(atualizado.usuario_id, atualizado.mes_ref)),
+      previa: conferirRel(atualizado, linhas, anexos),
     });
   } catch (e) {
     db.exec('ROLLBACK');
@@ -568,7 +585,7 @@ async function lerRdv(req, res, usuario) {
     const linhas = linhasDo(rel.id);
     const anexos = anexosDo(rel.id);
     const atualizado = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id);
-    const r = conferir(atualizado, linhas, anexos, valorDoKm(), mesAnteriorDe(atualizado.usuario_id, atualizado.mes_ref));
+    const r = conferirRel(atualizado, linhas, anexos);
 
     db.prepare(
       `UPDATE relatorios SET total_km = ?, valor_km = ?, pedagio_declarado = ?, estac_declarado = ? WHERE id = ?`,
@@ -598,13 +615,7 @@ async function lerRdv(req, res, usuario) {
     responderJson(res, {
       ok: true,
       extraido,
-      previa: conferir(
-        db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id),
-        linhas,
-        anexos,
-        valorDoKm(),
-        mesAnteriorDe(usuario.id, mes),
-      ),
+      previa: conferirRel(db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id), linhas, anexos),
       grade: gradeDoMes(mes, linhas),
       aviso: avisoDaLeitura(extraido, usuario),
     });
@@ -670,7 +681,7 @@ async function enviarRelatorio(req, res, usuario) {
   }
 
   const anexos = anexosDo(rel.id);
-  const r = conferir(rel, linhas, anexos, valorDoKm(), mesAnteriorDe(rel.usuario_id, rel.mes_ref));
+  const r = conferirRel(rel, linhas, anexos);
 
   // Bloqueios duros: coisas que a pessoa consegue resolver sozinha antes de enviar.
   // A soma de km e o valor NAO entram aqui: com o RDV vindo de PDF, a divergencia
@@ -1054,13 +1065,7 @@ function relatorioDetalhe(res, url, quem) {
   //
   // O `rel` cru e de proposito - `conferir` le `rel.extraido` como texto e
   // faz o proprio JSON.parse. O objeto ja parseado vai na resposta abaixo.
-  const pendenciasAgora = conferir(
-    rel,
-    linhas,
-    anexos,
-    valorDoKm(),
-    mesAnteriorDe(rel.usuario_id, rel.mes_ref),
-  );
+  const pendenciasAgora = conferirRel(rel, linhas, anexos);
 
   responderJson(res, {
     relatorio: {
@@ -1138,7 +1143,7 @@ async function conferirRelatorio(rel, { usarIa = true, demo = false, decididoPor
     throw e;
   }
 
-  const porRegra = conferir(rel, linhas, anexos, vlrKm, mesAnteriorDe(rel.usuario_id, rel.mes_ref));
+  const porRegra = conferirRel(rel, linhas, anexos);
   const daAssinatura = conferirAssinatura(rel, anexos, usuario);
   porRegra.achados.push(...daAssinatura.achados);
 
@@ -1183,6 +1188,17 @@ async function conferirRelatorio(rel, { usarIa = true, demo = false, decididoPor
     if (parecer.tem_danfe_de_abastecimento) {
       const i = achados.findIndex((a) => a.codigo === 'sem_danfe');
       if (i >= 0) achados.splice(i, 1);
+    }
+    // Selo do gov.br (ou qualquer assinatura) em cima da placa: a placa some
+    // do documento e ninguem consegue conferir o veiculo. Reprova.
+    if (parecer.assinatura_sobre_placa?.situacao === 'sim') {
+      achados.push({
+        gravidade: 'erro',
+        codigo: 'assinatura_sobre_placa',
+        mensagem: 'A assinatura esta em cima da placa do veiculo no RDV. Assine de novo deixando a placa visivel.',
+        data: null,
+        ...anexoDoAchado(parecer.assinatura_sobre_placa.anexo, anexos, rel.id),
+      });
     }
   }
 
@@ -1380,12 +1396,8 @@ function conferirAssinatura(rel, anexos, usuario) {
       resultados.push({ arquivo: a.nome_original, ...r });
       achados.push(...achadosDaAssinatura(r, usuario.nome));
     } catch (e) {
-      achados.push({
-        gravidade: 'aviso',
-        codigo: 'assinatura_erro',
-        mensagem: `Nao foi possivel verificar a assinatura de "${a.nome_original}": ${e.message}`,
-        data: null,
-      });
+      // Nao verificar a assinatura deixou de ser pendencia (regras versao 5).
+      log.aviso('assinatura', 'nao consegui verificar', { rel: rel.id, arquivo: a.nome_original, erro: e.message });
     }
   }
 

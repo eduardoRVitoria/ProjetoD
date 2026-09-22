@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { chaveDaApi, lerConfig, PASTA_ANEXOS } from './banco.js';
 import * as log from './log.js';
-import { dataBr } from './conferencia.js';
+import { dataBr, somarExtrato } from './conferencia.js';
 
 const LIMITE_POR_ANEXO = 8 * 1024 * 1024; // 8 MB
 const LIMITE_TOTAL = 24 * 1024 * 1024; // folga sobre o teto de 32 MB da requisicao
@@ -48,24 +48,25 @@ Sua tarefa e olhar os comprovantes anexados e cruzar com o que o colaborador dec
 
 O que voce PRECISA verificar:
 
-1. PEDAGIO E ESTACIONAMENTO. Some tudo que for pedagio ou estacionamento nos
+1. PEDAGIO E ESTACIONAMENTO - TRANSCREVA, NAO SOME.
+   Copie para "passagens" CADA passagem de pedagio e cada estacionamento dos
    comprovantes (Sem Parar, ConectCar, Tag Itau, Veloe, Ultrapasse, C6 Tag, cupons
-   avulsos) e compare com o valor declarado.
-   NAO SOME estes itens, que aparecem no mesmo extrato mas nao sao despesa de viagem:
-   mensalidade do plano, IOF, "dias de uso da tag", negociacao de divida, recarga de
-   saldo, taxa de envio da tag, multa.
-   Considere apenas lancamentos dentro do mes de referencia e em dia util.
+   avulsos), uma linha por lancamento, com a data e o valor escritos no documento.
+   Transcreva TODAS, de qualquer dia - inclusive fim de semana, feriado e outro
+   mes. Nao filtre, nao some, nao arredonde e nao compare com o declarado: quem
+   soma e decide o que entra e o sistema. Se o valor nao estiver legivel, deixe a
+   passagem de fora e diga isso num achado.
+   NAO sao passagens (va para "itens_ignorados"): mensalidade do plano, IOF, "dias
+   de uso da tag", negociacao de divida, recarga de saldo, taxa de envio da tag,
+   multa.
+   Nao escreva achado sobre diferenca entre declarado e comprovado - o sistema
+   faz essa conta com a sua transcricao.
 
-1.1 HORA DAS PASSAGENS. O extrato da tag traz a hora de cada passagem. Liste em
-   "passagens_apos_18h" toda passagem de pedagio ou estacionamento com hora
-   18:00 ou mais tarde. Apenas LISTE: nao escreva achado nenhum sobre horario,
-   nao cobre explicacao e nao trate hora tardia como problema. Quem decide se
-   isso vira pendencia e a regra do sistema, que nao vale para todas as
-   empresas - achado seu sobre horario cobraria quem esta isento.
-   Leia a hora que esta escrita no extrato. Nao estime pela ordem das linhas,
-   nao deduza do trajeto e nao inclua lancamento sem hora legivel: a lista
-   vazia e a resposta certa quando o extrato nao mostra hora. Acusar alguem de
-   rodar de madrugada por causa de hora inventada e pior que nao checar.
+1.1 HORA DAS PASSAGENS. Preencha "hora" com a hora que esta ESCRITA no extrato
+   para aquela passagem. Nao estime pela ordem das linhas e nao deduza do
+   trajeto: sem hora legivel, deixe "hora" vazio. Nao escreva achado nenhum
+   sobre horario - quem decide se hora tardia vira pendencia e a regra do
+   sistema, que nao vale para todas as empresas.
 
 2. ABASTECIMENTO. Confirme se existe mesmo uma nota fiscal / DANFE / cupom de
    abastecimento. O nome do arquivo nao vale como prova - o "GASOLINA.pdf" de alguem
@@ -89,6 +90,14 @@ O que voce PRECISA verificar:
 
 4. ITINERARIO. Veja se a distancia declarada faz sentido para o trajeto descrito.
    Aponte so o que for claramente desproporcional, nao chute quilometragem exata.
+
+5. ASSINATURA EM CIMA DA PLACA. No proprio RDV (o anexo marcado como "relatorio
+   RDV"), veja se o selo/carimbo da assinatura digital do gov.br, ou qualquer
+   assinatura, esta sobreposto ao campo da PLACA do veiculo, cobrindo o numero
+   da placa no todo ou em parte. Responda em "assinatura_sobre_placa":
+   "sim" se cobre, "nao" se a placa esta visivel, "sem_rdv" se nao veio o RDV
+   ou ele nao tem campo de placa. So "sim" com a sobreposicao clara na imagem.
+   Nao escreva achado sobre isso - o sistema cria a pendencia.
 
 Regras de julgamento:
 - Falta da nota de abastecimento, sozinha, e o unico problema => "SO_FALTA_DANFE".
@@ -127,10 +136,39 @@ const FERRAMENTA = {
   input_schema: {
     type: 'object',
     properties: {
-      pedagio_comprovado: {
-        type: 'number',
+      passagens: {
+        type: 'array',
         description:
-          'Soma, em reais, de tudo que e pedagio e estacionamento nos comprovantes. Use 0 se nao houver comprovante legivel.',
+          'CADA passagem de pedagio e cada estacionamento dos comprovantes, uma por lancamento, '
+          + 'de qualquer dia. Transcreva - nao some, nao filtre. Lista vazia se nao houver '
+          + 'comprovante legivel.',
+        items: {
+          type: 'object',
+          properties: {
+            data: { type: 'string', description: 'AAAA-MM-DD, como esta no comprovante' },
+            hora: {
+              type: 'string',
+              description: 'HH:MM como esta escrito no extrato. Vazio se o documento nao mostra a hora.',
+            },
+            valor: { type: 'number', description: 'Em reais, exatamente como no documento' },
+            local: { type: 'string', description: 'praca ou estabelecimento, como esta no documento' },
+            tipo: { type: 'string', enum: ['pedagio', 'estacionamento'] },
+          },
+          required: ['data', 'hora', 'valor', 'local', 'tipo'],
+          additionalProperties: false,
+        },
+      },
+      assinatura_sobre_placa: {
+        type: 'object',
+        properties: {
+          situacao: { type: 'string', enum: ['sim', 'nao', 'sem_rdv'] },
+          anexo: {
+            type: 'string',
+            description: 'Nome do arquivo do RDV, copiado do rotulo "--- Anexo: <nome> ---". Vazio se sem_rdv.',
+          },
+        },
+        required: ['situacao', 'anexo'],
+        additionalProperties: false,
       },
       itens_ignorados: {
         type: 'array',
@@ -143,25 +181,6 @@ const FERRAMENTA = {
             valor: { type: 'number' },
           },
           required: ['descricao', 'valor'],
-          additionalProperties: false,
-        },
-      },
-      passagens_apos_18h: {
-        type: 'array',
-        description:
-          'Passagens de pedagio ou estacionamento do extrato cuja HORA e 18:00 ou mais tarde. '
-          + 'Leia a hora que esta no proprio extrato - nao invente, nao estime, e nao inclua '
-          + 'lancamento sem hora legivel. Lista vazia se o extrato nao mostrar hora, ou se '
-          + 'nenhuma passagem for depois das 18h.',
-        items: {
-          type: 'object',
-          properties: {
-            data: { type: 'string', description: 'AAAA-MM-DD' },
-            hora: { type: 'string', description: 'HH:MM, como esta no extrato' },
-            valor: { type: 'number' },
-            local: { type: 'string', description: 'praca ou estabelecimento, como esta no extrato' },
-          },
-          required: ['data', 'hora', 'valor', 'local'],
           additionalProperties: false,
         },
       },
@@ -233,9 +252,9 @@ const FERRAMENTA = {
       },
     },
     required: [
-      'pedagio_comprovado',
+      'passagens',
+      'assinatura_sobre_placa',
       'itens_ignorados',
-      'passagens_apos_18h',
       'tem_danfe_de_abastecimento',
       'odometro',
       'achados',
@@ -388,16 +407,18 @@ export async function conferirComIa({ usuario, rel, linhas, anexos, resultadoReg
 
   const comeco = Date.now();
   const modelo = lerConfig('modelo_ia') || 'claude-opus-5';
-  const resposta = await cliente.messages.create({
+  // Stream so porque o SDK exige acima de ~21 mil tokens de saida; a resposta
+  // final e a mesma de um create.
+  const resposta = await cliente.messages.stream({
     model: modelo,
-    max_tokens: 16000,
+    max_tokens: 32000, // a transcricao passagem a passagem de um extrato cheio e longa
     thinking: { type: 'adaptive' },
     output_config: { effort: 'high' },
     system: INSTRUCOES,
     messages: [{ role: 'user', content: conteudo }],
     tools: [FERRAMENTA],
     tool_choice: { type: 'tool', name: 'registrar_parecer' },
-  });
+  }).finalMessage();
 
   // O unico lugar do portal que gasta dinheiro por uso. Sem esta linha, "a
   // conferencia esta cara" e "a conferencia esta lenta" nao tem como ser
@@ -426,8 +447,20 @@ export async function conferirComIa({ usuario, rel, linhas, anexos, resultadoReg
     throw new Error('A IA respondeu sem preencher o parecer. Tente de novo.');
   }
 
+  // A IA transcreveu; a soma e a escolha do que entra sao do sistema. O
+  // parecer continua com `pedagio_comprovado` e `passagens_apos_18h` porque o
+  // resto do portal (painel, regra das 18h) le esses dois campos.
+  const parecer = bloco.input;
+  const soma = somarExtrato(parecer.passagens, linhas, rel.mes_ref);
+  parecer.pedagio_comprovado = soma.total;
+  parecer.passagens_fora = soma.fora;
+  parecer.passagens_apos_18h = soma.contadas.filter((p) => {
+    const hora = String(p.hora || '').trim();
+    return /^\d{1,2}:\d{2}$/.test(hora) && Number(hora.split(':')[0]) >= 18;
+  });
+
   return {
-    parecer: bloco.input,
+    parecer,
     anexosIgnorados: ignorados,
     uso: resposta.usage,
   };
@@ -442,6 +475,7 @@ export function textoDosIgnorados(ignorados) {
 function rotulo(tipo) {
   return (
     {
+      rdv: 'relatorio RDV',
       pedagio: 'comprovante de pedagio/estacionamento',
       danfe: 'nota de abastecimento',
       odometro: 'foto do odometro',

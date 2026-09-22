@@ -6,9 +6,13 @@
 import { fimDeSemana, nomeDoFeriado, diaDaSemana } from './feriados.js';
 import { MARGEM_AUMENTO } from './banco.js';
 
-// Acima disto o painel nao "andou": alguem digitou errado, fotografou outro
-// carro, ou lancou dia de outro mes. Um vendedor rodando o mes inteiro faz uns
-// 3 mil km, entao 2 mil de uma vez ja e fora da realidade do trabalho.
+// Entre dois dias uteis seguidos o carro nao tem por onde rodar muito fora do
+// trabalho - so a noite. Passou disto, e erro.
+const SALTO_DIA_UTIL = 600;
+
+// Com fim de semana ou feriado no meio, o salto grande so vira aviso (ver
+// USO_PARTICULAR_ESPERADO). Acima disto nem o fim de semana explica: e digito
+// trocado, outro carro, ou dia de outro mes. Continua erro.
 const SALTO_IMPOSSIVEL = 2000;
 
 // Quanto o carro pode rodar fora do trabalho entre dois lancamentos sem que
@@ -36,10 +40,16 @@ const HORA_LIMITE = 18;
 //   2  salto impossivel de odometro, foto contra o dia dela, fotos em ordem
 //   3  diferenca de pedagio na primeira conferencia; passagem depois das 18h
 //   4  a DISO saiu da regra das 18h (as outras empresas continuam nela)
+//   5  revisao do Eduardo de 22/09: fim de semana e 18h viram aviso so para a
+//      DSO (18h nao vale mais para DISO nem PROMOTORES); salto de 600 km entre
+//      dias uteis; valor do km sem tolerancia; foto do painel tem que ser o km
+//      inicial ou final do dia; fotos por trecho de dias uteis (feriado parte
+//      a semana); troca de carro justificavel; aumento acima de R$ 100; RDV
+//      sem assinatura e erro; o sistema soma o pedagio, nao mais a IA.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 4;
+export const VERSAO_REGRAS = 5;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -59,14 +69,9 @@ function achado(gravidade, codigo, mensagem, data = null) {
  * vendedor responde no proprio dia em que a despesa caiu.
  */
 export function passagensSemExplicacao(passagens, linhas, empresa = null) {
-  // A DISO nao cobra explicacao por horario. O que a regra tem em maos e o
-  // nome do estabelecimento e a hora que o extrato da tag registrou - e a DISO
-  // decidiu que isso sozinho nao acusa ninguem. As outras empresas continuam
-  // cobrando, entao a regra fica de pe e so essa empresa sai dela.
-  //
-  // Sem `empresa` a regra vale: quem nao disse de quem e o relatorio nao ganha
-  // a isencao de graca.
-  if (empresa === 'DISO') return [];
+  // So a DSO cobra explicacao por horario, e como AVISO: aparece para quem
+  // confere, mas nao reprova. DISO e PROMOTORES sairam da regra (versao 5).
+  if (empresa !== 'DSO') return [];
 
   const explicacaoDoDia = new Map(
     linhas.map((l) => [l.data, String(l.justificativa_hora || '').trim()]),
@@ -81,7 +86,7 @@ export function passagensSemExplicacao(passagens, linhas, empresa = null) {
     })
     .map((p) =>
       achado(
-        'erro',
+        'aviso',
         'despesa_noturna_sem_justificativa',
         `${dataBr(p.data)} as ${p.hora}: ${brl(Number(p.valor || 0))} em `
           + `${String(p.local || 'pedagio/estacionamento').slice(0, 40)}, depois das `
@@ -117,6 +122,59 @@ export function diferencaDePedagio(declarado, comprovado) {
   );
 }
 
+/**
+ * Soma as passagens que a IA transcreveu do extrato.
+ *
+ * A IA so transcreve; quem soma e decide o que entra e este codigo. Deixar a
+ * conta com o modelo fazia ele "fechar" a soma no valor declarado - foi o que
+ * aconteceu no rdv-app em 10/09. Numero que decide dinheiro sai daqui.
+ *
+ * Entra: passagem do mes de referencia em dia util, e passagem de fim de
+ * semana ou feriado SE o RDV lanca aquele dia (km, pedagio ou estacionamento).
+ * Fica de fora, listada com o motivo: outro mes, e fim de semana/feriado que o
+ * RDV nao lanca - uso particular do carro, que nao e despesa da empresa.
+ *
+ * Antes a IA descartava fim de semana calada: o vendedor declarava pedagio do
+ * sabado e so via uma "diferenca" sem explicacao. Agora o dia declarado conta,
+ * e a regra de fim de semana e quem aponta o sabado.
+ */
+export function somarExtrato(passagens, linhas, mesRef) {
+  const lancados = new Set(
+    linhas
+      .filter(
+        (l) =>
+          Number(l.km_final) - Number(l.km_inicial) > 0
+          || Number(l.pedagio) > 0
+          || Number(l.estacionamento) > 0,
+      )
+      .map((l) => l.data),
+  );
+
+  let centavos = 0;
+  const contadas = [];
+  const fora = [];
+
+  for (const p of passagens || []) {
+    const valor = Number(p?.valor);
+    const data = String(p?.data || '');
+    if (!Number.isFinite(valor) || valor <= 0) continue;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || !data.startsWith(mesRef)) {
+      fora.push({ ...p, motivo: 'fora do mes do relatorio' });
+      continue;
+    }
+    const naoUtil = fimDeSemana(data) || nomeDoFeriado(data);
+    if (naoUtil && !lancados.has(data)) {
+      fora.push({ ...p, motivo: 'fim de semana/feriado sem lancamento no RDV' });
+      continue;
+    }
+    centavos += Math.round(valor * 100);
+    contadas.push(p);
+  }
+
+  return { total: centavos / 100, contadas, fora };
+}
+
 // Itinerarios que explicam legitimamente um dia com 0 km.
 const SEM_DESLOCAMENTO =
   /home\s*office|feriado|folga|ferias|f[eé]rias|atestado|licen[cç]a|falta|treinamento\s+online|reuni[aã]o\s+online|escrit[oó]rio|sem\s+visita/i;
@@ -139,9 +197,13 @@ function diasSeguidos(dataAnterior, dataAtual) {
  * @param {Array}  linhas  linhas do RDV, em ordem de data
  * @param {Array}  anexos  anexos ja enviados
  * @param {number} vlrKm   valor pago por km (padrao 0,90)
+ * @param {string} empresa empresa do dono do relatorio (DISO, DSO, PROMOTORES)
  */
-export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null) {
+export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, empresa = null) {
   const achados = [];
+  const justificativaDoDia = new Map(
+    linhas.map((l) => [l.data, String(l.justificativa_hora || '').trim()]),
+  );
 
   // Mes em branco nao tem o que conferir.
   //
@@ -173,14 +235,17 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null) {
     const fds = fimDeSemana(l.data);
     const feriado = nomeDoFeriado(l.data);
 
+    // Na DSO fim de semana e aviso (pode ter trabalho de verdade); nas outras
+    // empresas continua reprovando.
     if (fds && (rodou > 0 || Number(l.pedagio) > 0 || Number(l.estacionamento) > 0)) {
+      const soAviso = empresa === 'DSO';
       achados.push(
         achado(
-          'erro',
+          soAviso ? 'aviso' : 'erro',
           'data_fim_de_semana',
           `${dataBr(l.data)} caiu num ${fds} e tem lancamento (${rodou} km, ${brl(
             Number(l.pedagio) + Number(l.estacionamento),
-          )}). Despesa de fim de semana nao entra no RDV.`,
+          )}). ${soAviso ? 'Confirme se foi trabalho.' : 'Despesa de fim de semana nao entra no RDV.'}`,
           l.data,
         ),
       );
@@ -261,18 +326,15 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null) {
       );
     } else if (inicio > fimAnterior) {
       const lacuna = inicio - fimAnterior;
+      const seguidos = diasSeguidos(ant.data, at.data);
 
-      // O fim de semana explica uso particular, nao qualquer numero.
+      // Entre dias uteis seguidos: ate 600 km passa calado (o aviso de
+      // qualquer diferenca saiu na versao 5), acima disso e erro.
       //
-      // Este filtro existia para nao acusar toda segunda-feira: o carro roda no
-      // sabado e no domingo, e essa diferenca nao entra no RDV. So que ele
-      // desligava a checagem por completo, e um salto de 67.868 km entre a
-      // sexta e a segunda passou como se fosse um passeio de fim de semana.
-      //
-      // Agora o fim de semana justifica ate um limite. Acima dele nao existe
-      // explicacao inocente - e digito trocado no painel, foto de outro
-      // veiculo, ou lancamento de outro mes - e vira erro, que trava o envio.
-      if (lacuna > SALTO_IMPOSSIVEL) {
+      // Com fim de semana ou feriado no meio, o carro roda por conta propria.
+      // Ate 2 mil km vira so aviso; acima nao existe explicacao inocente - um
+      // salto de 67.868 km entre sexta e segunda ja passou assim.
+      if (seguidos ? lacuna > SALTO_DIA_UTIL : lacuna > SALTO_IMPOSSIVEL) {
         achados.push(
           achado(
             'erro',
@@ -283,17 +345,7 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null) {
             at.data,
           ),
         );
-      } else if (diasSeguidos(ant.data, at.data) && lacuna > 1) {
-        // Dias uteis colados: nao ha fim de semana para explicar a diferenca.
-        achados.push(
-          achado(
-            'aviso',
-            'hodometro_lacuna',
-            `${dataBr(at.data)}: o KM inicial (${inicio}) esta ${lacuna} km acima do KM final do dia util anterior (${fimAnterior}). Esses ${lacuna} km rodaram sem estar lancados.`,
-            at.data,
-          ),
-        );
-      } else if (lacuna > USO_PARTICULAR_ESPERADO) {
+      } else if (!seguidos && lacuna > USO_PARTICULAR_ESPERADO) {
         // Tem fim de semana no meio, mas rodar isso tudo fora do trabalho e
         // muito - vale a pessoa confirmar, sem travar o envio.
         achados.push(
@@ -335,7 +387,8 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null) {
     );
   }
 
-  if (declaradoValor != null && !perto(valorKm, Number(declaradoValor))) {
+  // Sem tolerancia: o valor tem que ser a conta exata, em centavos.
+  if (declaradoValor != null && Math.round(valorKm * 100) !== Math.round(Number(declaradoValor) * 100)) {
     achados.push(
       achado(
         'erro',
@@ -419,7 +472,6 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null) {
 
   // -------------------------------------------------------- 7. odometro
   const fotos = anexos.filter((a) => a.tipo === 'odometro');
-  const faltando = semanasSemFoto(linhas, fotos);
   if (fotos.length === 0) {
     achados.push(
       achado(
@@ -428,19 +480,26 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null) {
         'Nao foi enviada nenhuma foto do odometro. E preciso a foto de segunda de manha e a de sexta a noite de cada semana.',
       ),
     );
-  } else if (faltando.length > 0) {
-    // O texto antigo dizia "9 fotos, menos que as 2 esperadas" - `faltando`
-    // conta as semanas que FALTAM, nao o total esperado. Dava uma frase que se
-    // contradizia sozinha e nao ajudava ninguem.
-    const semanas = semanasTrabalhadas(linhas);
-    achados.push(
-      achado(
-        'aviso',
-        'odometro_incompleto',
-        `${fotos.length} foto(s) de odometro para ${semanas} semana(s) trabalhada(s). `
-          + 'O esperado sao duas por semana: segunda de manha e sexta a noite.',
-      ),
-    );
+  } else {
+    // Uma foto no comeco e outra no fim de cada trecho de dias uteis. Feriado
+    // parte a semana: com feriado na quarta, sao quatro fotos - segunda de
+    // manha, terca a noite, quinta de manha e sexta a noite.
+    const faltam = fotosQueFaltam(fotosEsperadas(linhas, rel.mes_ref), fotos);
+    if (faltam.length > 0) {
+      const lista = faltam
+        .slice(0, 6)
+        .map((f) => `${diaDaSemana(f.data)} ${dataBr(f.data).slice(0, 5)} ${f.momento === 'manha' ? 'de manha' : 'a noite'}`)
+        .join(', ');
+      const resto = faltam.length > 6 ? ` e mais ${faltam.length - 6}` : '';
+      achados.push(
+        achado(
+          'aviso',
+          'odometro_incompleto',
+          `Falta${faltam.length > 1 ? 'm' : ''} ${faltam.length} foto(s) do odometro: ${lista}${resto}. `
+            + 'E uma foto no primeiro dia util de manha e outra no ultimo a noite; feriado no meio da semana pede foto antes e depois dele.',
+        ),
+      );
+    }
   }
 
   // ------------------------------------------- 7.1 cada foto contra o SEU dia
@@ -510,20 +569,19 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null) {
     const kf = Number(l.km_final);
     if (!(ki > 0 || kf > 0)) continue;
 
-    const menor = Math.min(ki, kf) - FOLGA_DA_FOTO;
-    const maior = Math.max(ki, kf) + FOLGA_DA_FOTO;
-
-    if (km < menor || km > maior) {
-      const dif = km < menor ? menor - km : km - maior;
+    // Tolerancia zero: a foto e do comeco ou do fim do dia, entao tem que ser
+    // exatamente o KM inicial ou o KM final. Com justificativa escrita no dia,
+    // vira aviso e quem confere le o motivo.
+    if (km !== ki && km !== kf) {
+      const dif = Math.min(Math.abs(km - ki), Math.abs(km - kf));
+      const porQue = justificativaDoDia.get(f.data_leitura);
+      const fato = `${dataBr(f.data_leitura)}: a foto do painel marca ${km.toLocaleString('pt-BR')} km, `
+        + `mas o RDV lanca ${ki.toLocaleString('pt-BR')} (inicial) e ${kf.toLocaleString('pt-BR')} (final) `
+        + `nesse dia. Diferenca de ${dif.toLocaleString('pt-BR')} km.`;
       achados.push(
-        achado(
-          'erro',
-          'foto_nao_bate_com_o_dia',
-          `${dataBr(f.data_leitura)}: a foto do painel marca ${km.toLocaleString('pt-BR')} km, `
-            + `mas o RDV lanca de ${ki.toLocaleString('pt-BR')} a ${kf.toLocaleString('pt-BR')} `
-            + `nesse dia. Diferenca de ${dif.toLocaleString('pt-BR')} km.`,
-          f.data_leitura,
-        ),
+        porQue
+          ? achado('aviso', 'foto_nao_bate_justificada', `${fato} Justificativa: "${porQue}"`, f.data_leitura)
+          : achado('erro', 'foto_nao_bate_com_o_dia', `${fato} Corrija o KM ou justifique.`, f.data_leitura),
       );
     }
   }
@@ -539,15 +597,19 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null) {
     const ant = emOrdem[i - 1];
     const at = emOrdem[i];
     if (Number(at.km) < Number(ant.km)) {
+      // Troca de carro explica: com justificativa escrita no dia, vira aviso.
+      const porQue = justificativaDoDia.get(at.data_leitura);
+      const fato = `A foto de ${dataBr(at.data_leitura)} marca ${Number(at.km).toLocaleString('pt-BR')} km, `
+        + `menos que a de ${dataBr(ant.data_leitura)} (${Number(ant.km).toLocaleString('pt-BR')} km).`;
       achados.push(
-        achado(
-          'erro',
-          'fotos_em_ordem_errada',
-          `A foto de ${dataBr(at.data_leitura)} marca ${Number(at.km).toLocaleString('pt-BR')} km, `
-            + `menos que a de ${dataBr(ant.data_leitura)} (${Number(ant.km).toLocaleString('pt-BR')} km). `
-            + 'O painel nao anda para tras - confira os numeros ou as datas.',
-          at.data_leitura,
-        ),
+        porQue
+          ? achado('aviso', 'troca_de_carro_justificada', `${fato} Justificativa: "${porQue}"`, at.data_leitura)
+          : achado(
+            'erro',
+            'fotos_em_ordem_errada',
+            `${fato} O painel nao anda para tras - confira os numeros ou as datas, ou justifique se trocou de carro.`,
+            at.data_leitura,
+          ),
       );
     }
   }
@@ -569,11 +631,12 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null) {
       const maiorRdv = Math.max(...kms);
       const TOLERANCIA = 50; // o painel anda entre a foto e o primeiro registro
 
-      const abaixo = leituras.filter((n) => n < menorRdv - TOLERANCIA);
-      const acima = leituras.filter((n) => n > maiorRdv + TOLERANCIA);
+      // So o painel ABAIXO do RDV e problema. Acima e o carro rodando fora do
+      // trabalho, que e o normal - dava erro ate a versao 4 e contradizia a
+      // instrucao da IA.
+      const fora = leituras.filter((n) => n < menorRdv - TOLERANCIA);
 
-      if (abaixo.length || acima.length) {
-        const fora = [...abaixo, ...acima];
+      if (fora.length) {
         achados.push(
           achado(
             'erro',
@@ -691,23 +754,88 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null) {
   };
 }
 
-// Quantas semanas o RDV cobre com trabalho de verdade.
-function semanasSemFoto(linhas, fotos) {
-  const semanas = new Set();
-  for (const l of linhas) {
-    if (Number(l.km_final) - Number(l.km_inicial) > 0) {
-      semanas.add(numeroDaSemana(l.data));
-    }
+const DIA_MS = 86400_000;
+const somarDias = (iso, n) =>
+  new Date(new Date(`${iso}T12:00:00Z`).getTime() + n * DIA_MS).toISOString().slice(0, 10);
+const diaUtil = (iso) => !fimDeSemana(iso) && !nomeDoFeriado(iso);
+
+/**
+ * Que fotos de odometro o mes pede: uma de manha no primeiro dia e uma a noite
+ * no ultimo dia de cada trecho de dias uteis seguidos.
+ *
+ * O trecho e a semana de segunda a sexta, partida por feriado, e segue o
+ * calendario - nao os dias rodados: quem nao rodou na sexta mas fotografou o
+ * painel na sexta fez certo. Trecho sem nenhum dia rodado nao pede nada.
+ *
+ * A semana da virada do mes pode ter uma ponta no mes vizinho. A foto dessa
+ * ponta nao e cobrada aqui: ela pertence ao relatorio do outro mes.
+ */
+export function fotosEsperadas(linhas, mesRef) {
+  const rodados = new Set(
+    linhas.filter((l) => Number(l.km_final) - Number(l.km_inicial) > 0).map((l) => l.data),
+  );
+  const segundas = new Set();
+  for (const d of rodados) {
+    const n = new Date(`${d}T12:00:00Z`).getUTCDay();
+    segundas.add(somarDias(d, -((n + 6) % 7)));
   }
-  const esperado = semanas.size;
-  const faltam = Math.max(0, esperado - Math.floor(fotos.length / 2));
-  return Array.from({ length: faltam }, (_, i) => i);
+
+  const esperadas = [];
+  for (const segunda of [...segundas].sort()) {
+    let trecho = [];
+    const fechar = () => {
+      if (trecho.some((d) => rodados.has(d))) {
+        const pontas = [
+          { data: trecho[0], momento: 'manha' },
+          { data: trecho[trecho.length - 1], momento: 'noite' },
+        ];
+        esperadas.push(...pontas.filter((p) => p.data.startsWith(mesRef)));
+      }
+      trecho = [];
+    };
+    for (let i = 0; i < 5; i++) {
+      const d = somarDias(segunda, i);
+      if (diaUtil(d)) trecho.push(d);
+      else fechar();
+    }
+    fechar();
+  }
+  return esperadas;
 }
 
-function numeroDaSemana(dataIso) {
-  const d = new Date(`${dataIso}T12:00:00Z`);
-  const inicio = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.floor((d - inicio) / (7 * 86400_000));
+/**
+ * Quais das fotos esperadas nao chegaram.
+ *
+ * A foto da noite vale tambem com a data do dia seguinte quando esse dia nao
+ * e util: a de sexta as 23h50 o celular costuma datar no sabado. Foto sem data
+ * de leitura nao tem como ser encaixada num dia, entao cobre qualquer falta.
+ */
+export function fotosQueFaltam(esperadas, fotos) {
+  const porData = new Map();
+  let semData = 0;
+  for (const f of fotos) {
+    if (f.data_leitura) porData.set(f.data_leitura, (porData.get(f.data_leitura) || 0) + 1);
+    else semData++;
+  }
+  const usar = (data) => {
+    const n = porData.get(data) || 0;
+    if (!n) return false;
+    porData.set(data, n - 1);
+    return true;
+  };
+
+  const faltam = [];
+  for (const e of esperadas) {
+    if (usar(e.data)) continue;
+    const seguinte = somarDias(e.data, 1);
+    if (e.momento === 'noite' && !diaUtil(seguinte) && usar(seguinte)) continue;
+    if (semData > 0) {
+      semData--;
+      continue;
+    }
+    faltam.push(e);
+  }
+  return faltam;
 }
 
 export function dataBr(iso) {
@@ -716,12 +844,3 @@ export function dataBr(iso) {
 }
 
 export { diaDaSemana };
-
-/** Quantas semanas a pessoa realmente rodou no mes. */
-function semanasTrabalhadas(linhas) {
-  const semanas = new Set();
-  for (const l of linhas) {
-    if (Number(l.km_final) - Number(l.km_inicial) > 0) semanas.add(numeroDaSemana(l.data));
-  }
-  return semanas.size;
-}
