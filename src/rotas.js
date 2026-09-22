@@ -363,6 +363,34 @@ function conferirRel(rel, linhas, anexos) {
   );
 }
 
+/**
+ * A mesma conferencia, sem os amarelos - e o que vai para a tela do colaborador.
+ *
+ * O vermelho continua inteiro, inclusive a cobranca de anexo: esconder ISSO
+ * dele ja foi tentado uma vez e o efeito foi o oposto, ele so descobria a
+ * pendencia no clique do Enviar, quando ja era tarde. O que sai daqui sao os
+ * AVISOS.
+ *
+ * Eles nao eram acionaveis para quem preenche: "a leitura do arquivo teve
+ * pontos duvidosos", "na extracao de texto da pagina 2 os valores aparecem
+ * concatenados" e recado da IA para quem confere, nao tarefa de vendedor. No
+ * meio deles o pouco que era acionavel se perdia, e a aba vivia amarela de
+ * coisa que ninguem ia fazer nada a respeito.
+ *
+ * O conferente continua vendo tudo: o painel do admin nao passa por aqui.
+ */
+function soOsErros(resultado) {
+  return { ...resultado, achados: resultado.achados.filter((a) => a.gravidade === 'erro') };
+}
+
+// A mesma peneira na lista ja gravada. O null e preservado de proposito: ele
+// quer dizer "ninguem conferiu ainda", que nao e a mesma coisa que "conferiram
+// e nao acharam nada" - a tela mostra coisas diferentes para os dois casos.
+function soErrosGravados(bruto) {
+  const lista = listaDeJson(bruto);
+  return lista && lista.filter((a) => a.gravidade === 'erro');
+}
+
 // Monta a grade do mes: todo dia do mes, com o que ja foi preenchido.
 function gradeDoMes(mes, linhas) {
   const porData = new Map(linhas.map((l) => [l.data, l]));
@@ -403,12 +431,14 @@ function pegarRelatorio(req, res, url, usuario) {
       // Em "So falta DANFE" a pessoa nao edita nada, mas ainda manda a nota.
       aceita_anexo: ACEITA_ANEXO.has(rel.status),
       so_falta_danfe: rel.status === 'SO_FALTA_DANFE',
-      achados: listaDeJson(rel.achados),
+      // O parecer ja gravado tambem chega limpo: se o amarelo nao aparece
+      // enquanto ele preenche, nao faz sentido voltar depois da conferencia.
+      achados: soErrosGravados(rel.achados),
       extraido: rel.extraido ? JSON.parse(rel.extraido) : null,
     },
     grade: gradeDoMes(mes, linhas),
     anexos,
-    previa: resultado,
+    previa: soOsErros(resultado),
     valor_km: valorDoKm(),
   });
 }
@@ -488,7 +518,7 @@ async function salvarRelatorio(req, res, usuario) {
     responderJson(res, {
       ok: true,
       relatorio: atualizado,
-      previa: conferirRel(atualizado, linhas, anexos),
+      previa: soOsErros(conferirRel(atualizado, linhas, anexos)),
     });
   } catch (e) {
     db.exec('ROLLBACK');
@@ -651,7 +681,9 @@ async function lerRdv(req, res, usuario) {
     responderJson(res, {
       ok: true,
       extraido,
-      previa: conferirRel(db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id), linhas, anexos),
+      previa: soOsErros(
+        conferirRel(db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id), linhas, anexos),
+      ),
       grade: gradeDoMes(mes, linhas),
       aviso: avisoDaLeitura(extraido, usuario),
     });
