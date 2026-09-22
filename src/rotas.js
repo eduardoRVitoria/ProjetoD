@@ -924,6 +924,27 @@ function anexoPermitido(id, usuario) {
   return { anexo: a, rel };
 }
 
+// O que o navegador pode ABRIR na propria origem do portal. Fora desta lista o
+// arquivo so baixa.
+//
+// O tipo sai da EXTENSAO, nunca do que o cliente mandou. A coluna `mime` da
+// tabela guarda o cabecalho Content-Type do envio - um valor que quem sobe o
+// arquivo escolhe. Devolver aquilo de volta como Content-Type, com `inline`,
+// deixava qualquer colaborador anexar um .html com <script> e fazer o script
+// rodar na origem do portal quando a conferente abrisse o comprovante. O cookie
+// e HttpOnly, mas isso nao adianta: o script chama a API como a pessoa logada -
+// criar admin, baixar o backup inteiro - sem precisar ler cookie nenhum.
+const MIME_SEGURO = new Map([
+  ['.pdf', 'application/pdf'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.png', 'image/png'],
+  ['.gif', 'image/gif'],
+  ['.webp', 'image/webp'],
+  ['.heic', 'image/heic'],
+  ['.bmp', 'image/bmp'],
+]);
+
 function baixarAnexo(req, res, rota, usuario) {
   const id = rota.split('/').pop();
   const achado = anexoPermitido(id, usuario);
@@ -932,12 +953,21 @@ function baixarAnexo(req, res, rota, usuario) {
   const caminho = path.join(PASTA_ANEXOS, achado.anexo.arquivo);
   if (!fs.existsSync(caminho)) return erro(res, 'Arquivo sumiu do servidor.', 404);
 
+  const nomeLimpo = nomeDeArquivoSeguro(achado.anexo.nome_original);
+  const tipo = MIME_SEGURO.get(path.extname(nomeLimpo).toLowerCase());
+
   const dados = fs.readFileSync(caminho);
   res.writeHead(200, {
-    'Content-Type': achado.anexo.mime || 'application/octet-stream',
+    'Content-Type': tipo || 'application/octet-stream',
     'Content-Length': dados.length,
-    'Content-Disposition': `inline; filename="${nomeDeArquivoSeguro(achado.anexo.nome_original)}"`,
+    // Sem tipo conhecido o arquivo nao abre na tela: baixa.
+    'Content-Disposition': `${tipo ? 'inline' : 'attachment'}; filename="${nomeLimpo}"`,
     'Cache-Control': 'private, max-age=3600',
+    // Impede o navegador de adivinhar outro tipo a partir do conteudo.
+    'X-Content-Type-Options': 'nosniff',
+    // Segunda tranca: mesmo que algo escape da lista acima, o arquivo nao
+    // executa script nem alcanca a API.
+    'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox",
   });
   res.end(dados);
 }

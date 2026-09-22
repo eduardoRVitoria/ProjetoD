@@ -76,6 +76,50 @@ function servirEstatico(req, res, rota) {
   res.end(dados);
 }
 
+// -------------------------------------------------------------- cabecalhos
+
+/**
+ * A politica de conteudo da pagina.
+ *
+ * `script-src 'self'` so vale a pena porque nao ha mais <script> escrito dentro
+ * do HTML - o do login virou /js/entrar.js. Com script embutido, a unica CSP
+ * possivel seria com 'unsafe-inline', que autoriza justamente o que ela existe
+ * para barrar.
+ *
+ * O 'unsafe-inline' fica em style-src, e nao da para tirar por enquanto: as tres
+ * telas usam `style=` direto no elemento em dezenas de lugares, e o index tem um
+ * <style> proprio. Estilo injetado faz muito menos estrago que script, entao
+ * essa fica para quando os style= sairem do HTML e do JS.
+ *
+ * blob: em img-src: o app.js mostra a previa da foto do odometro por
+ * URL.createObjectURL antes de enviar.
+ */
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data: blob:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+].join('; ');
+
+function aplicarCabecalhosDeSeguranca(res, seguro) {
+  // Valem como padrao para toda resposta. Quem chama writeHead depois com o
+  // mesmo nome sobrescreve - e o que o download de anexo faz, com uma politica
+  // mais fechada ainda.
+  res.setHeader('Content-Security-Policy', CSP);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  // So faz sentido quando a conexao ja e https: no acesso pela rede local, que
+  // e http, isto trancaria o portal fora do ar para quem abrisse uma vez.
+  if (seguro) res.setHeader('Strict-Transport-Security', 'max-age=15552000');
+}
+
 // ------------------------------------------------------------------ servidor
 
 const servidor = http.createServer(async (req, res) => {
@@ -86,6 +130,8 @@ const servidor = http.createServer(async (req, res) => {
   // atras de um tunel/proxy https o cookie precisa ser Secure
   const seguro =
     (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+
+  aplicarCabecalhosDeSeguranca(res, seguro);
 
   // Uma linha por chamada de API, escrita quando a resposta termina - so ai se
   // sabe o status e quanto demorou. Arquivo estatico fica de fora: CSS e icone
