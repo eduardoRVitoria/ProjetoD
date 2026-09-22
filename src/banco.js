@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS linhas (
 CREATE TABLE IF NOT EXISTS anexos (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   relatorio_id   INTEGER NOT NULL REFERENCES relatorios(id) ON DELETE CASCADE,
-  tipo           TEXT NOT NULL,   -- pedagio | danfe | odometro | outro
+  tipo           TEXT NOT NULL,   -- pedagio | danfe | odometro | hotel | outras_despesas | outro
   nome_original  TEXT NOT NULL,
   arquivo        TEXT NOT NULL,   -- nome do arquivo salvo em dados/anexos
   mime           TEXT NOT NULL,
@@ -122,6 +122,14 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
   if (!colunas.has('justificativa')) {
     // Explicacao do colaborador quando o mes vem mais caro que o anterior
     db.exec('ALTER TABLE relatorios ADD COLUMN justificativa TEXT');
+  }
+  if (!colunas.has('hotel_declarado')) {
+    // Hotel e "outras despesas": o quadro do RDV traz os dois fora do km e do
+    // pedagio. Entram na conta do mes, mas cada um so vale com o SEU
+    // comprovante - a regra esta em conferencia.js, secao 5.1.
+    db.exec('ALTER TABLE relatorios ADD COLUMN hotel_declarado REAL NOT NULL DEFAULT 0');
+    db.exec('ALTER TABLE relatorios ADD COLUMN outros_declarado REAL NOT NULL DEFAULT 0');
+    db.exec('ALTER TABLE relatorios ADD COLUMN outros_descricao TEXT');
   }
   if (!colunas.has('versao_regras')) {
     // Em que versao das regras este parecer foi julgado. NULL = antes de o

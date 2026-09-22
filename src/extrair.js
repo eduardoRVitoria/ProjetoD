@@ -206,6 +206,16 @@ REGRAS DE TRANSCRICAO
      R$ 944,64") - nesse caso devolva o valor somado aqui mesmo, e nao tente
      separar. Separar sem base no documento e inventar dado.
 
+   - hotel: o total de hospedagem que o quadro apresenta ("HOTEL", "HOSPEDAGEM",
+     "DIARIAS"). So o valor de hotel - nao junte refeicao nem outros aqui.
+   - outros: o total da linha de despesas diversas ("OUTROS", "OUTRAS DESPESAS",
+     "DESPESAS EVENTUAIS"). Se o quadro trouxer "HOTEL E OUTROS" numa linha so,
+     sem separar, devolva o valor em outros e diga em problemas_de_leitura que
+     os dois vieram somados - quem confere precisa saber que nao deu para
+     separar.
+   - outros_descricao: o que o documento escreve ao lado do valor de outros
+     (por exemplo "refeicao com cliente", "lavagem"). Vazio se nao houver.
+
 8. O nome do colaborador e o nome DENTRO do documento, nunca quem enviou.
 
 9. Se algo estiver ilegivel, cortado, rasurado ou o arquivo estiver protegido,
@@ -270,8 +280,29 @@ const FERRAMENTA = {
             description:
               'Total de pedagio + estacionamento declarado. Se o documento traz os dois somados numa linha so, devolva o valor somado.',
           },
+          hotel: {
+            type: ['number', 'null'],
+            description: 'Total de hotel/hospedagem declarado no quadro de resumo.',
+          },
+          outros: {
+            type: ['number', 'null'],
+            description: 'Total da linha de outras despesas declarado no quadro de resumo.',
+          },
+          outros_descricao: {
+            type: ['string', 'null'],
+            description:
+              'O que o documento escreve ao lado do valor de outros. Vazio se nao houver.',
+          },
         },
-        required: ['total_km', 'taxa_por_km', 'valor_total_km', 'pedagio_estacionamento'],
+        required: [
+          'total_km',
+          'taxa_por_km',
+          'valor_total_km',
+          'pedagio_estacionamento',
+          'hotel',
+          'outros',
+          'outros_descricao',
+        ],
         additionalProperties: false,
       },
       confianca: {

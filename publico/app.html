@@ -97,6 +97,30 @@
     </div>
 
     <div class="cartao">
+      <h2>Hotel e outras despesas</h2>
+      <p class="sub">
+        O que não é quilometragem nem pedágio. Some aqui e o valor entra no total do mês —
+        mas <strong>cada linha pede o seu próprio comprovante</strong> na aba Comprovantes:
+        a nota do hotel não cobre a outra despesa.
+      </p>
+      <div class="dois-campos">
+        <label>
+          Hotel / hospedagem (R$)
+          <input type="number" inputmode="decimal" step="0.01" min="0" id="hotel" placeholder="0,00">
+        </label>
+        <label>
+          Outras despesas (R$)
+          <input type="number" inputmode="decimal" step="0.01" min="0" id="outros" placeholder="0,00">
+        </label>
+      </div>
+      <label style="display:block; margin-top:12px">
+        Do que se trata a outra despesa
+        <input type="text" id="outros-descricao" maxlength="300"
+               placeholder="Ex.: refeição com cliente, lavagem do carro">
+      </label>
+    </div>
+
+    <div class="cartao">
       <h2>Observação</h2>
       <p class="sub">Algo que o conferente precisa saber? Segundo veículo, home office, viagem longa.</p>
       <textarea id="observacao" placeholder="Opcional"></textarea>
@@ -137,6 +161,26 @@
       </div>
       <div class="solta" data-tipo="odometro">Toque para tirar a foto ou escolher da galeria</div>
       <div id="lista-odometro" style="margin-top:12px"></div>
+    </div>
+
+    <div class="cartao">
+      <h2>Nota do hotel</h2>
+      <p class="sub">
+        Obrigatória quando você declarar hotel. Vale a nota fiscal, o cupom ou o
+        comprovante da diária — desde que dê para ler o valor e a data.
+      </p>
+      <div class="solta" data-tipo="hotel">Toque para escolher, ou arraste o arquivo aqui</div>
+      <div id="lista-hotel" style="margin-top:12px"></div>
+    </div>
+
+    <div class="cartao">
+      <h2>Comprovante das outras despesas</h2>
+      <p class="sub">
+        Obrigatório quando você declarar outras despesas. É um comprovante à parte:
+        a nota do hotel não serve para esta linha.
+      </p>
+      <div class="solta" data-tipo="outras_despesas">Toque para escolher, ou arraste aqui</div>
+      <div id="lista-outras_despesas" style="margin-top:12px"></div>
     </div>
 
     <div class="cartao">

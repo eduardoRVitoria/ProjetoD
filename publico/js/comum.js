@@ -132,6 +132,8 @@ export const ROTULO_ANEXO = {
   rdv: 'Relatório (RDV)',
   pedagio: 'Pedágio / estacionamento',
   danfe: 'Nota de abastecimento',
+  hotel: 'Nota do hotel',
+  outras_despesas: 'Comprovante de outras despesas',
   odometro: 'Foto do odômetro',
   outro: 'Outro documento',
 };

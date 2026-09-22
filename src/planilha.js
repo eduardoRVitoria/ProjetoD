@@ -44,9 +44,10 @@ const ETAPAS = [
   ['6. Itinerario', 'Km lancado sem itinerario e erro. Itinerario preenchido com zero km e alerta.'],
   ['7. Pedagio + estacionamento', 'Soma dos comprovantes anexados (Sem Parar, ConectCar, Tag Itau, Veloe, Ultrapasse, C6 Tag, cupons avulsos) comparada com o valor declarado. Declarar pedagio sem anexar comprovante e erro.'],
   ['   Nao entram na soma', 'Mensalidade do plano, IOF, "dias de uso da tag", negociacao de divida, recarga de saldo, taxa de envio da tag e multa. Sao itens do mesmo extrato, mas nao sao despesa de viagem.'],
-  ['8. Abastecimento', 'Verificar se a nota/DANFE foi enviada. NAO soma junto do pedagio. Nome de arquivo nao vale como prova: o conteudo e aberto e conferido.'],
-  ['9. Fotos de odometro', 'Foto do painel na segunda de manha e na sexta a noite de cada semana, tiradas dentro do proprio portal. O numero da foto e comparado com o km declarado.'],
-  ['10. Itinerario x distancia', 'A distancia declarada precisa fazer sentido para o trajeto informado.'],
+  ['8. Hotel e outras despesas', 'Podem ser somados ao total do mes, junto do km e do pedagio. Cada um so vale com o SEU comprovante: a nota do hotel nao cobre a linha de outras despesas, nem o contrario. Declarar sem anexar e erro.'],
+  ['9. Abastecimento', 'Verificar se a nota/DANFE foi enviada. NAO soma junto do pedagio. Nome de arquivo nao vale como prova: o conteudo e aberto e conferido.'],
+  ['10. Fotos de odometro', 'Foto do painel na segunda de manha e na sexta a noite de cada semana, tiradas dentro do proprio portal. O numero da foto e comparado com o km declarado.'],
+  ['11. Itinerario x distancia', 'A distancia declarada precisa fazer sentido para o trajeto informado.'],
 ];
 
 const REGRAS = [
@@ -184,6 +185,8 @@ export async function gerarHistorico({ usuario, relatorios, anexos, valorKm }) {
     odometro: 'Foto de odometro',
     pedagio: 'Pedagio / estacionamento',
     danfe: 'Nota de abastecimento',
+    hotel: 'Nota do hotel',
+    outras_despesas: 'Comprovante de outras despesas',
     outro: 'Outro documento',
   };
 

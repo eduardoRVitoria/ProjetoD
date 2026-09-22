@@ -26,12 +26,14 @@ import { planilhaEmTexto } from './extrair.js';
 import { mesPorExtenso } from './util.js';
 
 // O que vai para o papel, na ordem em que sai impresso.
-const TIPOS_IMPRESSOS = ['rdv', 'pedagio', 'danfe'];
+const TIPOS_IMPRESSOS = ['rdv', 'pedagio', 'danfe', 'hotel', 'outras_despesas'];
 
 const ROTULO_TIPO = {
   rdv: 'RDV',
   pedagio: 'Pedagio e estacionamento',
   danfe: 'Nota de abastecimento',
+  hotel: 'Nota do hotel',
+  outras_despesas: 'Outras despesas',
 };
 
 const A4 = { largura: 595.28, altura: 841.89 };
@@ -50,7 +52,10 @@ const TEXTOS = new Set(['.csv', '.txt']);
  * fundos do controle de acesso.
  */
 function anexosParaImprimir(mes, usuarioId = null, escopo = null) {
-  const condicoes = ["r.mes_ref = ?", "a.tipo IN ('rdv', 'pedagio', 'danfe')"];
+  const condicoes = [
+    'r.mes_ref = ?',
+    "a.tipo IN ('rdv', 'pedagio', 'danfe', 'hotel', 'outras_despesas')",
+  ];
   const args = [mes];
   if (usuarioId) {
     condicoes.push('r.usuario_id = ?');

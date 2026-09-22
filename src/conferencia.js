@@ -46,10 +46,12 @@ const HORA_LIMITE = 18;
 //      inicial ou final do dia; fotos por trecho de dias uteis (feriado parte
 //      a semana); troca de carro justificavel; aumento acima de R$ 100; RDV
 //      sem assinatura e erro; o sistema soma o pedagio, nao mais a IA.
+//   6  hotel e outras despesas: podem ser somados ao mes, mas cada um so vale
+//      com o SEU comprovante - o do hotel e o da outra despesa, separados.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 5;
+export const VERSAO_REGRAS = 6;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -222,6 +224,8 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
       pedagioDeclarado: 0,
       estacDeclarado: 0,
       totalDeclarado: 0,
+      hotelDeclarado: 0,
+      outrosDeclarado: 0,
       temDanfe: false,
       qtdFotosOdometro: 0,
       achados: [],
@@ -462,6 +466,44 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
     if (d) achados.push(d);
   }
 
+  // --------------------------------------------- 5.1 hotel e outras despesas
+  //
+  // O quadro do RDV tem duas linhas que nao sao km nem pedagio: HOTEL e OUTROS.
+  // Elas podem entrar na conta do mes junto com o resto - a pessoa recebe os
+  // dois somados -, mas cada uma so vale com o SEU comprovante. Nao serve
+  // mandar a nota do hotel e escrever "e mais R$ 80 de outros": sao duas
+  // despesas diferentes, cada uma com o seu papel.
+  //
+  // O valor vem do que a pessoa digitou no portal; quando ela nao digitou, vale
+  // o que a IA leu no quadro do documento. Mesma logica do pedagio acima.
+  const hotelDeclarado = Number(
+    (Number(rel.hotel_declarado) || Number(doPdf?.totais_declarados?.hotel) || 0).toFixed(2),
+  );
+  const outrosDeclarado = Number(
+    (Number(rel.outros_declarado) || Number(doPdf?.totais_declarados?.outros) || 0).toFixed(2),
+  );
+
+  if (hotelDeclarado > 0 && !anexos.some((a) => a.tipo === 'hotel')) {
+    achados.push(
+      achado(
+        'erro',
+        'hotel_sem_comprovante',
+        `Voce declarou ${brl(hotelDeclarado)} de hotel mas nao anexou a nota da hospedagem.`,
+      ),
+    );
+  }
+
+  if (outrosDeclarado > 0 && !anexos.some((a) => a.tipo === 'outras_despesas')) {
+    achados.push(
+      achado(
+        'erro',
+        'outros_sem_comprovante',
+        `Voce declarou ${brl(outrosDeclarado)} em outras despesas mas nao anexou o comprovante `
+          + 'delas. O comprovante do hotel nao cobre esta linha: cada despesa pede o seu.',
+      ),
+    );
+  }
+
   // -------------------------------------------------------- 6. abastecimento
   const temDanfe = anexos.some((a) => a.tipo === 'danfe');
   if (!temDanfe) {
@@ -671,8 +713,12 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
   }
 
   // ------------------------------------------- 8. aumento sobre o mes anterior
-  // O que a empresa desembolsa: o valor dos km mais pedagio e estacionamento.
-  const totalDoMes = Number((valorKm + declarado).toFixed(2));
+  // O que a empresa desembolsa: o valor dos km, mais pedagio e estacionamento,
+  // mais hotel e outras despesas. Hotel entra aqui de proposito - um mes com
+  // viagem realmente custa mais, e e isso que a comparacao existe para mostrar.
+  const totalDoMes = Number(
+    (valorKm + declarado + hotelDeclarado + outrosDeclarado).toFixed(2),
+  );
   let comparacao = null;
 
   if (mesAnterior && mesAnterior.total > 0) {
@@ -747,6 +793,8 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
       : Number((agregadoDoPdf ?? 0).toFixed(2)),
     estacDeclarado: somaDasLinhas > 0 ? Number(estacLinhas.toFixed(2)) : 0,
     totalDeclarado: declarado,
+    hotelDeclarado,
+    outrosDeclarado,
     temDanfe,
     qtdFotosOdometro: fotos.length,
     achados,

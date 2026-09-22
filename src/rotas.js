@@ -50,7 +50,9 @@ import {
   ROTULO_STATUS, listaDeJson, textoDaIa, placaLimpa,
 } from './util.js';
 
-const TIPOS_DE_ANEXO = new Set(['rdv', 'pedagio', 'danfe', 'odometro', 'outro']);
+const TIPOS_DE_ANEXO = new Set([
+  'rdv', 'pedagio', 'danfe', 'odometro', 'hotel', 'outras_despesas', 'outro',
+]);
 // Mexer no RDV e enviar. Depois que o relatorio sai da mao da pessoa, so volta
 // a abrir se a conferencia REPROVAR - e ai ela corrige o que foi apontado.
 //
@@ -303,7 +305,8 @@ function acharOuCriar(usuarioId, mes) {
 function mesAnteriorDe(usuarioId, mes) {
   const r = db
     .prepare(
-      `SELECT mes_ref, valor_km, pedagio_declarado, estac_declarado
+      `SELECT mes_ref, valor_km, pedagio_declarado, estac_declarado,
+              hotel_declarado, outros_declarado
          FROM relatorios
         WHERE usuario_id = ? AND mes_ref < ? AND status <> 'RASCUNHO'
         ORDER BY mes_ref DESC LIMIT 1`,
@@ -315,8 +318,17 @@ function mesAnteriorDe(usuarioId, mes) {
   return {
     mes: r.mes_ref,
     mesExtenso: mesPorExtenso(r.mes_ref),
+    // Tem que somar exatamente o que o mes atual soma, senao o primeiro mes
+    // com hotel apareceria como aumento so por causa da conta diferente.
+    // Relatorio antigo nao tem os dois campos e conta zero - que e a verdade.
     total: Number(
-      (Number(r.valor_km || 0) + Number(r.pedagio_declarado || 0) + Number(r.estac_declarado || 0)).toFixed(2),
+      (
+        Number(r.valor_km || 0)
+        + Number(r.pedagio_declarado || 0)
+        + Number(r.estac_declarado || 0)
+        + Number(r.hotel_declarado || 0)
+        + Number(r.outros_declarado || 0)
+      ).toFixed(2),
     ),
   };
 }
@@ -449,6 +461,7 @@ async function salvarRelatorio(req, res, usuario) {
     db.prepare(
       `UPDATE relatorios
           SET total_km = ?, valor_km = ?, pedagio_declarado = ?, estac_declarado = ?,
+              hotel_declarado = ?, outros_declarado = ?, outros_descricao = ?,
               observacao = ?, justificativa = ?
         WHERE id = ?`,
     ).run(
@@ -456,6 +469,12 @@ async function salvarRelatorio(req, res, usuario) {
       r.valorKm,
       r.pedagioDeclarado,
       r.estacDeclarado,
+      // Valor digitado pela pessoa. O conferir acima ainda leu o valor antigo -
+      // igual ao que ja acontece com a justificativa -, mas a previa devolvida
+      // na resposta e refeita com o relatorio atualizado, logo abaixo.
+      numero(corpo.hotel),
+      numero(corpo.outros),
+      String(corpo.outros_descricao || '').trim().slice(0, 300) || null,
       String(corpo.observacao || '').slice(0, 2000),
       corpo.justificativa === undefined
         ? rel.justificativa
@@ -587,9 +606,26 @@ async function lerRdv(req, res, usuario) {
     const atualizado = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id);
     const r = conferirRel(atualizado, linhas, anexos);
 
+    // Hotel e outros ficam gravados, e nao so dentro de `extraido`: a
+    // comparacao com o mes anterior le estas colunas no banco. Deixar o valor
+    // so no JSON da leitura faria o mes passado contar zero de hotel e o mes
+    // atual aparecer como aumento sem motivo.
     db.prepare(
-      `UPDATE relatorios SET total_km = ?, valor_km = ?, pedagio_declarado = ?, estac_declarado = ? WHERE id = ?`,
-    ).run(r.totalKm, r.valorKm, r.pedagioDeclarado, r.estacDeclarado, rel.id);
+      `UPDATE relatorios
+          SET total_km = ?, valor_km = ?, pedagio_declarado = ?, estac_declarado = ?,
+              hotel_declarado = ?, outros_declarado = ?,
+              outros_descricao = COALESCE(?, outros_descricao)
+        WHERE id = ?`,
+    ).run(
+      r.totalKm,
+      r.valorKm,
+      r.pedagioDeclarado,
+      r.estacDeclarado,
+      r.hotelDeclarado,
+      r.outrosDeclarado,
+      String(extraido.totais_declarados?.outros_descricao || '').trim().slice(0, 300) || null,
+      rel.id,
+    );
 
     db.exec('COMMIT');
 
@@ -694,6 +730,8 @@ async function enviarRelatorio(req, res, usuario) {
         'sem_linhas',
         'leitura_incerta',
         'pedagio_sem_comprovante',
+        'hotel_sem_comprovante',
+        'outros_sem_comprovante',
         'aumento_sem_justificativa',
       ].includes(a.codigo),
   );

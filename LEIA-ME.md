@@ -28,11 +28,14 @@ Primeiro acesso: usuário **`admin`**, senha **`rdv2026`**. Troque no primeiro l
 2. Escolhe o mês e preenche o dia a dia: km inicial, km final, itinerário,
    pedágio e estacionamento. **O total e o valor são calculados sozinhos** —
    ninguém soma nada, e por isso não existe mais erro de conta.
-3. Anexa os comprovantes: nota de abastecimento, extrato da tag de pedágio e as
-   fotos do odômetro (tira direto pela câmera do celular).
-4. A aba **Conferência** mostra as pendências enquanto ele preenche. O que está
+3. Declara hotel e outras despesas, se houver — o valor entra no total do mês,
+   mas cada linha pede o seu próprio comprovante.
+4. Anexa os comprovantes: nota de abastecimento, extrato da tag de pedágio, a
+   nota do hotel, o comprovante das outras despesas e as fotos do odômetro
+   (tira direto pela câmera do celular).
+5. A aba **Conferência** mostra as pendências enquanto ele preenche. O que está
    em vermelho **trava o envio** — ele corrige antes, não depois.
-5. Envia. Depois de enviado, o relatório fica travado até sair o resultado.
+6. Envia. Depois de enviado, o relatório fica travado até sair o resultado.
 6. Se reprovar, ele vê exatamente **o que precisa fazer** e reenvia corrigido.
 
 ### Para você (administrador)
@@ -60,18 +63,20 @@ Primeiro acesso: usuário **`admin`**, senha **`rdv2026`**. Troque no primeiro l
 | 6 | Odômetro andando para trás (2º veículo) ou com km faltando entre dois dias |
 | 7 | Soma dos km × valor do km |
 | 8 | Pedágio declarado sem nenhum comprovante anexado |
-| 9 | Ausência da nota de abastecimento |
-| 10 | Quantidade de fotos de odômetro por semana trabalhada |
+| 9 | Hotel declarado sem a nota da hospedagem |
+| 10 | Outras despesas declaradas sem o comprovante delas — a nota do hotel não vale por esta linha |
+| 11 | Ausência da nota de abastecimento |
+| 12 | Quantidade de fotos de odômetro por semana trabalhada |
 
 **Pela IA** — precisa da chave de API, e é o que exige abrir documento:
 
 | # | Verificação |
 |---|---|
-| 11 | Soma o extrato da tag e compara com o declarado |
-| 12 | Descarta o que não é despesa de viagem: mensalidade do plano, IOF, "dias de uso da tag", recarga, negociação de dívida, taxa de envio |
-| 13 | Abre a nota de abastecimento e confirma se é mesmo nota de combustível — nome de arquivo não vale como prova |
-| 14 | Lê o número do painel nas fotos de odômetro e compara com o km do relatório |
-| 15 | Avalia se a distância faz sentido para o itinerário descrito |
+| 13 | Soma o extrato da tag e compara com o declarado |
+| 14 | Descarta o que não é despesa de viagem: mensalidade do plano, IOF, "dias de uso da tag", recarga, negociação de dívida, taxa de envio |
+| 15 | Abre a nota de abastecimento e confirma se é mesmo nota de combustível — nome de arquivo não vale como prova |
+| 16 | Lê o número do painel nas fotos de odômetro e compara com o km do relatório |
+| 17 | Avalia se a distância faz sentido para o itinerário descrito |
 
 **Sem a chave configurada o sistema continua funcionando** — só faz de 1 a 10, e
 avisa no painel que os comprovantes não foram lidos.

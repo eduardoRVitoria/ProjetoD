@@ -179,6 +179,9 @@ $('botao-manual').addEventListener('click', () => {
 $('botao-salvar').addEventListener('click', () => salvar(true));
 $('botao-enviar').addEventListener('click', enviar);
 $('observacao').addEventListener('input', () => marcarSujo());
+for (const id of ['hotel', 'outros', 'outros-descricao']) {
+  $(id).addEventListener('input', () => marcarSujo());
+}
 
 // As duas listas da aba Conferencia sao redesenhadas o tempo todo, entao o
 // clique e escutado no cartao, que nao troca, e nao no botao.
@@ -211,6 +214,11 @@ async function carregar() {
     estado = await api(`/api/relatorio?mes=${mes}`);
     sujo = false;
     $('observacao').value = estado.relatorio.observacao || '';
+    // Zero fica como campo vazio de proposito: "0,00" em toda tela passa a
+    // impressao de que o mes tem despesa de hotel a preencher.
+    $('hotel').value = Number(estado.relatorio.hotel_declarado) || '';
+    $('outros').value = Number(estado.relatorio.outros_declarado) || '';
+    $('outros-descricao').value = estado.relatorio.outros_descricao || '';
     desenharTudo();
     carregarHistorico();
   } catch (e) {
@@ -300,6 +308,8 @@ function desenharComparacao() {
   par('Total de km', decl.total_km, p.totalKm, numeroBr);
   par('Valor do km', decl.valor_total_km, p.valorKm, brl);
   par('Pedágio + estacionamento', decl.pedagio_estacionamento, p.totalDeclarado, brl);
+  par('Hotel', decl.hotel, p.hotelDeclarado, brl);
+  par('Outras despesas', decl.outros, p.outrosDeclarado, brl);
 
   if (!linhas.length) {
     alvo.innerHTML = `<p class="sub" style="margin:0">O documento não trouxe um quadro de
@@ -521,7 +531,7 @@ function recalcularLocal() {
 // ------------------------------------------------------------------ anexos
 
 function desenharAnexos() {
-  for (const tipo of ['rdv', 'danfe', 'pedagio', 'odometro', 'outro']) {
+  for (const tipo of ['rdv', 'danfe', 'pedagio', 'odometro', 'hotel', 'outras_despesas', 'outro']) {
     const lista = estado.anexos.filter((a) => a.tipo === tipo);
     const alvo = $(`lista-${tipo}`);
     if (!alvo) continue;
@@ -1024,6 +1034,9 @@ async function salvar(avisar) {
         mes,
         linhas: linhasParaEnviar(),
         observacao: $('observacao').value,
+        hotel: $('hotel').value,
+        outros: $('outros').value,
+        outros_descricao: $('outros-descricao').value,
         justificativa: estado.relatorio.justificativa || '',
       },
     });

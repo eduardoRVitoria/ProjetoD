@@ -32,7 +32,9 @@ const MAX_IMAGENS = 60;
 // Quando nao cabe tudo, o que fica e o que decide dinheiro. A foto de odometro
 // e referencia: perder uma atrasa a conferencia dela, perder o extrato da tag
 // deixa o valor sem conferir.
-const PRIORIDADE = { rdv: 0, pedagio: 1, danfe: 2, odometro: 3, outro: 4 };
+const PRIORIDADE = {
+  rdv: 0, pedagio: 1, danfe: 2, hotel: 3, outras_despesas: 4, odometro: 5, outro: 6,
+};
 
 const IMAGENS = {
   '.jpg': 'image/jpeg',
@@ -478,6 +480,8 @@ function rotulo(tipo) {
       rdv: 'relatorio RDV',
       pedagio: 'comprovante de pedagio/estacionamento',
       danfe: 'nota de abastecimento',
+      hotel: 'nota do hotel',
+      outras_despesas: 'comprovante de outras despesas',
       odometro: 'foto do odometro',
       outro: 'outro documento',
     }[tipo] || tipo
@@ -497,6 +501,17 @@ function montarResumo({ usuario, rel, linhas, resultadoRegra, vlrKm }) {
     `  Pedagio: R$ ${resultadoRegra.pedagioDeclarado.toFixed(2).replace('.', ',')}`,
     `  Estacionamento: R$ ${resultadoRegra.estacDeclarado.toFixed(2).replace('.', ',')}`,
     `  Pedagio + estacionamento: R$ ${resultadoRegra.totalDeclarado.toFixed(2).replace('.', ',')}`,
+    // Hotel e outras despesas so aparecem quando existem. Escrever "R$ 0,00"
+    // em todo relatorio ensina o modelo a procurar comprovante que nao ha.
+    ...(resultadoRegra.hotelDeclarado > 0
+      ? [`  Hotel: R$ ${resultadoRegra.hotelDeclarado.toFixed(2).replace('.', ',')}`]
+      : []),
+    ...(resultadoRegra.outrosDeclarado > 0
+      ? [
+          `  Outras despesas: R$ ${resultadoRegra.outrosDeclarado.toFixed(2).replace('.', ',')}`
+            + (rel.outros_descricao ? ` (${rel.outros_descricao})` : ''),
+        ]
+      : []),
     '',
     'LANCAMENTOS DIA A DIA:',
   ];

@@ -3,7 +3,7 @@
 // A galeria organiza tudo que a pessoa ja enviou:
 //   - odometros por mes e por dia
 //   - RDVs por mes
-//   - comprovantes (pedagio, DANFE, outros) por mes
+//   - comprovantes (pedagio, DANFE, hotel, outras despesas, outros) por mes
 //
 // O pacote monta um zip com a mesma organizacao, para arquivar ou mandar para
 // o financeiro.
@@ -19,6 +19,8 @@ const PASTA_DO_TIPO = {
   odometro: 'Odometro',
   pedagio: 'Pedagio e estacionamento',
   danfe: 'Nota de abastecimento',
+  hotel: 'Nota do hotel',
+  outras_despesas: 'Outras despesas',
   outro: 'Outros documentos',
 };
 
@@ -59,6 +61,8 @@ export function galeriaDe(usuarioId) {
         odometro: [],
         pedagio: [],
         danfe: [],
+        hotel: [],
+        outras_despesas: [],
         outro: [],
         total: 0,
       });
@@ -109,7 +113,8 @@ export function galeriaDe(usuarioId) {
       anexos: anexos.length,
       odometros: anexos.filter((a) => a.tipo === 'odometro').length,
       rdvs: anexos.filter((a) => a.tipo === 'rdv').length,
-      comprovantes: anexos.filter((a) => ['pedagio', 'danfe'].includes(a.tipo)).length,
+      comprovantes: anexos.filter((a) =>
+        ['pedagio', 'danfe', 'hotel', 'outras_despesas'].includes(a.tipo)).length,
     },
   };
 }

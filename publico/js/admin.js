@@ -746,6 +746,15 @@ function blocoPendenciasAgora(pendencias, d) {
   if (declarado > 0 && !d.anexos.some((a) => a.tipo === 'pedagio')) {
     falta.push('o comprovante de pedágio/estacionamento');
   }
+  // Hotel e outras despesas: um comprovante nao vale pelo outro.
+  if (Number(pendencias.hotelDeclarado || 0) > 0
+      && !d.anexos.some((a) => a.tipo === 'hotel')) {
+    falta.push('a nota do hotel');
+  }
+  if (Number(pendencias.outrosDeclarado || 0) > 0
+      && !d.anexos.some((a) => a.tipo === 'outras_despesas')) {
+    falta.push('o comprovante das outras despesas');
+  }
 
   const corpo = falta.length
     ? falta
@@ -1385,6 +1394,8 @@ function blocoDoMes(m) {
       }
       ${grupo('Pedágio e estacionamento', m.pedagio)}
       ${grupo('Nota de abastecimento', m.danfe)}
+      ${grupo('Nota do hotel', m.hotel)}
+      ${grupo('Outras despesas', m.outras_despesas)}
       ${grupo('Outros documentos', m.outro)}
     </div>`;
 }
