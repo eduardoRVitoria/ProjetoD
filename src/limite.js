@@ -21,7 +21,14 @@ export const REGRAS = {
   LOGIN_IP: { nome: 'login_ip', max: 50, janela: 10 * MIN, bloqueio: 15 * MIN },
   // Estas contam CHAMADAS.
   IA: { nome: 'ia', max: 10, janela: 60 * MIN, bloqueio: 0 },
+  // Por pessoa, depois de entrar. Uma pessoa trabalhando nao chega perto disto.
   GERAL: { nome: 'geral', max: 300, janela: 1 * MIN, bloqueio: 0 },
+  // Antes de entrar so existe o endereco, e o escritorio inteiro sai por um
+  // so: no fechamento do mes, cem pessoas entrando ao mesmo tempo somam num
+  // numero que o teto de 300 barrava - e barrava justo quem ia trabalhar.
+  // Folga aqui nao afrouxa a seguranca: quem erra senha continua preso pelas
+  // regras LOGIN e LOGIN_IP, que contam FALHAS.
+  ANONIMO: { nome: 'anonimo', max: 1200, janela: 1 * MIN, bloqueio: 0 },
 };
 
 // Teto de memoria: cada chave nova ocupa espaco, e uma varredura com IPs

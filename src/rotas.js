@@ -109,15 +109,25 @@ export async function tratarApi(req, res, url, usuario, seguro) {
   // Fica DEPOIS do /api/saude porque quem bate la e o monitor externo. Limitar
   // ele viraria alarme falso justo quando o portal esta bem - e o alarme so
   // serve enquanto ninguem aprendeu a ignora-lo.
+  // Quem ja entrou conta por PESSOA; so quem nao entrou conta por endereco.
+  //
+  // O escritorio inteiro sai por um IP so. Com 15 pessoas o teto por endereco
+  // nunca apertava; no teste de carga com 100+ ele travou todo mundo junto -
+  // "Muitas tentativas" para quem nao tentou nada. Contar por pessoa devolve o
+  // teto ao proposito dele (conter varredura automatica) sem punir o colega da
+  // mesa ao lado. Para quem ainda nao entrou, o IP segue sendo o unico
+  // identificador que existe.
   const ip = ipDoPedido(req);
-  const teto = checar(REGRAS.GERAL, ip);
+  const regraDoTeto = usuario ? REGRAS.GERAL : REGRAS.ANONIMO;
+  const chaveDoTeto = usuario ? `u${usuario.id}` : `ip${ip}`;
+  const teto = checar(regraDoTeto, chaveDoTeto);
   if (!teto.ok) {
-    log.aviso('limite', 'teto geral por ip', { ip, esperar: teto.esperarSegundos });
+    log.aviso('limite', 'teto geral', { quem: usuario?.login, ip, esperar: teto.esperarSegundos });
     return erro(res, recadoDeEspera(teto.esperarSegundos), 429, {
       'Retry-After': String(teto.esperarSegundos),
     });
   }
-  registrar(REGRAS.GERAL, ip);
+  registrar(regraDoTeto, chaveDoTeto);
 
   if (rota === '/api/entrar' && metodo === 'POST') return entrar(req, res, seguro);
   if (rota === '/api/sair' && metodo === 'POST') return sair(req, res);

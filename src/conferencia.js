@@ -55,6 +55,34 @@ export const VERSAO_REGRAS = 6;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
+
+/**
+ * Numero de verdade, ou zero.
+ *
+ * Tudo que entra aqui vem do banco ou da leitura do PDF pela IA, e nem sempre
+ * chega numero: campo em branco vira null, a IA ja devolveu "R$ 1.234" como
+ * texto, e um dia sem km lido vira undefined. Somar isso direto produz NaN,
+ * que contamina o total do mes e sobe para a tela como "NaN km" - foi o que o
+ * teste de robustez pegou.
+ */
+const num = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/** A data existe mesmo? 'AAAA-MM-DD' de um dia que o calendario tem. */
+export function dataValida(iso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ''))) return false;
+  const d = new Date(`${iso}T12:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso;
+}
+
+/** O numero que a pessoa DECLAROU, ou null quando nao da para saber. */
+const declaradoOuNulo = (v) => {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
 const brl = (v) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -203,6 +231,24 @@ function diasSeguidos(dataAnterior, dataAtual) {
  */
 export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, empresa = null) {
   const achados = [];
+
+  // Dia com data que nao existe ("2026-13-45", campo em branco) vira pendencia
+  // e sai da conta. Antes ele chegava nas contas de calendario e derrubava a
+  // conferencia inteira com "Invalid time value": o relatorio dessa pessoa
+  // ficava sem parecer e o painel do administrador mostrava erro.
+  const todas = Array.isArray(linhas) ? linhas : [];
+  linhas = todas.filter((l) => dataValida(l?.data));
+  for (const ruim of todas.filter((l) => !dataValida(l?.data))) {
+    achados.push(
+      achado(
+        'erro',
+        'data_invalida',
+        `Um dia do relatorio veio com data invalida (${String(ruim?.data ?? 'em branco').slice(0, 20)}) `
+          + 'e ficou de fora da conta. Confira o arquivo e leia o RDV de novo.',
+      ),
+    );
+  }
+
   const justificativaDoDia = new Map(
     linhas.map((l) => [l.data, String(l.justificativa_hora || '').trim()]),
   );
@@ -367,20 +413,32 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
 
   // -------------------------------------------------------------- 4. totais
   const totalKm = linhas.reduce(
-    (s, l) => s + Math.max(0, Number(l.km_final) - Number(l.km_inicial)),
+    (s, l) => s + Math.max(0, num(l.km_final) - num(l.km_inicial)),
     0,
   );
-  const valorKm = Number((totalKm * vlrKm).toFixed(2));
+  const valorKm = Number((totalKm * num(vlrKm)).toFixed(2));
 
   // Quando o RDV veio de PDF, o total que vale para a comparacao e o que a
   // PESSOA escreveu no documento, nao o que o sistema gravou. E aqui que o erro
   // de conta aparece - ele nao e mais evitado na origem, entao tem que ser pego.
-  const doPdf = rel.extraido ? JSON.parse(rel.extraido) : null;
-  const declaradoKm = doPdf?.totais_declarados?.total_km ?? Number(rel.total_km);
-  const declaradoValor = doPdf?.totais_declarados?.valor_total_km ?? Number(rel.valor_km);
+  // O JSON e escrito pelo proprio sistema, mas um arquivo cortado pela metade
+  // (queda no meio da gravacao) derrubaria a conferencia de quem tem esse
+  // relatorio - e, no painel, a tela inteira do administrador.
+  let doPdf = null;
+  if (rel.extraido) {
+    try {
+      doPdf = JSON.parse(rel.extraido);
+    } catch {
+      doPdf = null;
+    }
+  }
+  // `declaradoOuNulo`: texto que nao vira numero e "nao sei", nao zero. Tratar
+  // como zero acusaria a pessoa de ter declarado 0 km.
+  const declaradoKm = declaradoOuNulo(doPdf?.totais_declarados?.total_km ?? rel.total_km);
+  const declaradoValor = declaradoOuNulo(doPdf?.totais_declarados?.valor_total_km ?? rel.valor_km);
 
-  if (declaradoKm != null && !perto(totalKm, Number(declaradoKm), 0.5)) {
-    const dif = totalKm - Number(declaradoKm);
+  if (declaradoKm != null && !perto(totalKm, declaradoKm, 0.5)) {
+    const dif = totalKm - declaradoKm;
     achados.push(
       achado(
         'erro',
@@ -392,7 +450,7 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
   }
 
   // Sem tolerancia: o valor tem que ser a conta exata, em centavos.
-  if (declaradoValor != null && Math.round(valorKm * 100) !== Math.round(Number(declaradoValor) * 100)) {
+  if (declaradoValor != null && Math.round(valorKm * 100) !== Math.round(declaradoValor * 100)) {
     achados.push(
       achado(
         'erro',
@@ -439,16 +497,17 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
   }
 
   // ------------------------------------------------- 5. pedagio/estacionamento
-  const pedagioLinhas = linhas.reduce((s, l) => s + Number(l.pedagio || 0), 0);
-  const estacLinhas = linhas.reduce((s, l) => s + Number(l.estacionamento || 0), 0);
+  const pedagioLinhas = linhas.reduce((s, l) => s + num(l.pedagio), 0);
+  const estacLinhas = linhas.reduce((s, l) => s + num(l.estacionamento), 0);
 
   // O formulario de RDV normalmente nao tem coluna de pedagio por dia - traz so
   // "PEDAGIO + ESTACIONAMENTO" no quadro de resumo. Quando for esse o caso, o
   // valor declarado e o do quadro, nao a soma (que seria zero).
-  const agregadoDoPdf = doPdf?.totais_declarados?.pedagio_estacionamento;
+  // `num`: a IA ja devolveu esse campo como texto, e ai o `.toFixed` de antes
+  // lancava erro e o relatorio inteiro ficava sem conferencia.
+  const agregadoDoPdf = num(doPdf?.totais_declarados?.pedagio_estacionamento);
   const somaDasLinhas = Number((pedagioLinhas + estacLinhas).toFixed(2));
-  const declarado =
-    somaDasLinhas > 0 ? somaDasLinhas : Number((agregadoDoPdf ?? 0).toFixed(2));
+  const declarado = somaDasLinhas > 0 ? somaDasLinhas : Number(agregadoDoPdf.toFixed(2));
 
   const temComprovantePedagio = anexos.some((a) => a.tipo === 'pedagio');
   if (declarado > 0 && !temComprovantePedagio) {
