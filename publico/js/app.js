@@ -1148,6 +1148,10 @@ function luzesDoMes() {
   // diferenca de valor continua sendo problema.
   const doPedagio = achados.filter((a) => a.codigo.startsWith('pedagio') && a.gravidade === 'erro');
   const semNota = achados.some((a) => a.codigo === 'sem_danfe');
+  // Sem RDV lido nao ha o que conferir: os achados vem vazios, e isso nao quer
+  // dizer "tudo certo". Conta recem-criada abria com pedagio, fotos e
+  // pendencias em verde.
+  const faltaExtrato = p.totalDeclarado > 0 && !tem('pedagio');
 
   return [
     {
@@ -1161,23 +1165,24 @@ function luzesDoMes() {
       texto: tem('danfe') && !semNota ? 'Enviada' : 'Falta enviar',
     },
     {
-      icone: 'pedagio', ir: p.totalDeclarado > 0 && !tem('pedagio') ? 'comprovantes' : 'conferencia',
+      icone: 'pedagio', ir: faltaExtrato ? 'comprovantes' : 'conferencia',
       titulo: 'Pedágio',
-      estado: doPedagio.length ? 'falha' : 'ok',
-      texto: p.totalDeclarado > 0 && !tem('pedagio') ? 'Falta o extrato'
+      estado: !lido || faltaExtrato || doPedagio.length ? 'falha' : 'ok',
+      texto: !lido ? 'Espera o RDV'
+        : faltaExtrato ? 'Falta o extrato'
         : doPedagio.length ? 'Valor não bate'
         : p.totalDeclarado > 0 ? `${brl(p.totalDeclarado)} comprovado` : 'Nada lançado',
     },
     {
       icone: 'odometro', ir: 'comprovantes', titulo: 'Fotos do odômetro',
-      estado: doOdometro.some((a) => a.gravidade === 'erro') ? 'falha' : doOdometro.length ? 'alerta' : 'ok',
+      estado: !fotos || doOdometro.some((a) => a.gravidade === 'erro') ? 'falha' : doOdometro.length ? 'alerta' : 'ok',
       texto: fotos ? `${fotos} foto${fotos > 1 ? 's' : ''}${doOdometro.length ? ', confira' : ''}` : 'Nenhuma foto',
     },
     {
       icone: 'pendencia', ir: 'conferencia', titulo: 'Pendências',
-      estado: erros.length ? 'falha' : avisos.length ? 'alerta' : 'ok',
-      texto: erros.length
-        ? `${erros.length} para corrigir`
+      estado: !lido || erros.length ? 'falha' : avisos.length ? 'alerta' : 'ok',
+      texto: !lido ? 'Espera o RDV'
+        : erros.length ? `${erros.length} para corrigir`
         : avisos.length ? `${avisos.length} aviso${avisos.length > 1 ? 's' : ''}` : 'Nenhuma',
     },
   ];
