@@ -177,3 +177,11 @@ export function textoDaIa(bruto, limite = 220) {
   }
   return t;
 }
+
+// Pensamento e esforco por modelo. O Haiku 4.5 recusa `thinking: adaptive` e
+// `effort` (400), e com a ferramenta forcada ele nao pode pensar - entao vai
+// sem os dois. Os demais seguem com o adaptativo em esforco alto.
+export function pensamentoDoModelo(modelo) {
+  if (/haiku/i.test(String(modelo))) return {};
+  return { thinking: { type: 'adaptive' }, output_config: { effort: 'high' } };
+}

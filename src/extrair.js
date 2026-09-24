@@ -12,6 +12,7 @@ import * as XLSX from 'xlsx';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chaveDaApi, lerConfig, PASTA_ANEXOS } from './banco.js';
+import { pensamentoDoModelo } from './util.js';
 
 const LIMITE_POR_ANEXO = 12 * 1024 * 1024;
 
@@ -430,14 +431,14 @@ export async function extrairDoRdv(anexosDoRdv, mesEsperado) {
   // Tempo limite: sem ele, uma chamada pendurada deixa o vendedor olhando
   // "Lendo o seu RDV..." sem fim, com o botao preso. Quatro minutos e folgado
   // para uma leitura, que costuma levar uns 20 segundos.
+  const modelo = lerConfig('modelo_ia') || 'claude-opus-5';
   let resposta;
   try {
     resposta = await cliente.messages.create(
       {
-        model: lerConfig('modelo_ia') || 'claude-opus-5',
+        model: modelo,
         max_tokens: 16000,
-        thinking: { type: 'adaptive' },
-        output_config: { effort: 'high' },
+        ...pensamentoDoModelo(modelo),
         system: INSTRUCOES,
         messages: [{ role: 'user', content: conteudo }],
         tools: [FERRAMENTA],

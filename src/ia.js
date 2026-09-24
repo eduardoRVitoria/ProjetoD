@@ -9,6 +9,7 @@ import path from 'node:path';
 import { chaveDaApi, lerConfig, PASTA_ANEXOS } from './banco.js';
 import * as log from './log.js';
 import { dataBr, somarExtrato } from './conferencia.js';
+import { pensamentoDoModelo } from './util.js';
 
 // Teto de tempo de UMA conferencia.
 //
@@ -427,8 +428,7 @@ export async function conferirComIa({ usuario, rel, linhas, anexos, resultadoReg
         {
           model: modelo,
           max_tokens: 32000, // a transcricao passagem a passagem de um extrato cheio e longa
-          thinking: { type: 'adaptive' },
-          output_config: { effort: 'high' },
+          ...pensamentoDoModelo(modelo),
           system: INSTRUCOES,
           messages: [{ role: 'user', content: conteudo }],
           tools: [FERRAMENTA],
