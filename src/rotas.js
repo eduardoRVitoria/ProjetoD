@@ -159,6 +159,7 @@ export async function tratarApi(req, res, url, usuario, seguro) {
       '/api/admin/backup',
       '/api/admin/restaurar',
       '/api/admin/dados',
+      '/api/admin/tudo',
     ];
     if (soSuper.includes(rota) && !ehSuper(usuario)) {
       return erro(
@@ -194,6 +195,7 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/backup' && metodo === 'GET') return baixarBackup(res, usuario);
     if (rota === '/api/admin/restaurar' && metodo === 'POST') return subirBackup(req, res, usuario);
     if (rota === '/api/admin/dados' && metodo === 'GET') return responderJson(res, resumoDosDados());
+    if (rota === '/api/admin/tudo' && metodo === 'GET') return verTudo(res, usuario);
   }
 
   return erro(res, 'Rota nao encontrada.', 404);
@@ -1401,6 +1403,85 @@ async function conferirRelatorio(rel, { usarIa = true, demo = false, decididoPor
   );
 
   return { status, achados, parecer, aviso: avisoIa };
+}
+
+/**
+ * A tela "Tudo": o portal inteiro numa resposta so.
+ *
+ * Existe porque as respostas estavam espalhadas - quanto entrou neste mes, o
+ * que quebrou hoje, quanto a IA gastou, se a fila esta andando, se o disco
+ * aguenta. Cada uma dessas morava numa tela diferente, ou so no painel da
+ * Railway. Aqui e uma pagina com o retrato completo, e so quem ve tudo abre.
+ */
+function verTudo(res, quem) {
+  const meses = db
+    .prepare(
+      `SELECT mes_ref,
+              COUNT(*) AS total,
+              SUM(status = 'CERTA') AS certas,
+              SUM(status = 'SO_FALTA_DANFE') AS so_danfe,
+              SUM(status = 'ERRADA') AS erradas,
+              SUM(status IN ('ENVIADO','CONFERINDO')) AS pendentes,
+              SUM(status = 'RASCUNHO') AS rascunhos,
+              ROUND(SUM(valor_km + pedagio_declarado + estac_declarado + hotel_declarado + outros_declarado), 2) AS dinheiro,
+              ROUND(SUM(total_km), 0) AS km
+         FROM relatorios
+        GROUP BY mes_ref ORDER BY mes_ref DESC LIMIT 12`,
+    )
+    .all();
+
+  const porEmpresa = db
+    .prepare(
+      `SELECT u.empresa,
+              COUNT(DISTINCT u.id) AS pessoas,
+              SUM(u.ativo) AS ativos,
+              COUNT(r.id) AS relatorios,
+              ROUND(SUM(COALESCE(r.valor_km, 0) + COALESCE(r.pedagio_declarado, 0)
+                        + COALESCE(r.estac_declarado, 0) + COALESCE(r.hotel_declarado, 0)
+                        + COALESCE(r.outros_declarado, 0)), 2) AS dinheiro
+         FROM usuarios u LEFT JOIN relatorios r ON r.usuario_id = u.id
+        GROUP BY u.empresa ORDER BY u.empresa`,
+    )
+    .all();
+
+  const mesAtualRef = mesAtual();
+  const semEnviar = db
+    .prepare(
+      `SELECT u.nome, u.login, u.empresa, u.funcao
+         FROM usuarios u
+        WHERE u.ativo = 1 AND u.papel = 'colaborador'
+          AND NOT EXISTS (
+            SELECT 1 FROM relatorios r
+             WHERE r.usuario_id = u.id AND r.mes_ref = ? AND r.status <> 'RASCUNHO')
+        ORDER BY u.empresa, u.nome`,
+    )
+    .all(mesAtualRef);
+
+  // Relatorios julgados por regra antiga: sao os que merecem reconferencia.
+  const atrasados = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM relatorios
+        WHERE conferido_em IS NOT NULL AND COALESCE(versao_regras, 0) < ?`,
+    )
+    .get(VERSAO_REGRAS).n;
+
+  return responderJson(res, {
+    quem: quem.login,
+    agora: agora(),
+    versao_regras: VERSAO_REGRAS,
+    saude: checarSaude(),
+    fila: estadoDaFila(),
+    dados: resumoDosDados(),
+    ia: { disponivel: iaDisponivel(), ...log.usoDaIa() },
+    meses,
+    por_empresa: porEmpresa,
+    mes_atual: mesAtualRef,
+    sem_enviar: semEnviar,
+    conferidos_com_regra_antiga: atrasados,
+    erros: log.recentes({ quantos: 60, nivel: 'ERRO' }),
+    avisos: log.recentes({ quantos: 60, nivel: 'AVISO' }),
+    eventos: log.recentes({ quantos: 80 }),
+  });
 }
 
 /**

@@ -38,6 +38,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
       Configurações
     </button>
+    <button data-aba="tudo" id="aba-tudo-botao" class="esconde">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"/></svg>
+      Tudo
+    </button>
   </nav>
 </aside>
 
@@ -168,6 +172,7 @@
           <select id="u-papel">
             <option value="colaborador">Colaborador</option>
             <option value="admin">Administrador</option>
+            <option value="super" id="opcao-super" class="esconde">Dono — vê tudo</option>
           </select>
         </div>
       </div>
@@ -263,6 +268,10 @@
         <button class="perigo" id="botao-restaurar">Restaurar deste arquivo</button>
       </div>
     </div>
+  </section>
+  <!-- ---------------------------------------------------------- tudo -->
+  <section id="aba-tudo" class="esconde">
+    <div id="tudo"><p class="carregando">Carregando...</p></div>
   </section>
 </main>
 

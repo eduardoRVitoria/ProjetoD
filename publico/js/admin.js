@@ -80,6 +80,12 @@ try {
   // Backup e restauracao sao do dono do sistema. As rotas ja recusam quem nao
   // e super; esconder o cartao evita oferecer um botao que so devolve 403.
   if (!souSuper) $('cartao-backup')?.remove();
+  // A aba "Tudo" e o perfil "Dono" so existem para quem ve tudo. A rota ja
+  // recusa os outros; esconder evita oferecer o que so devolveria 403.
+  if (souSuper) {
+    $('aba-tudo-botao')?.classList.remove('esconde');
+    $('opcao-super')?.classList.remove('esconde');
+  }
 } catch {
   location.href = '/';
 }
@@ -141,8 +147,18 @@ for (const b of document.querySelectorAll('.abas button')) {
     }
     if (b.dataset.aba === 'usuarios') carregarUsuarios();
     if (b.dataset.aba === 'config') carregarConfig();
+    if (b.dataset.aba === 'tudo') carregarTudo();
     window.scrollTo({ top: 0 });
   });
+}
+
+// /admin.html#tudo abre direto naquela aba. Serve para guardar o atalho da
+// tela que voce mais usa, e para um recado poder mandar a pessoa ao lugar
+// certo em vez de dizer "abra o painel e clique em tal aba".
+{
+  const alvo = location.hash.replace('#', '');
+  const botao = alvo && document.querySelector(`.abas button[data-aba="${CSS.escape(alvo)}"]`);
+  if (botao && !botao.classList.contains('esconde')) botao.click();
 }
 
 // Sem `await` aqui de proposito: se o carregamento do painel falhar, o erro
@@ -1642,4 +1658,151 @@ async function limparChave() {
   mostrarRecado('recado-config', 'Chave removida.', 'info');
   carregarConfig();
   carregarPainel();
+}
+
+// ------------------------------------------------------------------- tudo
+//
+// O retrato inteiro do portal numa tela so, para quem ve tudo: dinheiro por
+// mes e por empresa, quem ainda nao enviou, a fila, o gasto com a IA, o que
+// quebrou hoje e como esta o disco. Antes cada uma dessas respostas morava num
+// lugar diferente - algumas so no painel da Railway.
+
+async function carregarTudo() {
+  const alvo = $('tudo');
+  try {
+    const t = await api('/api/admin/tudo');
+    alvo.innerHTML = desenharTudo(t);
+  } catch (e) {
+    alvo.innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
+  }
+}
+
+function desenharTudo(t) {
+  const s = t.saude || {};
+  const ia = t.ia || {};
+  const d = t.dados || {};
+  const fila = t.fila || {};
+
+  const problemas = (s.problemas || []).length
+    ? `<div class="aviso erro"><strong>Atenção:</strong> ${s.problemas.map(escapar).join(' · ')}</div>`
+    : '';
+
+  const naFila = fila.rodando
+    ? `<div class="aviso info"><strong>Conferência em andamento:</strong> ${fila.feitos} de ${fila.total}${
+        fila.atual ? ` — agora: ${escapar(fila.atual)}` : ''
+      }</div>`
+    : '';
+
+  const linhaMes = (m) => `<tr>
+    <td>${escapar(mesPorExtensoCurto(m.mes_ref))}</td>
+    <td class="num">${m.total}</td>
+    <td class="num" style="color:var(--verde)">${m.certas || 0}</td>
+    <td class="num" style="color:var(--amarelo)">${m.so_danfe || 0}</td>
+    <td class="num" style="color:var(--vermelho)">${m.erradas || 0}</td>
+    <td class="num">${m.pendentes || 0}</td>
+    <td class="num">${numeroBr(m.km || 0)}</td>
+    <td class="num"><strong>${brl(m.dinheiro || 0)}</strong></td>
+  </tr>`;
+
+  const linhaEmpresa = (e) => `<tr>
+    <td><span class="emp ${escapar(e.empresa || 'DISO')}">${escapar(e.empresa || '—')}</span></td>
+    <td class="num">${e.ativos || 0} de ${e.pessoas || 0}</td>
+    <td class="num">${e.relatorios || 0}</td>
+    <td class="num"><strong>${brl(e.dinheiro || 0)}</strong></td>
+  </tr>`;
+
+  const evento = (l) => `<tr>
+    <td style="white-space:nowrap">${escapar(l.hora)}</td>
+    <td><span class="selo ${l.nivel === 'ERRO' ? 'ERRADA' : l.nivel === 'AVISO' ? 'SO_FALTA_DANFE' : 'ENVIADO'}">${escapar(l.area)}</span></td>
+    <td>${escapar(l.mensagem)} <span class="sub" style="margin:0">${escapar(l.dados || '')}</span></td>
+  </tr>`;
+
+  const semEnviar = t.sem_enviar || [];
+
+  return `
+    ${problemas}${naFila}
+
+    <div class="cartao">
+      <h2>O portal agora</h2>
+      <div class="numeros">
+        <div class="numero"><div class="rotulo">No ar há</div><div class="valor">${duracaoBr(s.no_ar_ha)}</div></div>
+        <div class="numero"><div class="rotulo">Regras em uso</div><div class="valor">versão ${t.versao_regras}</div></div>
+        <div class="numero"><div class="rotulo">Conferidos com regra antiga</div><div class="valor">${t.conferidos_com_regra_antiga || 0}</div></div>
+        <div class="numero"><div class="rotulo">Chave da IA</div><div class="valor" style="color:${ia.disponivel ? 'var(--verde)' : 'var(--vermelho)'}">${ia.disponivel ? 'ligada' : 'desligada'}</div></div>
+        <div class="numero"><div class="rotulo">Conferências com IA</div><div class="valor">${ia.chamadas || 0}${ia.falhas ? ` <span style="font-size:14px;color:var(--vermelho)">${ia.falhas} falha(s)</span>` : ''}</div></div>
+        <div class="numero"><div class="rotulo">Tokens usados (entrada/saída)</div><div class="valor" style="font-size:20px">${numeroBr(ia.entrada || 0)} / ${numeroBr(ia.saida || 0)}</div></div>
+        <div class="numero"><div class="rotulo">Comprovantes guardados</div><div class="valor">${numeroBr(d.anexos || 0)}</div></div>
+        <div class="numero"><div class="rotulo">Espaço dos comprovantes</div><div class="valor" style="font-size:20px">${tamanhoBr(d.tamanho_anexos || 0)}</div></div>
+      </div>
+      <p class="sub" style="margin:14px 0 0">Os números da IA contam desde a última vez que o portal subiu.</p>
+    </div>
+
+    <div class="cartao">
+      <h2>Mês a mês</h2>
+      <div class="rolagem"><table>
+        <thead><tr><th>Mês</th><th class="num">Relatórios</th><th class="num">Certos</th>
+          <th class="num">Só DANFE</th><th class="num">Errados</th><th class="num">Pendentes</th>
+          <th class="num">Km</th><th class="num">Total</th></tr></thead>
+        <tbody>${(t.meses || []).map(linhaMes).join('') || '<tr><td colspan="8">Nenhum relatório ainda.</td></tr>'}</tbody>
+      </table></div>
+    </div>
+
+    <div class="cartao">
+      <h2>Por empresa</h2>
+      <div class="rolagem"><table>
+        <thead><tr><th>Empresa</th><th class="num">Pessoas ativas</th><th class="num">Relatórios</th><th class="num">Total</th></tr></thead>
+        <tbody>${(t.por_empresa || []).map(linhaEmpresa).join('')}</tbody>
+      </table></div>
+    </div>
+
+    <div class="cartao">
+      <h2>Ainda não enviaram — ${escapar(mesPorExtensoCurto(t.mes_atual))} (${semEnviar.length})</h2>
+      ${
+        semEnviar.length
+          ? `<div class="pessoas">${semEnviar.slice(0, 40)
+              .map(
+                (u) => `<div class="pessoa"><div class="pessoa-id">
+                  <div class="pessoa-nome">${escapar(u.nome)} <span class="emp ${escapar(u.empresa || 'DISO')}">${escapar(u.empresa || '')}</span></div>
+                  <div class="pessoa-sub">${escapar(u.login)} · ${escapar(u.funcao || '')}</div>
+                </div></div>`,
+              )
+              .join('')}</div>${semEnviar.length > 40 ? `<p class="sub" style="margin:10px 0 0">e mais ${semEnviar.length - 40} pessoa(s). A lista completa sai na planilha do mes.</p>` : ''}`
+          : '<p class="sub" style="margin:0">Todo mundo já enviou.</p>'
+      }
+    </div>
+
+    <div class="cartao">
+      <h2>O que quebrou (${(t.erros || []).length})</h2>
+      ${
+        (t.erros || []).length
+          ? `<div class="rolagem"><table><tbody>${t.erros.map(evento).join('')}</tbody></table></div>`
+          : '<p class="sub" style="margin:0">Nenhum erro desde que o portal subiu.</p>'
+      }
+    </div>
+
+    <div class="cartao">
+      <h2>Últimos acontecimentos</h2>
+      <div class="rolagem"><table><tbody>${(t.eventos || []).map(evento).join('')}</tbody></table></div>
+    </div>`;
+}
+
+// 'AAAA-MM' -> 'agosto de 2026'. Sem depender do servidor: esta tela ja traz
+// muita coisa, e o mes por extenso e barato de montar aqui.
+function mesPorExtensoCurto(mesRef) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(mesRef || ''));
+  if (!m) return String(mesRef || '—');
+  const nomes = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+    'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  return `${nomes[Number(m[2]) - 1]} de ${m[1]}`;
+}
+
+/** Segundos -> "3 h 20 min", que e como a pessoa pensa em tempo no ar. */
+function duracaoBr(segundos) {
+  const s = Number(segundos);
+  if (!Number.isFinite(s)) return '—';
+  if (s < 60) return `${Math.round(s)} s`;
+  const min = Math.floor(s / 60) % 60;
+  const h = Math.floor(s / 3600);
+  if (!h) return `${min} min`;
+  return `${h} h ${min} min`;
 }

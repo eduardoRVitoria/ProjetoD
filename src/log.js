@@ -47,8 +47,52 @@ function detalhes(dados) {
   return partes.join(' ');
 }
 
+// ---------------------------------------------------------------- memoria
+//
+// O log sai na tela do servidor, e na Railway ele some quando o container e
+// trocado. A tela "Tudo" precisa responder "o que deu errado hoje?" sem
+// ninguem abrir o painel da Railway - entao os ultimos eventos ficam tambem
+// aqui, na memoria do processo.
+//
+// Teto fixo: isto nao pode virar vazamento de memoria num portal que fica
+// meses no ar. Guarda os 300 mais recentes e descarta o resto.
+const TETO_MEMORIA = 300;
+const ultimos = [];
+
+// Gasto com a IA desde que o portal subiu. Sai do proprio log da conferencia,
+// que ja registra os tokens - assim nao existe uma segunda contabilidade para
+// divergir da primeira.
+const usoIa = { chamadas: 0, entrada: 0, saida: 0, falhas: 0 };
+
+function guardar(nivel, area, mensagem, dados) {
+  ultimos.push({ hora: hora(), nivel, area, mensagem, dados: detalhes(dados) });
+  if (ultimos.length > TETO_MEMORIA) ultimos.shift();
+
+  if (area === 'ia') {
+    if (dados?.entrada || dados?.saida) {
+      usoIa.chamadas++;
+      usoIa.entrada += Number(dados.entrada) || 0;
+      usoIa.saida += Number(dados.saida) || 0;
+    } else if (nivel === 'ERRO') {
+      usoIa.falhas++;
+    }
+  }
+}
+
+/** Os ultimos eventos, do mais novo para o mais velho. */
+export function recentes({ quantos = 120, nivel = null } = {}) {
+  const lista = nivel ? ultimos.filter((l) => l.nivel === nivel) : ultimos;
+  return lista.slice(-quantos).reverse();
+}
+
+/** Quanto a IA foi usada desde que o portal subiu. */
+export function usoDaIa() {
+  return { ...usoIa };
+}
+
 function escrever(saida, nivel, area, mensagem, dados) {
   const extra = detalhes(dados);
+  guardar(nivel, area, mensagem, dados);
   saida(`${hora()} ${nivel.padEnd(5)} ${String(area).padEnd(9)} ${mensagem}${extra ? ' ' + extra : ''}`);
 }
 
