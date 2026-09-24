@@ -33,6 +33,7 @@ import { extrairDoRdv, motivoDeNaoConseguirLer } from './extrair.js';
 import * as log from './log.js';
 import { verificarAssinatura, achadosDaAssinatura } from './assinatura.js';
 import { galeriaDe, enviarPacote } from './galeria.js';
+import { comecarFila, estadoDaFila, pedirParada } from './fila.js';
 import { nomeDoFeriado, fimDeSemana, diaDaSemana } from './feriados.js';
 import { REGRAS, checar, registrar, limpar, recadoDeEspera } from './limite.js';
 import {
@@ -170,6 +171,9 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/painel' && metodo === 'GET') return painel(res, url, usuario);
     if (rota === '/api/admin/relatorio' && metodo === 'GET') return relatorioDetalhe(res, url, usuario);
     if (rota === '/api/admin/conferir' && metodo === 'POST') return conferirUm(req, res, usuario);
+    if (rota === '/api/admin/conferir-pendentes' && metodo === 'POST') return conferirPendentes(req, res, usuario);
+    if (rota === '/api/admin/fila' && metodo === 'GET') return responderJson(res, estadoDaFila());
+    if (rota === '/api/admin/fila-parar' && metodo === 'POST') return responderJson(res, pedirParada());
     if (rota === '/api/admin/decidir' && metodo === 'POST') return decidir(req, res, usuario);
     if (rota === '/api/admin/galeria' && metodo === 'GET') return verGaleria(res, url, usuario);
     if (rota === '/api/admin/pacote' && metodo === 'GET') return baixarPacote(res, url, usuario);
@@ -1397,6 +1401,46 @@ async function conferirRelatorio(rel, { usarIa = true, demo = false, decididoPor
   );
 
   return { status, achados, parecer, aviso: avisoIa };
+}
+
+/**
+ * Enfileira a conferencia dos pendentes do mes e responde na hora.
+ *
+ * A conferencia roda no servidor, nao no navegador: o administrador pode
+ * fechar a aba, trocar de mes ou ir embora, que os relatorios continuam sendo
+ * conferidos. O painel acompanha por /api/admin/fila.
+ */
+async function conferirPendentes(req, res, admin) {
+  const { mes, demo = false } = await lerJson(req);
+  if (!mesValido(mes)) return erro(res, 'Mes invalido.');
+
+  // So os deste mes, so os pendentes, e so os que este administrador pode ver.
+  const pendentes = db
+    .prepare(
+      `SELECT r.id, r.usuario_id, u.nome, u.empresa FROM relatorios r
+         JOIN usuarios u ON u.id = r.usuario_id
+        WHERE r.mes_ref = ? AND r.status IN ('ENVIADO', 'CONFERINDO')
+        ORDER BY u.nome`,
+    )
+    .all(mes)
+    .filter((r) => podeVerUsuario(admin, r));
+
+  if (!pendentes.length) return erro(res, 'Nao ha relatorio pendente de conferencia neste mes.');
+
+  const resposta = comecarFila({
+    itens: pendentes,
+    mes,
+    demo,
+    quem: admin.login,
+    processar: async (item) => {
+      const rel = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(item.id);
+      // Alguem pode ter conferido na mao enquanto a fila andava.
+      if (!rel || !['ENVIADO', 'CONFERINDO'].includes(rel.status)) return;
+      await conferirRelatorio(rel, { usarIa: true, demo, decididoPor: admin.id });
+    },
+  });
+
+  return responderJson(res, resposta);
 }
 
 async function conferirUm(req, res, admin) {

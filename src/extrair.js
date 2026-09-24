@@ -427,16 +427,32 @@ export async function extrairDoRdv(anexosDoRdv, mesEsperado) {
     );
   }
 
-  const resposta = await cliente.messages.create({
-    model: lerConfig('modelo_ia') || 'claude-opus-5',
-    max_tokens: 16000,
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'high' },
-    system: INSTRUCOES,
-    messages: [{ role: 'user', content: conteudo }],
-    tools: [FERRAMENTA],
-    tool_choice: { type: 'tool', name: 'transcrever_rdv' },
-  });
+  // Tempo limite: sem ele, uma chamada pendurada deixa o vendedor olhando
+  // "Lendo o seu RDV..." sem fim, com o botao preso. Quatro minutos e folgado
+  // para uma leitura, que costuma levar uns 20 segundos.
+  let resposta;
+  try {
+    resposta = await cliente.messages.create(
+      {
+        model: lerConfig('modelo_ia') || 'claude-opus-5',
+        max_tokens: 16000,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high' },
+        system: INSTRUCOES,
+        messages: [{ role: 'user', content: conteudo }],
+        tools: [FERRAMENTA],
+        tool_choice: { type: 'tool', name: 'transcrever_rdv' },
+      },
+      { timeout: 4 * 60 * 1000, maxRetries: 2 },
+    );
+  } catch (e) {
+    const estourou = e?.name === 'APIConnectionTimeoutError' || /timeout|aborted/i.test(String(e?.message));
+    if (!estourou) throw e;
+    throw new Error(
+      'A leitura do seu RDV passou de 4 minutos e foi cancelada. Tente de novo, '
+        + 'ou use "Preencher na mao" para nao travar o seu mes.',
+    );
+  }
 
   if (resposta.stop_reason === 'refusal') {
     throw new Error(

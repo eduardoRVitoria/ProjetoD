@@ -10,6 +10,15 @@ import { chaveDaApi, lerConfig, PASTA_ANEXOS } from './banco.js';
 import * as log from './log.js';
 import { dataBr, somarExtrato } from './conferencia.js';
 
+// Teto de tempo de UMA conferencia.
+//
+// Sem teto, a chamada podia ficar pendurada: o relatorio ficava preso em
+// "CONFERINDO" para sempre e, dentro de uma fila, segurava todos os que vem
+// atras. Seis minutos e folgado - a conferencia mais pesada ja rodada levou
+// pouco mais de um minuto. Quando estoura, o relatorio volta ao estado
+// anterior e pode ser conferido de novo.
+const TEMPO_LIMITE = 6 * 60 * 1000;
+
 const LIMITE_POR_ANEXO = 8 * 1024 * 1024; // 8 MB
 const LIMITE_TOTAL = 24 * 1024 * 1024; // folga sobre o teto de 32 MB da requisicao
 
@@ -411,16 +420,38 @@ export async function conferirComIa({ usuario, rel, linhas, anexos, resultadoReg
   const modelo = lerConfig('modelo_ia') || 'claude-opus-5';
   // Stream so porque o SDK exige acima de ~21 mil tokens de saida; a resposta
   // final e a mesma de um create.
-  const resposta = await cliente.messages.stream({
-    model: modelo,
-    max_tokens: 32000, // a transcricao passagem a passagem de um extrato cheio e longa
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'high' },
-    system: INSTRUCOES,
-    messages: [{ role: 'user', content: conteudo }],
-    tools: [FERRAMENTA],
-    tool_choice: { type: 'tool', name: 'registrar_parecer' },
-  }).finalMessage();
+  let resposta;
+  try {
+    resposta = await cliente.messages
+      .stream(
+        {
+          model: modelo,
+          max_tokens: 32000, // a transcricao passagem a passagem de um extrato cheio e longa
+          thinking: { type: 'adaptive' },
+          output_config: { effort: 'high' },
+          system: INSTRUCOES,
+          messages: [{ role: 'user', content: conteudo }],
+          tools: [FERRAMENTA],
+          tool_choice: { type: 'tool', name: 'registrar_parecer' },
+        },
+        { timeout: TEMPO_LIMITE, maxRetries: 2 },
+      )
+      .finalMessage();
+  } catch (e) {
+    // O que chega aqui e mensagem de biblioteca ("Request was aborted"), que
+    // nao diz a ninguem o que fazer. Vira recado em portugues, e o log guarda
+    // o erro cru para quem for investigar.
+    const estourou = e?.name === 'APIConnectionTimeoutError' || /timeout|aborted/i.test(String(e?.message));
+    log.falha('ia', estourou ? 'conferencia estourou o tempo' : 'chamada da IA falhou', e, {
+      rel: rel.id, modelo, tempo: log.desde(comeco),
+    });
+    throw new Error(
+      estourou
+        ? `A conferencia passou de ${Math.round(TEMPO_LIMITE / 60000)} minutos e foi cancelada. `
+          + 'Quase sempre e comprovante demais ou foto pesada demais: peca arquivos menores e confira de novo.'
+        : `A IA nao respondeu: ${String(e?.message || e).slice(0, 200)}`,
+    );
+  }
 
   // O unico lugar do portal que gasta dinheiro por uso. Sem esta linha, "a
   // conferencia esta cara" e "a conferencia esta lenta" nao tem como ser

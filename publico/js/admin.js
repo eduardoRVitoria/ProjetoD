@@ -225,6 +225,11 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && podeAtualizarAgora()) carregarPainel({ silencioso: true }).catch(() => {});
 });
 
+// Uma conferencia pode estar rodando no servidor desde antes desta tela abrir
+// - de outro computador, ou de uma aba que ja foi fechada. O painel mostra o
+// andamento assim que abre.
+acompanharFila();
+
 carregarPainel().catch((e) => {
   console.error('falha ao carregar o painel', e);
   const t = $('tabela');
@@ -485,34 +490,77 @@ async function conferirPendentes(demo = false) {
 
   if (!confirm(pergunta)) return;
 
-  const botao = demo ? $('botao-demo') : $('botao-conferir-todos');
-  const rotuloOriginal = botao.textContent;
-  botao.disabled = true;
-  let feitos = 0;
-  const falhas = [];
-
-  for (const r of pendentes) {
-    botao.textContent = `Conferindo ${feitos + 1} de ${pendentes.length}...`;
-    try {
-      await api('/api/admin/conferir', {
-        metodo: 'POST',
-        corpo: { relatorio_id: r.id, demo },
-      });
-      feitos++;
-    } catch (e) {
-      falhas.push(`${r.nome}: ${e.message}`);
+  // Quem confere e o SERVIDOR: esta chamada so enfileira e responde na hora.
+  // A aba pode ser fechada, o mes pode ser trocado, o computador pode dormir -
+  // a fila segue. Daqui para baixo so acompanhamos o andamento.
+  try {
+    const r = await api('/api/admin/conferir-pendentes', { metodo: 'POST', corpo: { mes, demo } });
+    if (r.ja_rodando) {
+      mostrarRecado('recado', 'Já existe uma conferência em andamento. O andamento aparece abaixo.', 'info');
     }
+  } catch (e) {
+    return mostrarRecado('recado', e.message, 'erro');
+  }
+  acompanharFila();
+}
+
+// ------------------------------------------------------------------ fila
+
+// Enquanto a fila roda, o painel pergunta o andamento de 3 em 3 segundos.
+// Quem abrir o painel no meio - inclusive em outro computador - cai no mesmo
+// estado: ele mora no servidor, nao nesta tela.
+let relogioDaFila = null;
+
+async function acompanharFila() {
+  clearTimeout(relogioDaFila);
+  let fila;
+  try {
+    fila = await api('/api/admin/fila');
+  } catch {
+    return; // sessao caiu ou portal reiniciando: a proxima carga do painel tenta de novo
+  }
+  desenharFila(fila);
+  if (fila.rodando) relogioDaFila = setTimeout(acompanharFila, 3000);
+  else if (fila.total) await carregarPainel({ silencioso: true });
+}
+
+function desenharFila(f) {
+  const alvo = $('fila');
+  if (!alvo) return;
+  if (!f.total) {
+    alvo.innerHTML = '';
+    return;
   }
 
-  botao.disabled = false;
-  botao.textContent = rotuloOriginal;
-  mostrarRecado(
-    'recado',
-    `${feitos} de ${pendentes.length} conferido(s).` +
-      (falhas.length ? ` Falhas: ${falhas.join(' | ')}` : ''),
-    falhas.length ? 'atencao' : 'ok',
-  );
-  await carregarPainel();
+  const falhas = f.qtd_falhas
+    ? `<p class="sub" style="margin:8px 0 0">${f.qtd_falhas} não conferido(s): ${f.falhas
+        .map((x) => `${escapar(x.nome)} (${escapar(x.erro)})`)
+        .join(' · ')}</p>`
+    : '';
+
+  alvo.innerHTML = f.rodando
+    ? `<div class="aviso info">
+         <strong>Conferindo ${Math.min(f.feitos + 1, f.total)} de ${f.total}${f.demo ? ' (demonstração)' : ''}.</strong>
+         ${f.atual ? ` Agora: ${escapar(f.atual)}.` : ''}
+         Pode fechar esta página — quem confere é o servidor.
+         <div class="progresso" style="margin-top:10px"><div class="progresso-barra"
+              style="width:${Math.round((f.feitos / f.total) * 100)}%"></div></div>
+         <button class="secundario pequeno" id="botao-parar-fila" style="margin-top:10px">Parar depois do atual</button>
+         ${falhas}
+       </div>`
+    : `<div class="aviso ${f.qtd_falhas ? 'atencao' : 'ok'}">
+         <strong>Conferência terminada:</strong> ${f.certos} de ${f.total} conferido(s)${f.parando ? ', parada a pedido' : ''}.
+         ${falhas}
+       </div>`;
+
+  const parar = $('botao-parar-fila');
+  if (parar) {
+    parar.addEventListener('click', async () => {
+      parar.disabled = true;
+      try { await api('/api/admin/fila-parar', { metodo: 'POST' }); } catch {}
+      acompanharFila();
+    });
+  }
 }
 
 // ----------------------------------------------------------------- detalhe
