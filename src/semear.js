@@ -87,6 +87,43 @@ if (FORCAR && fs.existsSync(path.join(PASTA_DADOS, BANCO))) {
   console.log(`[semear] SEMEAR_FORCAR ligado. Banco atual guardado em ${path.basename(guardado)}.`);
 }
 
+// Reset total do ambiente de teste, guardado atras de ZERAR_TUDO=1.
+//
+// Apaga TODOS os relatorios, linhas e anexos, e todos os usuarios que NAO sao
+// donos - papel 'super' fica, para ninguem trancar a si mesmo pra fora. O banco
+// atual e copiado antes, com carimbo de hora, caso tenha sido engano.
+//
+// Mesma disciplina do SEMEAR_FORCAR: ligue ZERAR_TUDO=1, faca UM deploy, e
+// DESLIGUE logo depois - senao todo boot zera de novo.
+if (process.env.ZERAR_TUDO === '1' && fs.existsSync(path.join(PASTA_DADOS, BANCO))) {
+  const carimbo = new Date().toISOString().replace(/[:.]/g, '-');
+  const guardado = path.join(PASTA_DADOS, `antes-de-zerar-${carimbo}-${BANCO}`);
+  fs.copyFileSync(path.join(PASTA_DADOS, BANCO), guardado);
+  for (const sufixo of ['-wal', '-shm']) {
+    fs.rmSync(path.join(PASTA_DADOS, BANCO + sufixo), { force: true });
+  }
+
+  const db = new DatabaseSync(path.join(PASTA_DADOS, BANCO));
+  const antes = db.prepare('SELECT COUNT(*) c FROM usuarios').get().c;
+  for (const sql of ['DELETE FROM anexos', 'DELETE FROM linhas', 'DELETE FROM relatorios', 'DELETE FROM sessoes']) {
+    try { db.exec(sql); } catch { /* tabela pode nao existir num banco antigo */ }
+  }
+  const apagados = db.prepare("DELETE FROM usuarios WHERE papel <> 'super'").run().changes;
+  const donos = db.prepare('SELECT login FROM usuarios ORDER BY login').all();
+  db.close();
+
+  // Os arquivos dos anexos no disco tambem saem - as linhas do banco ja foram.
+  const pastaAnexos = path.join(PASTA_DADOS, 'anexos');
+  if (fs.existsSync(pastaAnexos)) {
+    for (const f of fs.readdirSync(pastaAnexos)) {
+      fs.rmSync(path.join(pastaAnexos, f), { force: true, recursive: true });
+    }
+  }
+
+  console.log(`[semear] ZERAR_TUDO: ${apagados} usuarios apagados (de ${antes}); relatorios, linhas e anexos zerados. Backup em ${path.basename(guardado)}.`);
+  console.log(`[semear] Donos mantidos (papel super): ${donos.map((d) => d.login).join(', ') || 'NENHUM - CUIDADO, ninguem entra!'}`);
+}
+
 if (!FORCAR && !discoVirgem()) {
   const { linhas, rel } = quemJaEsta();
   console.log(`[semear] O disco ja tem ${linhas.length} usuarios e ${rel} relatorios. Nada a fazer.`);
