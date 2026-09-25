@@ -139,13 +139,29 @@ export async function tratarApi(req, res, url, usuario, seguro) {
   if (rota === '/api/eu' && metodo === 'GET') return eu(res, usuario);
   if (rota === '/api/trocar-senha' && metodo === 'POST') return trocarMinhaSenha(req, res, usuario);
 
-  if (rota === '/api/relatorio' && metodo === 'GET') return pegarRelatorio(req, res, url, usuario);
-  if (rota === '/api/relatorio' && metodo === 'PUT') return salvarRelatorio(req, res, usuario);
-  if (rota === '/api/relatorio/ler-rdv' && metodo === 'POST') return lerRdv(req, res, usuario);
-  if (rota === '/api/relatorio/enviar' && metodo === 'POST') return enviarRelatorio(req, res, usuario);
-  if (rota === '/api/meus-relatorios' && metodo === 'GET') return meusRelatorios(res, usuario);
+  // Admin lancando pelo colaborador: `?em_nome_de=<id>` faz o relatorio e os
+  // anexos cairem na conta dele, como se ele mesmo tivesse mandado. Serve para
+  // quem entrega os papeis por e-mail em vez de subir no portal. So vale dentro
+  // do recorte do admin, e so para colaborador - admin nao lanca por admin.
+  const emNomeDe = url.searchParams.get('em_nome_de');
+  let dono = usuario;
+  if (emNomeDe) {
+    if (!ehAdmin(usuario)) return erro(res, 'Area restrita ao administrador.', 403);
+    const alvo = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(Number(emNomeDe));
+    if (!alvo || alvo.papel !== 'colaborador' || !podeVerUsuario(usuario, alvo)) {
+      return erro(res, 'Colaborador nao encontrado.', 404);
+    }
+    log.info('em-nome-de', `${metodo} ${rota}`, { quem: usuario.login, por: alvo.login });
+    dono = alvo;
+  }
 
-  if (rota === '/api/anexo' && metodo === 'POST') return subirAnexo(req, res, url, usuario);
+  if (rota === '/api/relatorio' && metodo === 'GET') return pegarRelatorio(req, res, url, dono);
+  if (rota === '/api/relatorio' && metodo === 'PUT') return salvarRelatorio(req, res, dono);
+  if (rota === '/api/relatorio/ler-rdv' && metodo === 'POST') return lerRdv(req, res, dono);
+  if (rota === '/api/relatorio/enviar' && metodo === 'POST') return enviarRelatorio(req, res, dono);
+  if (rota === '/api/meus-relatorios' && metodo === 'GET') return meusRelatorios(res, dono);
+
+  if (rota === '/api/anexo' && metodo === 'POST') return subirAnexo(req, res, url, dono);
   if (rota.startsWith('/api/anexo/') && metodo === 'GET') return baixarAnexo(req, res, rota, usuario);
   if (rota.startsWith('/api/anexo/') && metodo === 'DELETE') return apagarAnexo(res, rota, usuario);
 
