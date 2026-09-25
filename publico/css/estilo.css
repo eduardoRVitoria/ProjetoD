@@ -144,6 +144,44 @@ a { color: var(--texto); }
 .abas button:hover { color: var(--texto); background: transparent; }
 .abas button.ativa { color: var(--texto); font-weight: 600; }
 
+/* Abas por empresa, acima da tabela de relatorios. Acionam o filtro de empresa. */
+.abas-empresa {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 0 0 16px;
+}
+.abas-empresa button {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 14px;
+  background: transparent;
+  color: var(--texto-fraco);
+  border: 1px solid var(--borda);
+  border-radius: 999px;
+  font-size: 14px; font-weight: 600;
+  white-space: nowrap; cursor: pointer;
+}
+.abas-empresa button:hover { color: var(--texto); border-color: var(--borda-forte); }
+.abas-empresa button .n {
+  font-size: 12px; font-weight: 700;
+  min-width: 20px; text-align: center;
+  padding: 1px 7px; border-radius: 999px;
+  background: rgba(127, 127, 127, .16); color: inherit;
+}
+.abas-empresa button .n:empty { display: none; }
+.abas-empresa button.ativa { color: var(--texto); border-color: currentColor; }
+.abas-empresa button[data-empresa=""].ativa {
+  background: var(--tinta); color: var(--tinta-texto); border-color: var(--tinta);
+}
+.abas-empresa button[data-empresa="DISO"].ativa {
+  background: var(--pastel-azul); color: var(--azul); border-color: var(--azul);
+}
+.abas-empresa button[data-empresa="DSO"].ativa {
+  background: var(--pastel-lilas); color: var(--lilas); border-color: var(--lilas);
+}
+.abas-empresa button[data-empresa="PROMOTORES"].ativa {
+  background: var(--pastel-verde); color: var(--verde); border-color: var(--verde);
+}
+.abas-empresa button.ativa .n { background: rgba(255, 255, 255, .45); }
+
 /* Contador discreto ao lado do link. */
 .estado-etapa {
   font-size: 12px; font-weight: 600;

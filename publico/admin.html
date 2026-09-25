@@ -82,6 +82,12 @@
 
     <div class="cartao">
       <h2>Relatórios recebidos</h2>
+      <div class="abas-empresa" id="abas-empresa">
+        <button class="ativa" data-empresa="">Todas<span class="n"></span></button>
+        <button data-empresa="DISO">DISO<span class="n"></span></button>
+        <button data-empresa="DSO">DSO<span class="n"></span></button>
+        <button data-empresa="PROMOTORES">PROMOTORES<span class="n"></span></button>
+      </div>
       <div class="filtros">
         <input type="search" id="f-busca" placeholder="Buscar por nome ou login...">
         <select id="f-status">
@@ -91,7 +97,7 @@
           <option value="SO_FALTA_DANFE">Só falta DANFE</option>
           <option value="ERRADA">Reprovados</option>
         </select>
-        <select id="f-empresa">
+        <select id="f-empresa" style="display:none" aria-hidden="true">
           <option value="">Todas as empresas</option>
           <option value="DISO">DISO</option>
           <option value="DSO">DSO</option>

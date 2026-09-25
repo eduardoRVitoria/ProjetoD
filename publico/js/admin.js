@@ -120,8 +120,32 @@ ligar('f-limpar', 'click', () => {
   if ($('f-busca')) $('f-busca').value = '';
   for (const id of ['f-status', 'f-empresa', 'f-funcao']) if ($(id)) $(id).value = '';
   if ($('f-agrupar')) $('f-agrupar').checked = true;
+  marcarAbaEmpresa('');
   desenharTabela();
 });
+
+// --- abas por empresa (acionam o filtro f-empresa) ---
+function marcarAbaEmpresa(empresa) {
+  for (const b of document.querySelectorAll('#abas-empresa button')) {
+    b.classList.toggle('ativa', b.dataset.empresa === empresa);
+  }
+}
+function atualizarAbasEmpresa() {
+  const todos = (typeof painel !== 'undefined' && painel && painel.relatorios) || [];
+  for (const b of document.querySelectorAll('#abas-empresa button')) {
+    const emp = b.dataset.empresa;
+    const n = emp ? todos.filter((r) => (r.empresa || 'DISO') === emp).length : todos.length;
+    const span = b.querySelector('.n');
+    if (span) span.textContent = n ? String(n) : '';
+  }
+}
+for (const b of document.querySelectorAll('#abas-empresa button')) {
+  b.addEventListener('click', () => {
+    marcarAbaEmpresa(b.dataset.empresa);
+    if ($('f-empresa')) $('f-empresa').value = b.dataset.empresa;
+    desenharTabela();
+  });
+}
 
 // --- filtros da lista de colaboradores ---
 for (const id of ['fu-busca', 'fu-empresa', 'fu-funcao', 'fu-situacao', 'fu-agrupar']) {
@@ -308,6 +332,7 @@ async function carregarPainel({ silencioso = false } = {}) {
 
 function desenharTabela() {
   const todos = painel.relatorios;
+  atualizarAbasEmpresa();
   if (!todos.length) {
     $('tabela').innerHTML = `<p class="sub">Nenhum relatório enviado para ${escapar(
       painel.mes_extenso,
