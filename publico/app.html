@@ -16,14 +16,24 @@
 <div class="apl">
 
 <header class="lateral">
+  <button class="botao-menu" id="botao-menu" aria-label="Abrir menu" aria-expanded="false" aria-controls="menu-abas">
+    <span></span><span></span><span></span>
+  </button>
   <div class="lateral-marca"><span>Portal RDV</span></div>
 
-  <nav class="abas" aria-label="Etapas do relatório">
+  <!-- No computador sao abas no topo; no celular viram gaveta lateral,
+       aberta pelos tres tracinhos. -->
+  <nav class="abas gaveta" id="menu-abas" aria-label="Etapas do relatório">
+    <div class="gaveta-topo">
+      <span>Portal RDV</span>
+      <button type="button" class="gaveta-fechar" id="fechar-menu" aria-label="Fechar menu">×</button>
+    </div>
     <button data-aba="lancamentos" class="ativa">Meu relatório <span class="estado-etapa" id="estado-lancamentos"></span></button>
     <button data-aba="comprovantes">Comprovantes <span class="estado-etapa" id="estado-comprovantes"></span></button>
     <button data-aba="conferencia">Conferência <span class="estado-etapa" id="estado-conferencia"></span></button>
     <button data-aba="historico">Histórico</button>
   </nav>
+  <div class="gaveta-fundo" id="fundo-menu"></div>
 
   <div class="lateral-pe">
     <span id="meu-nome"></span>

@@ -789,3 +789,92 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
   .topo-acoes { width: 100%; }
   .topo-acoes .resumo { margin-right: auto; text-align: left; }
 }
+
+/* O iPhone da zoom na tela inteira quando o campo focado tem fonte menor que
+   16px - e a pessoa fica arrastando a tela para achar o resto. */
+@media (max-width: 860px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* ================================================ GAVETA DO CELULAR
+   So existe no app do colaborador (nav.abas.gaveta). No computador o botao
+   de tres tracinhos some e as abas ficam no topo como sempre. */
+
+.botao-menu, .gaveta-topo, .gaveta-fundo { display: none; }
+
+@media (max-width: 860px) {
+  .lateral:has(.gaveta) { flex-wrap: nowrap; padding: 12px 0; }
+
+  .botao-menu {
+    display: inline-flex; flex-direction: column; justify-content: center; gap: 5px;
+    width: 44px; height: 44px; flex: 0 0 44px;
+    margin-left: -10px;
+    padding: 0 11px;
+    background: transparent;
+    border: 0;
+    border-radius: var(--raio);
+  }
+  .botao-menu span {
+    display: block; height: 2px; width: 100%;
+    background: var(--texto);
+    border-radius: 2px;
+  }
+  .botao-menu:hover { background: var(--superficie-2); }
+
+  .abas.gaveta {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    z-index: 60;
+    order: 0;
+    width: min(290px, 82vw);
+    margin: 0;
+    padding: calc(12px + env(safe-area-inset-top)) 12px 12px;
+    display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+    overflow-y: auto;
+    background: var(--superficie);
+    box-shadow: var(--sombra-alta);
+    transform: translateX(-105%);
+    transition: transform .22s ease;
+    visibility: hidden;
+  }
+  .menu-aberto .abas.gaveta { transform: none; visibility: visible; }
+
+  .abas.gaveta .gaveta-topo {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 4px 14px 12px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--borda);
+    font-size: 15px; font-weight: 800; letter-spacing: -.3px; text-transform: uppercase;
+  }
+  .abas.gaveta .gaveta-fechar {
+    width: 40px; height: 40px; padding: 0;
+    justify-content: center;
+    font-size: 26px; line-height: 1;
+    color: var(--texto-fraco);
+  }
+  .abas.gaveta button[data-aba] {
+    justify-content: space-between;
+    width: 100%;
+    min-height: 48px;
+    padding: 0 12px;
+    font-size: 16px;
+    text-align: left;
+  }
+  .abas.gaveta button[data-aba].ativa { background: var(--superficie-2); }
+
+  .gaveta-fundo {
+    display: block;
+    position: fixed; inset: 0;
+    z-index: 55;
+    background: rgba(0, 0, 0, .38);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .22s ease;
+  }
+  .menu-aberto .gaveta-fundo { opacity: 1; pointer-events: auto; }
+  .menu-aberto { overflow: hidden; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .abas.gaveta, .gaveta-fundo { transition: none; }
+}

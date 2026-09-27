@@ -98,3 +98,41 @@ export function comecarFila({ itens, mes, demo, quem, processar }) {
 
   return estadoDaFila();
 }
+
+// ------------------------------------------- vez de cada relatorio com a IA
+//
+// Todo envio dispara a conferencia sozinho. Com 160 pessoas enviando na mesma
+// manha seriam 160 chamadas pesadas (cada uma com uns 20 comprovantes) batendo
+// na API ao mesmo tempo: a API recusa por limite de uso e as conferencias
+// falham em bloco. Aqui cada uma espera a sua vez, em ordem de chegada. Vale
+// para todos os caminhos - envio, fila do admin e o botao de conferir um.
+
+const IA_AO_MESMO_TEMPO = Math.max(1, Number(process.env.IA_AO_MESMO_TEMPO) || 2);
+let rodandoIa = 0;
+const esperandoIa = [];
+
+/**
+ * Roda `fn` quando houver vaga. `primeiro` fura a fila (clique do admin).
+ * Quantos estao esperando: `naFilaDaIa()`.
+ */
+export async function naVezDaIa(fn, { primeiro = false } = {}) {
+  // A vaga passa de mao em mao: quem sai entrega direto para o proximo da
+  // fila, sem soltar o contador - senao quem chegasse naquele instante furava
+  // a fila e rodariam tres.
+  if (rodandoIa >= IA_AO_MESMO_TEMPO) {
+    await new Promise((vaga) => (primeiro ? esperandoIa.unshift(vaga) : esperandoIa.push(vaga)));
+  } else {
+    rodandoIa++;
+  }
+  try {
+    return await fn();
+  } finally {
+    const proximo = esperandoIa.shift();
+    if (proximo) proximo();
+    else rodandoIa--;
+  }
+}
+
+export function naFilaDaIa() {
+  return { rodando: rodandoIa, esperando: esperandoIa.length };
+}

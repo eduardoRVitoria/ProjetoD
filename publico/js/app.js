@@ -2,7 +2,7 @@
 
 import {
   api, subirArquivo, mostrarRecado, escapar, brl, numeroBr,
-  dataBr, dataHoraBr, tamanhoBr, mesAtual, sair, ROTULO_ANEXO, marcarAmbiente, anexoDoAchado,
+  dataBr, dataHoraBr, tamanhoBr, mesAtual, hojeLocal, sair, ROTULO_ANEXO, marcarAmbiente, anexoDoAchado,
 } from '/js/comum.js';
 
 const $ = (id) => document.getElementById(id);
@@ -54,6 +54,8 @@ const TRAVAM_O_ENVIO = new Set([
   'sem_linhas',
   'leitura_incerta',
   'pedagio_sem_comprovante',
+  'hotel_sem_comprovante',
+  'outros_sem_comprovante',
   'aumento_sem_justificativa',
 ]);
 
@@ -123,8 +125,11 @@ try {
     .split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
   marcarAmbiente(dados.ambiente);
   if (eu.trocar_senha) pedirTrocaDeSenha();
-} catch {
-  location.href = '/';
+} catch (e) {
+  // So volta para o login se a sessao caiu mesmo. Sinal ruim no 4G nao e
+  // motivo para mandar a pessoa digitar a senha de novo.
+  if (e.status === 401) location.href = '/';
+  else mostrarRecado('recado', e.message, 'erro');
 }
 
 $('mes').value = mes;
@@ -155,7 +160,7 @@ $('mes').addEventListener('change', async () => {
   await carregar();
 });
 
-for (const b of document.querySelectorAll('.abas button')) {
+for (const b of document.querySelectorAll('.abas button[data-aba]')) {
   b.addEventListener('click', () => trocarAba(b.dataset.aba));
 }
 
@@ -690,7 +695,7 @@ function pedirKm(arquivo) {
         <input type="number" id="km-foto" inputmode="numeric" step="1" min="1"
                placeholder="ex.: 271368" autocomplete="off">
         <label for="data-foto">Dia da foto</label>
-        <input type="date" id="data-foto" value="${new Date().toISOString().slice(0, 10)}">
+        <input type="date" id="data-foto" value="${hojeLocal()}">
         <div class="linha-botoes">
           <button id="km-ok">Anexar</button>
           <button class="secundario" id="km-cancela">Cancelar</button>
@@ -1067,7 +1072,23 @@ async function revalidar() {
   atualizarRodape();
 }
 
+let enviando = false;
+
 async function enviar() {
+  // Trava ANTES do primeiro await: no 4G a pessoa toca duas vezes achando que
+  // nao foi, e o segundo toque entrava enquanto o primeiro ainda salvava.
+  if (enviando) return;
+  enviando = true;
+  $('botao-enviar').disabled = true;
+  try {
+    await enviarDeVerdade();
+  } finally {
+    enviando = false;
+    $('botao-enviar').disabled = false;
+  }
+}
+
+async function enviarDeVerdade() {
   if (sujo) await salvar(false);
 
   const erros = (estado.previa.achados || []).filter((a) => a.gravidade === 'erro');
@@ -1111,7 +1132,6 @@ async function enviar() {
     return;
   }
 
-  $('botao-enviar').disabled = true;
   try {
     const r = await api('/api/relatorio/enviar', { metodo: 'POST', corpo: { mes } });
     mostrarRecado('recado', r.aviso, avisam.length ? 'atencao' : 'ok');
@@ -1128,8 +1148,6 @@ async function enviar() {
         .join('');
     }
     mostrarRecado('recado', e.message, 'erro');
-  } finally {
-    $('botao-enviar').disabled = false;
   }
 }
 
@@ -1322,15 +1340,36 @@ async function abrirMes(alvo) {
 // --------------------------------------------------------------------- abas
 
 function trocarAba(nome) {
-  for (const b of document.querySelectorAll('.abas button')) {
+  for (const b of document.querySelectorAll('.abas button[data-aba]')) {
     b.classList.toggle('ativa', b.dataset.aba === nome);
   }
   for (const s of document.querySelectorAll('main > section')) {
     s.classList.toggle('esconde', s.id !== `aba-${nome}`);
   }
   $('rodape').classList.toggle('esconde', nome === 'historico');
+  fecharMenu();
   window.scrollTo({ top: 0 });
 }
+
+// Gaveta do celular. No computador o botao nem aparece e as abas ficam no topo.
+function abrirMenu() {
+  document.body.classList.add('menu-aberto');
+  $('botao-menu').setAttribute('aria-expanded', 'true');
+  $('menu-abas').querySelector('button[data-aba].ativa')?.focus();
+}
+
+function fecharMenu() {
+  if (!document.body.classList.contains('menu-aberto')) return;
+  document.body.classList.remove('menu-aberto');
+  $('botao-menu').setAttribute('aria-expanded', 'false');
+}
+
+$('botao-menu').addEventListener('click', abrirMenu);
+$('fechar-menu').addEventListener('click', fecharMenu);
+$('fundo-menu').addEventListener('click', fecharMenu);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') fecharMenu();
+});
 
 // ------------------------------------------------------------ troca de senha
 

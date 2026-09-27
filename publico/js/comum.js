@@ -1,12 +1,28 @@
 // Funcoes usadas pelas tres telas.
 
+// fetch que fala portugues quando a rede cai. Sem isto o celular mostrava
+// "Failed to fetch" (Chrome) ou "Load failed" (iPhone).
+async function buscar(rota, opcoes) {
+  try {
+    return await fetch(rota, opcoes);
+  } catch {
+    throw new Error('Sem conexão com o portal. Confira o sinal da internet e tente de novo.');
+  }
+}
+
+/** Data de hoje (AAAA-MM-DD) no fuso do aparelho - nao em UTC. */
+export function hojeLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export async function api(rota, { metodo = 'GET', corpo = null } = {}) {
   const opcoes = { method: metodo, headers: {}, credentials: 'same-origin' };
   if (corpo != null) {
     opcoes.headers['Content-Type'] = 'application/json';
     opcoes.body = JSON.stringify(corpo);
   }
-  const resposta = await fetch(rota, opcoes);
+  const resposta = await buscar(rota, opcoes);
   const texto = await resposta.text();
   let dados = {};
   try {
@@ -17,6 +33,7 @@ export async function api(rota, { metodo = 'GET', corpo = null } = {}) {
   if (!resposta.ok) {
     const e = new Error(dados.erro || `Erro ${resposta.status}`);
     e.dados = dados;
+    e.status = resposta.status;
     throw e;
   }
   return dados;
@@ -28,7 +45,7 @@ export async function subirArquivo(arquivo, { mes, tipo, km, data }) {
   )}&nome=${encodeURIComponent(arquivo.name)}`;
   if (km != null) rota += `&km=${encodeURIComponent(km)}`;
   if (data) rota += `&data=${encodeURIComponent(data)}`;
-  const resposta = await fetch(rota, {
+  const resposta = await buscar(rota, {
     method: 'POST',
     headers: { 'Content-Type': arquivo.type || 'application/octet-stream' },
     body: arquivo,

@@ -23,6 +23,9 @@ export const db = new DatabaseSync(path.join(PASTA_DADOS, 'portal-rdv.db'));
 
 db.exec('PRAGMA journal_mode = WAL');
 db.exec('PRAGMA foreign_keys = ON');
+// Num redeploy o container velho ainda fecha o banco enquanto o novo abre. Sem
+// isto, uma escrita que cruza com a dele falha na hora com SQLITE_BUSY.
+db.exec('PRAGMA busy_timeout = 5000');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS usuarios (

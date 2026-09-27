@@ -33,7 +33,7 @@ import { extrairDoRdv, motivoDeNaoConseguirLer } from './extrair.js';
 import * as log from './log.js';
 import { verificarAssinatura, achadosDaAssinatura } from './assinatura.js';
 import { galeriaDe, enviarPacote } from './galeria.js';
-import { comecarFila, estadoDaFila, pedirParada } from './fila.js';
+import { comecarFila, estadoDaFila, pedirParada, naVezDaIa } from './fila.js';
 import { nomeDoFeriado, fimDeSemana, diaDaSemana } from './feriados.js';
 import { REGRAS, checar, registrar, limpar, recadoDeEspera } from './limite.js';
 import {
@@ -870,6 +870,10 @@ async function enviarRelatorio(req, res, usuario) {
         });
       })
       .catch((e) => {
+        if (e.naoRodou) {
+          log.info('ia', 'conferencia automatica nao rodou', { rel: rel.id, motivo: e.message });
+          return;
+        }
         // Falhar aqui nao pode desfazer o envio: o relatorio ja esta com o
         // administrador, que confere na mao pelo botao de sempre.
         log.falha('ia', 'conferencia automatica falhou - o relatorio segue para conferencia manual', e, {
@@ -1260,7 +1264,46 @@ export function anexoDoAchado(nomeDito, anexos, relId) {
   return { anexo_id: null, anexo_nome: nome.slice(0, 120) };
 }
 
-async function conferirRelatorio(rel, { usarIa = true, demo = false, decididoPor = null } = {}) {
+// Relatorios com uma conferencia em andamento (ou esperando a vez da IA).
+//
+// Sem isto, o envio disparava a conferencia automatica e, minutos depois, o
+// "Conferir os pendentes" pegava o mesmo relatorio ainda em CONFERINDO e
+// rodava de novo. Se a mais lenta falhasse depois da outra ter fechado o
+// veredito, o catch devolvia o status antigo e o veredito sumia.
+const conferindoAgora = new Set();
+
+function conferenciaNaoRoda(motivo) {
+  const e = new Error(motivo);
+  e.naoRodou = true;
+  return e;
+}
+
+async function conferirRelatorio(rel, opcoes = {}) {
+  const { usarIa = true, demo = false, decididoPor = null } = opcoes;
+  if (conferindoAgora.has(rel.id)) {
+    throw conferenciaNaoRoda('Esse relatorio ja esta sendo conferido. Aguarde o resultado.');
+  }
+  conferindoAgora.add(rel.id);
+  try {
+    if (demo || !usarIa || !iaDisponivel()) return await conferirRelatorioAgora(rel, opcoes);
+
+    // Quem clicou no painel passa na frente dos envios automaticos: ele esta
+    // olhando para a tela esperando.
+    return await naVezDaIa(async () => {
+      // A espera pode levar minutos. Le de novo: se alguem decidiu na mao ou
+      // o relatorio mudou nesse meio tempo, a conferencia nao roda por cima.
+      const atual = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id);
+      if (!atual || atual.status !== rel.status) {
+        throw conferenciaNaoRoda('O relatorio mudou enquanto esperava a vez da conferencia.');
+      }
+      return conferirRelatorioAgora(atual, opcoes);
+    }, { primeiro: decididoPor != null });
+  } finally {
+    conferindoAgora.delete(rel.id);
+  }
+}
+
+async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decididoPor = null } = {}) {
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(rel.usuario_id);
   const linhas = linhasDo(rel.id);
   const anexos = db.prepare('SELECT * FROM anexos WHERE relatorio_id = ?').all(rel.id);
@@ -1364,6 +1407,16 @@ async function conferirRelatorio(rel, { usarIa = true, demo = false, decididoPor
   // saia APROVADO, e so reprovava se alguem clicasse "Conferir de novo".
   //
   // Qualquer centavo conta.
+  //
+  // Numa RECONFERENCIA o `porRegra` usou o comprovado da rodada anterior. Se a
+  // IA acabou de ler um valor, e ele que vale: o achado velho sai. Senao, quem
+  // anexava o extrato certo e pedia "Conferir de novo" continuava reprovado
+  // pelo numero do extrato ilegivel ate uma segunda reconferencia.
+  if (parecer && parecer.pedagio_comprovado != null) {
+    for (let i = achados.length - 1; i >= 0; i--) {
+      if (achados[i].codigo === 'pedagio_diferenca') achados.splice(i, 1);
+    }
+  }
   if (parecer && !achados.some((a) => a.codigo === 'pedagio_diferenca')) {
     const d = achadoDeDiferenca(porRegra.totalDeclarado, parecer.pedagio_comprovado ?? null);
     if (d) achados.push(d);
@@ -1533,7 +1586,13 @@ async function conferirPendentes(req, res, admin) {
       const rel = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(item.id);
       // Alguem pode ter conferido na mao enquanto a fila andava.
       if (!rel || !['ENVIADO', 'CONFERINDO'].includes(rel.status)) return;
-      await conferirRelatorio(rel, { usarIa: true, demo, decididoPor: admin.id });
+      try {
+        await conferirRelatorio(rel, { usarIa: true, demo, decididoPor: admin.id });
+      } catch (e) {
+        // Ja estava sendo conferido (o envio dispara sozinho) ou mudou na
+        // espera: nao e falha, alguem ja cuidou dele.
+        if (!e.naoRodou) throw e;
+      }
     },
   });
 
@@ -1555,7 +1614,7 @@ async function conferirUm(req, res, admin) {
     const r = await conferirRelatorio(rel, { usarIa: usar_ia, demo, decididoPor: admin.id });
     return responderJson(res, { ok: true, ...r, rotulo_status: ROTULO_STATUS[r.status] });
   } catch (e) {
-    if (e.semLinhas) return erro(res, e.message, 409);
+    if (e.semLinhas || e.naoRodou) return erro(res, e.message, 409);
     log.falha('ia', 'conferencia falhou', e, { rel: rel.id, por: admin?.login });
     return erro(res, `Falha na conferencia com IA: ${e.message}`, 502);
   }

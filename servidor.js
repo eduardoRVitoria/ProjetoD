@@ -293,6 +293,16 @@ soltarConferenciasInterrompidas();
 const senhaInicial = garantirAdmin();
 agendarBackupDiario();
 
+// Conexao ociosa fica aberta 65s, nao os 5s padrao do Node.
+//
+// No teste de carga (160 pessoas x 20 arquivos) 101 de 3.200 envios morreram
+// com ECONNRESET sem nem chegar no codigo: com o servidor ocupado, o cliente
+// reaproveitava uma conexao que o Node estava fechando naquele instante. Atras
+// do proxy da Railway e o mesmo - o proxy segura a conexao mais que 5s. O
+// headersTimeout tem que ser maior que o keepAliveTimeout, senao a corrida volta.
+servidor.keepAliveTimeout = 65_000;
+servidor.headersTimeout = 66_000;
+
 servidor.listen(PORTA, '0.0.0.0', () => {
   console.log('');
   console.log('  Portal RDV - DISO Comercio de Alimentos');
