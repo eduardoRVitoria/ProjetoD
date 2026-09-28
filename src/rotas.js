@@ -2229,7 +2229,13 @@ async function salvarConfig(req, res) {
     gravarConfig('chave_api', corpo.chave_api.trim());
   }
   if (corpo.limpar_chave) gravarConfig('chave_api', '');
-  if (corpo.modelo_ia) gravarConfig('modelo_ia', String(corpo.modelo_ia).trim());
+  if (corpo.modelo_ia) {
+    const modelo = String(corpo.modelo_ia).trim();
+    // Nome errado aqui derruba toda leitura e conferencia com "model not found".
+    if (!/^claude-[a-z0-9.-]+$/.test(modelo)) return erro(res, 'Nome de modelo invalido.');
+    gravarConfig('modelo_ia', modelo);
+    log.info('config', 'modelo da IA trocado', { modelo });
+  }
   pegarConfig(res);
 }
 

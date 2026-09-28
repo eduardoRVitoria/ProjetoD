@@ -161,6 +161,7 @@ ligar('fu-limpar', 'click', () => {
 });
 $('botao-salvar-km').addEventListener('click', salvarKm);
 $('botao-salvar-chave').addEventListener('click', salvarChave);
+$('c-modelo').addEventListener('change', salvarModelo);
 $('botao-limpar-chave').addEventListener('click', limparChave);
 
 for (const b of document.querySelectorAll('.abas button')) {
@@ -1565,6 +1566,13 @@ async function carregarConfig() {
   try {
     const c = await api('/api/admin/config');
     $('c-km').value = c.valor_km;
+    // Modelo gravado que nao esta na lista (escolhido a mao no banco) aparece
+    // como opcao extra, para a tela nao mostrar um modelo que nao e o usado.
+    const sel = $('c-modelo');
+    if (![...sel.options].some((o) => o.value === c.modelo_ia)) {
+      sel.add(new Option(`${c.modelo_ia} (atual)`, c.modelo_ia));
+    }
+    sel.value = c.modelo_ia;
     $('estado-chave').innerHTML = c.chave_por_ambiente
       ? `<div class="aviso ok">Usando a chave da variável de ambiente ANTHROPIC_API_KEY.</div>`
       : c.chave_api_resumo
@@ -1680,6 +1688,17 @@ async function salvarChave() {
     carregarPainel();
   } catch (e) {
     mostrarRecado('recado-config', e.message, 'erro');
+  }
+}
+
+async function salvarModelo() {
+  const sel = $('c-modelo');
+  try {
+    await api('/api/admin/config', { metodo: 'POST', corpo: { modelo_ia: sel.value } });
+    mostrarRecado('recado-config', `Modelo trocado: ${sel.selectedOptions[0].textContent.split(' —')[0]}.`, 'ok');
+  } catch (e) {
+    mostrarRecado('recado-config', e.message, 'erro');
+    carregarConfig();
   }
 }
 
