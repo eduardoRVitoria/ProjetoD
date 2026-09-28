@@ -3,6 +3,7 @@
 import {
   api, mostrarRecado, escapar, brl, numeroBr, dataBr, dataHoraBr,
   tamanhoBr, mesAtual, sair, ROTULO_ANEXO, marcarAmbiente, anexoDoAchado, placaParaTela,
+  lembrarQuemEsta,
 } from '/js/comum.js';
 
 const $ = (id) => document.getElementById(id);
@@ -75,6 +76,7 @@ let souSuper = false;
 try {
   const dados = await api('/api/eu');
   $('meu-nome').textContent = dados.usuario.nome;
+  lembrarQuemEsta(dados.usuario.login);
   souSuper = dados.usuario.papel === 'super';
   marcarAmbiente(dados.ambiente);
   // Backup e restauracao sao do dono do sistema. As rotas ja recusam quem nao
@@ -268,6 +270,11 @@ document.addEventListener('visibilitychange', () => {
 // Uma conferencia pode estar rodando no servidor desde antes desta tela abrir
 // - de outro computador, ou de uma aba que ja foi fechada. O painel mostra o
 // andamento assim que abre.
+//
+// O relogio fica declarado AQUI, antes da chamada: declarado la embaixo, junto
+// da funcao, a chamada caia nele antes de existir (ReferenceError) e o painel
+// aberto no meio de uma fila nao mostrava o andamento.
+let relogioDaFila = null;
 acompanharFila();
 
 carregarPainel().catch((e) => {
@@ -550,7 +557,6 @@ async function conferirPendentes(demo = false) {
 // Enquanto a fila roda, o painel pergunta o andamento de 3 em 3 segundos.
 // Quem abrir o painel no meio - inclusive em outro computador - cai no mesmo
 // estado: ele mora no servidor, nao nesta tela.
-let relogioDaFila = null;
 
 async function acompanharFila() {
   clearTimeout(relogioDaFila);

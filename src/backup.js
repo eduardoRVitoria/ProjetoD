@@ -85,6 +85,13 @@ export function gerarBackupEmMemoria() {
   });
 }
 
+// Depois que a restauracao fecha o banco, o processo precisa reiniciar para
+// abrir o arquivo novo - quem chamou olha isto e encerra.
+let bancoFechado = false;
+export function bancoFechadoPelaRestauracao() {
+  return bancoFechado;
+}
+
 /**
  * Restaura a partir de um .zip gerado por enviarBackup.
  * Substitui o banco e os anexos. Devolve um resumo do que entrou.
@@ -102,10 +109,27 @@ export async function restaurarBackup(bufferZip) {
     );
   }
 
-  const temBanco = diretorio.files.some((f) => f.path === NOME_BANCO);
-  if (!temBanco) {
+  const entradaDoBanco = diretorio.files.find((f) => f.path === NOME_BANCO);
+  if (!entradaDoBanco) {
     throw new Error(`O arquivo enviado nao parece um backup do portal: falta o ${NOME_BANCO}.`);
   }
+  // Confere ANTES de mexer em qualquer coisa: daqui para baixo o portal sai do
+  // ar para reiniciar, e nao pode ser por causa de um arquivo qualquer.
+  const bancoNovo = await entradaDoBanco.buffer();
+  if (bancoNovo.subarray(0, 16).toString('latin1') !== 'SQLite format 3\0') {
+    throw new Error(`O ${NOME_BANCO} dentro do zip nao e um banco valido. Nada foi restaurado.`);
+  }
+
+  // Fecha o banco que esta em uso ANTES de escrever o novo por cima.
+  //
+  // Antes o arquivo era sobrescrito com a conexao aberta. O -wal do banco
+  // antigo continuava vivo e, no proximo checkpoint (o encerrar do servidor
+  // faz um), as paginas VELHAS eram gravadas dentro do banco NOVO - a
+  // restauracao se corrompia sozinha. Com checkpoint + close, o -wal fica
+  // vazio e pode sair sem perder nada.
+  db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  db.close();
+  bancoFechado = true;
 
   // Guarda o estado atual antes de sobrescrever.
   const carimbo = new Date().toISOString().replace(/[:.]/g, '-');
@@ -170,15 +194,12 @@ export async function restaurarBackup(bufferZip) {
     );
   }
 
-  // O -wal e o -shm que sobraram sao do banco ANTIGO. Deixados ali, o SQLite
-  // tentaria aplicar um journal que nao pertence mais ao arquivo que acabou de
-  // chegar. A copia deles ja foi guardada na pasta antes-da-restauracao.
+  // O -wal e o -shm que sobraram sao do banco ANTIGO, ja vazios: o checkpoint
+  // la em cima passou tudo para o .db antes do close. Deixados ali, o SQLite
+  // tentaria aplicar um journal que nao pertence ao arquivo que acabou de
+  // chegar. (So aqui, com o banco fechado, apagar o -wal e seguro.)
   for (const sufixo of ['-wal', '-shm']) {
-    try {
-      fs.rmSync(path.join(PASTA_DADOS, NOME_BANCO + sufixo), { force: true });
-    } catch {
-      // em uso pelo processo - o reinicio pedido no aviso resolve
-    }
+    fs.rmSync(path.join(PASTA_DADOS, NOME_BANCO + sufixo), { force: true });
   }
 
   return { anexos, bytes, backupAnterior: path.basename(antigo) };

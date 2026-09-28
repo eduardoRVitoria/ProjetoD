@@ -2,7 +2,7 @@
 
 // fetch que fala portugues quando a rede cai. Sem isto o celular mostrava
 // "Failed to fetch" (Chrome) ou "Load failed" (iPhone).
-async function buscar(rota, opcoes) {
+async function buscarUmaVez(rota, opcoes) {
   try {
     return await fetch(rota, opcoes);
   } catch {
@@ -10,10 +10,125 @@ async function buscar(rota, opcoes) {
   }
 }
 
+// ------------------------------------------------ sessao que cai no meio
+//
+// A sessao cai quando vence, quando a senha e trocada em outro aparelho ou
+// quando o admin reseta a senha. Antes, o salvar falhava com "Sessao expirada"
+// e o que a pessoa digitou ficava preso na tela: nenhum salvamento funcionava
+// mais e sair da pagina perdia tudo.
+//
+// Agora a mesma tela pede a senha por cima e o pedido que falhou e refeito
+// sozinho. So entra em acao depois que a tela sabe quem esta logado - no
+// carregamento, sem sessao, o caminho continua sendo a pagina de login.
+
+let quemEsta = null;
+let reentrada = null;
+
+/** A tela avisa quem esta logado, para a reentrada conferir que e a mesma pessoa. */
+export function lembrarQuemEsta(login) {
+  quemEsta = login;
+}
+
+async function buscar(rota, opcoes) {
+  const resposta = await buscarUmaVez(rota, opcoes);
+  if (resposta.status !== 401 || !quemEsta || rota.startsWith('/api/entrar')) return resposta;
+  try {
+    await pedirReentrada();
+  } catch {
+    return resposta; // desistiu: segue o erro original
+  }
+  return buscarUmaVez(rota, opcoes);
+}
+
+// Varios pedidos podem cair juntos (autosave + upload): uma janela so.
+function pedirReentrada() {
+  if (!reentrada) {
+    reentrada = new Promise(abrirJanelaDeReentrada).finally(() => {
+      reentrada = null;
+    });
+  }
+  return reentrada;
+}
+
+function abrirJanelaDeReentrada(entrou, desistiu) {
+  const fundo = document.createElement('div');
+  fundo.className = 'fundo-modal';
+  fundo.innerHTML = `
+    <form class="modal" autocomplete="on">
+      <h2>Entre de novo para continuar</h2>
+      <p class="sub">Sua sessão expirou. O que você digitou continua aqui —
+        depois de entrar, o portal termina o que estava fazendo.</p>
+      <div id="recado-reentrada"></div>
+      <label for="reentrada-login">Login</label>
+      <input type="text" id="reentrada-login" autocomplete="username" autocapitalize="none"
+             value="${escapar(quemEsta)}" readonly>
+      <label for="reentrada-senha">Senha</label>
+      <input type="password" id="reentrada-senha" autocomplete="current-password">
+      <div class="linha-botoes">
+        <button type="submit" id="reentrada-ok">Entrar</button>
+        <button type="button" class="secundario" id="reentrada-cancela">Agora não</button>
+      </div>
+    </form>`;
+  document.body.appendChild(fundo);
+  const senha = fundo.querySelector('#reentrada-senha');
+  senha.focus();
+
+  fundo.querySelector('#reentrada-cancela').addEventListener('click', () => {
+    fundo.remove();
+    desistiu(new Error('cancelado'));
+  });
+
+  fundo.querySelector('form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const botao = fundo.querySelector('#reentrada-ok');
+    botao.disabled = true;
+    try {
+      const r = await buscarUmaVez('/api/entrar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ login: quemEsta, senha: senha.value }),
+        credentials: 'same-origin',
+      });
+      const dados = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(dados.erro || 'Não foi possível entrar.');
+      fundo.remove();
+      entrou();
+    } catch (e) {
+      mostrarRecado('recado-reentrada', e.message, 'erro');
+      senha.select();
+    } finally {
+      botao.disabled = false;
+    }
+  });
+}
+
 /** Data de hoje (AAAA-MM-DD) no fuso do aparelho - nao em UTC. */
 export function hojeLocal() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Numero escrito do jeito brasileiro: "45,90", "1.234,56", "R$ 45,90", "271.368".
+ *
+ * Com virgula, a virgula e o decimal e os pontos sao milhar. Sem virgula, ponto
+ * seguido de grupos de 3 digitos e milhar ("45.678" e 45678 km, nao 45); outro
+ * ponto e decimal ("45.9"). Texto que nao e numero devolve `padrao`.
+ */
+export function lerNumeroBr(v, padrao = 0) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : padrao;
+  let s = String(v ?? '').replace(/R\$|\s/gi, '');
+  if (!s) return padrao;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : padrao;
+}
+
+/** Valor para mostrar num campo de dinheiro: 45.9 -> "45,90", 0 -> "". */
+export function valorNoCampo(v) {
+  const n = Number(v);
+  return n ? n.toFixed(2).replace('.', ',') : '';
 }
 
 export async function api(rota, { metodo = 'GET', corpo = null } = {}) {

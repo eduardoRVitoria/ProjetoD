@@ -27,7 +27,7 @@ import {
 import { conferirComIa, iaDisponivel, textoDosIgnorados } from './ia.js';
 import { conferirEmDemo } from './ia-demo.js';
 import { gerarPlanilha, gerarHistorico } from './planilha.js';
-import { enviarBackup, restaurarBackup, resumoDosDados } from './backup.js';
+import { enviarBackup, restaurarBackup, resumoDosDados, bancoFechadoPelaRestauracao } from './backup.js';
 import { montarImpressao } from './impressao.js';
 import { extrairDoRdv, motivoDeNaoConseguirLer } from './extrair.js';
 import * as log from './log.js';
@@ -666,7 +666,8 @@ async function lerRdv(req, res, usuario) {
     const linhas = linhasDo(rel.id);
     const anexos = anexosDo(rel.id);
     const atualizado = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id);
-    const r = conferirRel(atualizado, linhas, anexos);
+    // Documento novo: hotel e outros vem DELE, nao do que estava gravado antes.
+    const r = conferirRel({ ...atualizado, hotel_declarado: null, outros_declarado: null }, linhas, anexos);
 
     // Hotel e outros ficam gravados, e nao so dentro de `extraido`: a
     // comparacao com o mes anterior le estas colunas no banco. Deixar o valor
@@ -1679,12 +1680,20 @@ async function subirBackup(req, res, quem) {
     responderJson(res, {
       ok: true,
       ...r,
-      aviso:
-        'Dados restaurados. Reinicie o servidor para o banco ser reaberto a partir do arquivo novo.',
+      aviso: 'Dados restaurados. O portal reinicia sozinho agora - espere uns 30 segundos e recarregue a pagina.',
     });
   } catch (e) {
     log.aviso('backup', 'restauracao recusada', { por: quem?.login, motivo: e.message });
     erro(res, e.message, 400);
+  } finally {
+    // O banco foi fechado para receber o arquivo novo: nada mais funciona ate
+    // reabrir. Sai com codigo 1 porque a Railway (ON_FAILURE) e o vigia.cmd so
+    // religam processo que caiu com erro. O segundo de folga deixa a resposta
+    // chegar no navegador.
+    if (bancoFechadoPelaRestauracao()) {
+      log.info('backup', 'reiniciando para abrir o banco restaurado');
+      setTimeout(() => process.exit(1), 1500);
+    }
   }
 }
 

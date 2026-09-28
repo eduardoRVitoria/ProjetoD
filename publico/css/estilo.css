@@ -691,7 +691,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 
 .fundo-modal {
   position: fixed; inset: 0; background: rgba(0, 0, 0, .45);
-  display: flex; align-items: flex-end; justify-content: center; z-index: 50;
+  display: flex; align-items: flex-end; justify-content: center; z-index: 70; /* acima da gaveta do celular */
 }
 .modal {
   background: var(--superficie); width: 100%; max-width: 760px;

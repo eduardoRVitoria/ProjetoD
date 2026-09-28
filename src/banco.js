@@ -158,6 +158,27 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     db.exec('ALTER TABLE anexos ADD COLUMN data_leitura TEXT');
   }
 
+  // Uma vez so: relatorio lido antes de existir a coluna de hotel/outros tem 0
+  // nela e o valor so dentro de `extraido`. A conferencia passou a confiar na
+  // coluna, entao o valor do documento e copiado para ela - que e o que a
+  // conferencia ja usava para esses relatorios.
+  const jaCopiou = db.prepare("SELECT 1 FROM config WHERE chave = 'migracao_hotel_coluna'").get();
+  if (!jaCopiou) {
+    db.exec(`
+      UPDATE relatorios
+         SET hotel_declarado = COALESCE(json_extract(extraido, '$.totais_declarados.hotel'), 0)
+       WHERE hotel_declarado = 0 AND json_valid(extraido)
+         AND json_type(extraido, '$.totais_declarados.hotel') IN ('integer', 'real')
+         AND COALESCE(json_extract(extraido, '$.totais_declarados.hotel'), 0) > 0;
+      UPDATE relatorios
+         SET outros_declarado = COALESCE(json_extract(extraido, '$.totais_declarados.outros'), 0)
+       WHERE outros_declarado = 0 AND json_valid(extraido)
+         AND json_type(extraido, '$.totais_declarados.outros') IN ('integer', 'real')
+         AND COALESCE(json_extract(extraido, '$.totais_declarados.outros'), 0) > 0;
+      INSERT INTO config (chave, valor) VALUES ('migracao_hotel_coluna', '1');
+    `);
+  }
+
   // Eduardo Ramos e Victor Sarmento sao os unicos que veem e fazem tudo.
   // Fica aqui, e nao num script solto, para valer sozinho a cada publicacao -
   // inclusive se alguem for recadastrado depois.

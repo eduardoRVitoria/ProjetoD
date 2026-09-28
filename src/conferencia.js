@@ -533,13 +533,19 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
   // mandar a nota do hotel e escrever "e mais R$ 80 de outros": sao duas
   // despesas diferentes, cada uma com o seu papel.
   //
-  // O valor vem do que a pessoa digitou no portal; quando ela nao digitou, vale
-  // o que a IA leu no quadro do documento. Mesma logica do pedagio acima.
+  // A coluna do banco e a verdade: a leitura do PDF grava nela o valor do
+  // documento, e cada salvamento grava o que esta na tela da pessoa. O quadro
+  // do PDF so vale quando a coluna nao veio (a leitura manda null de proposito
+  // para pegar o valor do documento novo).
+  //
+  // Era `coluna || pdf`: o 0 contava como "nao digitou". Quem apagava um hotel
+  // que o PDF trazia via os R$ 350 voltarem na conferencia - e ainda levava
+  // "hotel sem comprovante".
   const hotelDeclarado = Number(
-    (Number(rel.hotel_declarado) || Number(doPdf?.totais_declarados?.hotel) || 0).toFixed(2),
+    (declaradoOuNulo(rel.hotel_declarado) ?? (Number(doPdf?.totais_declarados?.hotel) || 0)).toFixed(2),
   );
   const outrosDeclarado = Number(
-    (Number(rel.outros_declarado) || Number(doPdf?.totais_declarados?.outros) || 0).toFixed(2),
+    (declaradoOuNulo(rel.outros_declarado) ?? (Number(doPdf?.totais_declarados?.outros) || 0)).toFixed(2),
   );
 
   if (hotelDeclarado > 0 && !anexos.some((a) => a.tipo === 'hotel')) {

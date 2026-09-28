@@ -2,7 +2,7 @@
 
 import {
   api, subirArquivo, mostrarRecado, escapar, brl, numeroBr,
-  dataBr, dataHoraBr, tamanhoBr, mesAtual, hojeLocal, sair, ROTULO_ANEXO, marcarAmbiente, anexoDoAchado,
+  dataBr, dataHoraBr, tamanhoBr, mesAtual, hojeLocal, lerNumeroBr, valorNoCampo, lembrarQuemEsta, sair, ROTULO_ANEXO, marcarAmbiente, anexoDoAchado,
 } from '/js/comum.js';
 
 const $ = (id) => document.getElementById(id);
@@ -120,6 +120,7 @@ let salvando = false;
 try {
   const dados = await api('/api/eu');
   eu = dados.usuario;
+  lembrarQuemEsta(eu.login);
   $('meu-nome').textContent = eu.nome;
   $('minhas-iniciais').textContent = String(eu.nome || '')
     .split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
@@ -221,8 +222,8 @@ async function carregar() {
     $('observacao').value = estado.relatorio.observacao || '';
     // Zero fica como campo vazio de proposito: "0,00" em toda tela passa a
     // impressao de que o mes tem despesa de hotel a preencher.
-    $('hotel').value = Number(estado.relatorio.hotel_declarado) || '';
-    $('outros').value = Number(estado.relatorio.outros_declarado) || '';
+    $('hotel').value = valorNoCampo(estado.relatorio.hotel_declarado);
+    $('outros').value = valorNoCampo(estado.relatorio.outros_declarado);
     $('outros-descricao').value = estado.relatorio.outros_descricao || '';
     desenharTudo();
     carregarHistorico();
@@ -451,12 +452,12 @@ function desenharDia(d, editavel) {
     <div class="campos">
       <div>
         <label>Km inicial</label>
-        <input type="number" inputmode="numeric" step="1" min="0" ${trava}
+        <input type="text" inputmode="numeric" autocomplete="off" ${trava}
                data-data="${d.data}" data-campo="km_inicial" value="${d.km_inicial || ''}">
       </div>
       <div>
         <label>Km final</label>
-        <input type="number" inputmode="numeric" step="1" min="0" ${trava}
+        <input type="text" inputmode="numeric" autocomplete="off" ${trava}
                data-data="${d.data}" data-campo="km_final" value="${d.km_final || ''}">
       </div>
       <div class="largo">
@@ -466,13 +467,13 @@ function desenharDia(d, editavel) {
       </div>
       <div>
         <label>Pedágio (R$)</label>
-        <input type="number" inputmode="decimal" step="0.01" min="0" ${trava}
-               data-data="${d.data}" data-campo="pedagio" value="${d.pedagio || ''}">
+        <input type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" ${trava}
+               data-data="${d.data}" data-campo="pedagio" value="${valorNoCampo(d.pedagio)}">
       </div>
       <div>
         <label>Estacionamento (R$)</label>
-        <input type="number" inputmode="decimal" step="0.01" min="0" ${trava}
-               data-data="${d.data}" data-campo="estacionamento" value="${d.estacionamento || ''}">
+        <input type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" ${trava}
+               data-data="${d.data}" data-campo="estacionamento" value="${valorNoCampo(d.estacionamento)}">
       </div>
       <div class="rodou" data-rodou="${d.data}">${rodou > 0 ? `${numeroBr(rodou)} km neste dia` : ''}</div>
     </div>
@@ -508,7 +509,9 @@ function atualizarLinhaLocal(data) {
     const nome = campo.dataset.campo;
     dia[nome] = ['itinerario', 'hora_pedagio', 'justificativa_hora'].includes(nome)
       ? campo.value
-      : Number(campo.value || 0);
+      // Texto de proposito, nao type=number: o campo numerico do Android
+      // recusava a virgula calado, e "45.678" de km virava 45.
+      : Math.max(0, lerNumeroBr(campo.value));
   }
   const rodou = Math.max(0, dia.km_final - dia.km_inicial);
   const alvo = $('grade').querySelector(`[data-rodou="${data}"]`);
@@ -692,7 +695,7 @@ function pedirKm(arquivo) {
         <p class="sub" style="font-size:13px">Toque na foto para ampliar.</p>
         <div id="recado-km"></div>
         <label for="km-foto">KM que aparece no painel</label>
-        <input type="number" id="km-foto" inputmode="numeric" step="1" min="1"
+        <input type="text" id="km-foto" inputmode="numeric"
                placeholder="ex.: 271368" autocomplete="off">
         <label for="data-foto">Dia da foto</label>
         <input type="date" id="data-foto" value="${hojeLocal()}">
@@ -735,7 +738,7 @@ function pedirKm(arquivo) {
     };
 
     const confirmar = () => {
-      const km = Number(campo.value);
+      const km = lerNumeroBr(campo.value, NaN);
       if (!Number.isFinite(km) || km <= 0) {
         return mostrarRecado('recado-km', 'Digite o número que aparece no painel.', 'erro');
       }
@@ -1039,8 +1042,8 @@ async function salvar(avisar) {
         mes,
         linhas: linhasParaEnviar(),
         observacao: $('observacao').value,
-        hotel: $('hotel').value,
-        outros: $('outros').value,
+        hotel: Math.max(0, lerNumeroBr($('hotel').value)),
+        outros: Math.max(0, lerNumeroBr($('outros').value)),
         outros_descricao: $('outros-descricao').value,
         justificativa: estado.relatorio.justificativa || '',
       },

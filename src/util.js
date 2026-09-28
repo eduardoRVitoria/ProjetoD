@@ -53,9 +53,25 @@ export async function lerJson(req) {
   }
 }
 
-export function numero(v, padrao = 0) {
-  const n = Number.parseFloat(String(v ?? '').replace(',', '.'));
+/**
+ * Numero escrito do jeito brasileiro: "45,90", "1.234,56", "R$ 45,90", "271.368".
+ *
+ * Com virgula, a virgula e o decimal e os pontos sao milhar. Sem virgula, ponto
+ * seguido de grupos de 3 digitos e milhar ("45.678" e 45678 km, nao 45); outro
+ * ponto e decimal ("45.9"). Texto que nao e numero devolve `padrao`.
+ */
+export function lerNumeroBr(v, padrao = 0) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : padrao;
+  let s = String(v ?? '').replace(/R\$|\s/gi, '');
+  if (!s) return padrao;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  const n = Number(s);
   return Number.isFinite(n) ? n : padrao;
+}
+
+export function numero(v, padrao = 0) {
+  return lerNumeroBr(v, padrao);
 }
 
 export function mesValido(mes) {
