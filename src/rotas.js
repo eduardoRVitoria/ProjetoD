@@ -203,6 +203,8 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/usuario-placa' && metodo === 'POST') return mudarPlaca(req, res, usuario);
     if (rota === '/api/admin/usuario-ativo' && metodo === 'POST') return ativarUsuario(req, res, usuario);
     if (rota === '/api/admin/usuario-empresa' && metodo === 'POST') return mudarEmpresa(req, res, usuario);
+    if (rota === '/api/admin/valores-pagos' && metodo === 'GET') return listarValoresPagos(res, url, usuario);
+    if (rota === '/api/admin/valor-pago' && metodo === 'POST') return gravarValorPago(req, res, usuario);
     if (rota === '/api/admin/usuario' && metodo === 'DELETE') return excluirUsuario(req, res, usuario);
     if (rota === '/api/admin/historico' && metodo === 'GET') return exportarHistorico(res, url, usuario);
     if (rota === '/api/admin/config' && metodo === 'GET') return pegarConfig(res);
@@ -335,6 +337,17 @@ function acharOuCriar(usuarioId, mes) {
 // O ultimo mes ja enviado antes deste, para comparar o gasto.
 // Rascunho nao conta: so vale mes que a pessoa realmente prestou contas.
 function mesAnteriorDe(usuarioId, mes) {
+  // O valor que o admin digitou para um mes de antes do portal (agosto) vale
+  // como mes anterior - a nao ser que exista um relatorio de verdade mais novo
+  // ou do mesmo mes, que ganha dele.
+  const pago = db
+    .prepare(
+      `SELECT mes_ref, valor FROM valores_pagos
+        WHERE usuario_id = ? AND mes_ref < ?
+        ORDER BY mes_ref DESC LIMIT 1`,
+    )
+    .get(usuarioId, mes);
+
   const r = db
     .prepare(
       `SELECT mes_ref, valor_km, pedagio_declarado, estac_declarado,
@@ -344,6 +357,15 @@ function mesAnteriorDe(usuarioId, mes) {
         ORDER BY mes_ref DESC LIMIT 1`,
     )
     .get(usuarioId, mes);
+
+  if (pago && (!r || pago.mes_ref > r.mes_ref)) {
+    return {
+      mes: pago.mes_ref,
+      mesExtenso: mesPorExtenso(pago.mes_ref),
+      total: Number(Number(pago.valor).toFixed(2)),
+      informado: true,
+    };
+  }
 
   if (!r) return null;
 
@@ -1935,6 +1957,65 @@ async function novoUsuario(req, res, quem) {
     if (String(e.message).includes('UNIQUE')) return erro(res, 'Ja existe um usuario com esse login.');
     throw e;
   }
+}
+
+// ------------------------------------------------ valor pago antes do portal
+//
+// Agosto/2026 nao passou pelo portal, entao o sistema nao sabe quanto cada
+// pessoa recebeu - e sem isso a regra "aumento acima de R$ 100 precisa de
+// justificativa" nao tem base em setembro. O admin digita o valor pago de cada
+// colaborador, e ele entra como o mes anterior.
+
+function listarValoresPagos(res, url, quem) {
+  const mes = url.searchParams.get('mes') || '2026-08';
+  if (!mesValido(mes)) return erro(res, 'Mes invalido.');
+  const { sql: filtro, args } = filtroSql(quem);
+
+  const lista = db
+    .prepare(
+      `SELECT u.id, u.nome, u.login, u.empresa, u.funcao, v.valor, v.lancado_em
+         FROM usuarios u
+         LEFT JOIN valores_pagos v ON v.usuario_id = u.id AND v.mes_ref = ?
+        WHERE u.ativo = 1 AND u.papel = 'colaborador' ${filtro}
+        ORDER BY u.empresa, u.nome`,
+    )
+    .all(mes, ...args)
+    .map((u) => ({ ...u, cracha: cracha(u.empresa, u.funcao) }));
+
+  responderJson(res, { mes, mes_extenso: mesPorExtenso(mes), colaboradores: lista });
+}
+
+async function gravarValorPago(req, res, quem) {
+  const { usuario_id, mes, valor } = await lerJson(req);
+  if (!mesValido(mes)) return erro(res, 'Mes invalido.');
+  // So mes que ja passou: o do mes corrente vem do proprio RDV.
+  if (mes >= mesAtual()) return erro(res, 'So da para informar o valor de um mes que ja terminou.');
+
+  const alvo = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(Number(usuario_id));
+  if (!alvo) return erro(res, 'Colaborador nao encontrado.', 404);
+  if (!podeVerUsuario(quem, alvo)) return erro(res, 'Esse colaborador e de outra empresa.', 403);
+
+  // Campo vazio apaga o valor informado.
+  if (valor == null || String(valor).trim() === '') {
+    db.prepare('DELETE FROM valores_pagos WHERE usuario_id = ? AND mes_ref = ?').run(alvo.id, mes);
+    log.info('valor-pago', 'valor apagado', { de: alvo.login, mes, por: quem.login });
+    return responderJson(res, { ok: true, valor: null });
+  }
+
+  const v = numero(valor, NaN);
+  if (!Number.isFinite(v) || v < 0) return erro(res, 'Valor invalido.');
+  if (v > 1_000_000) return erro(res, 'Esse valor parece alto demais. Confira.');
+
+  db.prepare(
+    `INSERT INTO valores_pagos (usuario_id, mes_ref, valor, lancado_por, lancado_em)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (usuario_id, mes_ref)
+     DO UPDATE SET valor = excluded.valor, lancado_por = excluded.lancado_por, lancado_em = excluded.lancado_em`,
+  ).run(alvo.id, mes, Number(v.toFixed(2)), quem.id, agora());
+
+  // Quem decide dinheiro precisa de rastro: quem informou quanto, e quando.
+  log.info('valor-pago', 'valor informado', { de: alvo.login, mes, valor: v.toFixed(2), por: quem.login });
+  responderJson(res, { ok: true, valor: Number(v.toFixed(2)) });
 }
 
 async function mudarEmpresa(req, res, quem) {

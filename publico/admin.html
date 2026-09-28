@@ -34,6 +34,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 5.2a3.2 3.2 0 0 1 0 5.6M18 19a5.4 5.4 0 0 0-2.2-4.3"/></svg>
       Colaboradores
     </button>
+    <button data-aba="valores">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>
+      Valores pagos
+    </button>
     <button data-aba="config">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
       Configurações
@@ -229,6 +233,43 @@
     </div>
 
     <div id="lista-usuarios"></div>
+  </section>
+
+  <!-- ---------------------------------------------------------- valores -->
+  <section id="aba-valores" class="esconde">
+    <div class="cartao">
+      <h2>Valor pago no mês anterior ao portal</h2>
+      <p class="sub">
+        O portal começou em setembro, então ele não sabe quanto cada pessoa recebeu em
+        <strong>agosto</strong>. Digite aqui o valor total pago a cada colaborador naquele mês
+        (km + pedágio + estacionamento + hotel + outros). Ele vira a base da regra
+        "aumento acima de R$ 100 precisa de justificativa" no RDV de setembro.
+        Salva sozinho ao sair do campo. Campo vazio = sem valor informado.
+      </p>
+      <div id="recado-valores"></div>
+      <div class="filtros">
+        <input type="month" id="vp-mes" value="2026-08" aria-label="Mês do valor pago" style="max-width:180px">
+        <input type="search" id="vp-busca" placeholder="Buscar por nome ou login...">
+        <select id="vp-empresa">
+          <option value="">Todas as empresas</option>
+          <option value="DISO">DISO</option>
+          <option value="DSO">DSO</option>
+          <option value="PROMOTORES">PROMOTORES</option>
+          <option value="ALPHA">ALPHA</option>
+        </select>
+        <label style="display:flex; align-items:center; gap:6px; font-weight:500; margin:0">
+          <input type="checkbox" id="vp-so-vazios" style="width:auto; margin:0">
+          Só quem falta
+        </label>
+        <span class="contagem" id="vp-contagem"></span>
+      </div>
+      <div class="rolagem">
+        <table>
+          <thead><tr><th>Colaborador</th><th>Crachá</th><th class="num">Valor pago (R$)</th><th></th></tr></thead>
+          <tbody id="vp-lista"></tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
   <!-- ----------------------------------------------------------- config -->

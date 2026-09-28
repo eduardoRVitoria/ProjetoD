@@ -3,7 +3,7 @@
 import {
   api, mostrarRecado, escapar, brl, numeroBr, dataBr, dataHoraBr,
   tamanhoBr, mesAtual, sair, ROTULO_ANEXO, marcarAmbiente, anexoDoAchado, placaParaTela,
-  lembrarQuemEsta,
+  lembrarQuemEsta, lerNumeroBr, valorNoCampo,
 } from '/js/comum.js';
 
 const $ = (id) => document.getElementById(id);
@@ -69,6 +69,9 @@ const EMPRESAS = ['DISO', 'DSO', 'PROMOTORES', 'ALPHA'];
 let mes = localStorage.getItem('rdv-mes') || mesAtual();
 let painel = null;
 let usuarios = [];
+// Aba Valores pagos. Fica aqui em cima: o #valores na URL abre a aba durante a
+// inicializacao, antes de o modulo chegar la embaixo.
+let valoresPagos = [];
 
 // ------------------------------------------------------------------- inicio
 
@@ -175,6 +178,7 @@ for (const b of document.querySelectorAll('.abas button')) {
     }
     if (b.dataset.aba === 'usuarios') carregarUsuarios();
     if (b.dataset.aba === 'config') carregarConfig();
+    if (b.dataset.aba === 'valores') carregarValoresPagos();
     if (b.dataset.aba === 'tudo') carregarTudo();
     window.scrollTo({ top: 0 });
   });
@@ -940,6 +944,94 @@ function dataCurta(iso) {
 }
 
 // ---------------------------------------------------------------- usuarios
+
+// ------------------------------------------------------- valores pagos
+//
+// Quanto cada colaborador recebeu num mes de antes do portal (agosto). Serve
+// de mes anterior para a regra do aumento. Uma linha por pessoa, salvando ao
+// sair do campo - com 160 pessoas, um botao "salvar" por linha seria clique
+// demais, e um "salvar tudo" perderia tudo se a sessao caisse no meio.
+
+
+async function carregarValoresPagos() {
+  try {
+    const d = await api(`/api/admin/valores-pagos?mes=${encodeURIComponent($('vp-mes').value)}`);
+    valoresPagos = d.colaboradores;
+    desenharValoresPagos();
+  } catch (e) {
+    mostrarRecado('recado-valores', e.message, 'erro');
+  }
+}
+
+function desenharValoresPagos() {
+  const busca = String($('vp-busca').value || '').trim().toLowerCase();
+  const empresa = $('vp-empresa').value;
+  const soVazios = $('vp-so-vazios').checked;
+
+  const lista = valoresPagos.filter((u) =>
+    (!busca || u.nome.toLowerCase().includes(busca) || u.login.includes(busca))
+    && (!empresa || u.empresa === empresa)
+    && (!soVazios || u.valor == null));
+
+  const informados = valoresPagos.filter((u) => u.valor != null).length;
+  $('vp-contagem').textContent = `${informados} de ${valoresPagos.length} informados`;
+
+  $('vp-lista').innerHTML = lista.length
+    ? lista.map((u) => `
+      <tr>
+        <td>${escapar(u.nome)}<br><span class="sub" style="font-size:12.5px">${escapar(u.login)}</span></td>
+        <td><span class="emp ${escapar(u.empresa)}">${escapar(u.cracha)}</span></td>
+        <td class="num">
+          <input type="text" inputmode="decimal" autocomplete="off" placeholder="0,00"
+                 data-valor-pago="${u.id}" value="${u.valor != null ? valorNoCampo(u.valor) || '0,00' : ''}"
+                 style="max-width:140px; margin:0; text-align:right">
+        </td>
+        <td class="sub" data-vp-estado="${u.id}" style="white-space:nowrap">${u.valor != null ? 'salvo' : ''}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="4" class="sub">Ninguém nesta lista.</td></tr>';
+
+  for (const campo of $('vp-lista').querySelectorAll('[data-valor-pago]')) {
+    campo.addEventListener('change', () => salvarValorPago(campo));
+    campo.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') campo.blur();
+    });
+  }
+}
+
+async function salvarValorPago(campo) {
+  const id = Number(campo.dataset.valorPago);
+  const estado = $('vp-lista').querySelector(`[data-vp-estado="${id}"]`);
+  const bruto = campo.value.trim();
+  const valor = bruto === '' ? null : lerNumeroBr(bruto, NaN);
+  if (valor !== null && (!Number.isFinite(valor) || valor < 0)) {
+    estado.textContent = 'valor inválido';
+    estado.style.color = 'var(--vermelho)';
+    return;
+  }
+  estado.textContent = 'salvando...';
+  estado.style.color = '';
+  try {
+    const r = await api('/api/admin/valor-pago', {
+      metodo: 'POST',
+      corpo: { usuario_id: id, mes: $('vp-mes').value, valor },
+    });
+    const u = valoresPagos.find((x) => x.id === id);
+    if (u) u.valor = r.valor;
+    campo.value = r.valor != null ? valorNoCampo(r.valor) || '0,00' : '';
+    estado.textContent = r.valor != null ? 'salvo' : 'apagado';
+    estado.style.color = 'var(--verde)';
+    const informados = valoresPagos.filter((x) => x.valor != null).length;
+    $('vp-contagem').textContent = `${informados} de ${valoresPagos.length} informados`;
+  } catch (e) {
+    estado.textContent = e.message;
+    estado.style.color = 'var(--vermelho)';
+  }
+}
+
+$('vp-mes').addEventListener('change', carregarValoresPagos);
+$('vp-busca').addEventListener('input', desenharValoresPagos);
+$('vp-empresa').addEventListener('change', desenharValoresPagos);
+$('vp-so-vazios').addEventListener('change', desenharValoresPagos);
 
 async function carregarUsuarios() {
   try {

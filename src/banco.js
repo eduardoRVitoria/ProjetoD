@@ -99,6 +99,19 @@ CREATE TABLE IF NOT EXISTS config (
   valor  TEXT NOT NULL
 );
 
+-- Quanto cada pessoa recebeu num mes que NAO passou pelo portal (agosto/2026,
+-- o mes antes da estreia). O admin digita, e o valor serve de base para a
+-- regra do aumento sobre o mes anterior - sem ele, setembro nao teria com o
+-- que comparar.
+CREATE TABLE IF NOT EXISTS valores_pagos (
+  usuario_id   INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  mes_ref      TEXT NOT NULL,
+  valor        REAL NOT NULL,
+  lancado_por  INTEGER,
+  lancado_em   TEXT NOT NULL,
+  PRIMARY KEY (usuario_id, mes_ref)
+);
+
 CREATE INDEX IF NOT EXISTS idx_linhas_rel  ON linhas(relatorio_id);
 CREATE INDEX IF NOT EXISTS idx_anexos_rel  ON anexos(relatorio_id);
 CREATE INDEX IF NOT EXISTS idx_rel_usuario ON relatorios(usuario_id);
