@@ -149,6 +149,11 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     db.exec('ALTER TABLE linhas ADD COLUMN hora_pedagio TEXT');
     db.exec('ALTER TABLE linhas ADD COLUMN justificativa_hora TEXT');
   }
+  if (!colLinhas.has('combustivel')) {
+    // Gerente e pago pelo combustivel, nao pelo km: cada dia traz quanto ele
+    // abasteceu (a coluna "R$ COMBUSTIVEL" do RDV dele).
+    db.exec('ALTER TABLE linhas ADD COLUMN combustivel REAL NOT NULL DEFAULT 0');
+  }
 
   const colAnexos = new Set(db.prepare('PRAGMA table_info(anexos)').all().map((c) => c.name));
   if (!colAnexos.has('km')) {
@@ -156,6 +161,12 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     // A foto sozinha nao da para conferir sem alguem ler o numero na mao.
     db.exec('ALTER TABLE anexos ADD COLUMN km REAL');
     db.exec('ALTER TABLE anexos ADD COLUMN data_leitura TEXT');
+  }
+  if (!colAnexos.has('valor')) {
+    // Valor da nota de abastecimento, digitado junto com a DANFE (como o KM na
+    // foto do odometro). E com ele que a soma do combustivel do gerente e
+    // conferida sem precisar da IA ler nota por nota.
+    db.exec('ALTER TABLE anexos ADD COLUMN valor REAL');
   }
 
   // Uma vez so: relatorio lido antes de existir a coluna de hotel/outros tem 0

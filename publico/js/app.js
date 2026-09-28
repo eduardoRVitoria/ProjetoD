@@ -115,12 +115,19 @@ let estado = null; // { relatorio, grade, anexos, previa }
 let sujo = false;
 let salvando = false;
 
+// Gerente e reembolsado pelo combustivel abastecido, nao pelo km.
+const ehGerente = () => eu?.funcao === 'Gerente';
+
 // ------------------------------------------------------------------- inicio
 
 try {
   const dados = await api('/api/eu');
   eu = dados.usuario;
   lembrarQuemEsta(eu.login);
+  $('texto-danfe').textContent = ehGerente()
+    ? 'Obrigatória: você é reembolsado pelo combustível. Ao anexar, digite o valor total da nota — '
+      + 'a soma das notas tem que bater com o combustível lançado nos dias.'
+    : 'Pode ser a DANFE, o cupom fiscal ou a foto da nota. Não reprova se faltar, mas ajuda a conferência.';
   $('meu-nome').textContent = eu.nome;
   $('minhas-iniciais').textContent = String(eu.nome || '')
     .split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
@@ -312,7 +319,7 @@ function desenharComparacao() {
 
   // Os nomes vem do esquema de extracao em src/extrair.js.
   par('Total de km', decl.total_km, p.totalKm, numeroBr);
-  par('Valor do km', decl.valor_total_km, p.valorKm, brl);
+  par(ehGerente() ? 'Combustível (KM R$)' : 'Valor do km', decl.valor_total_km, p.valorKm, brl);
   par('Pedágio + estacionamento', decl.pedagio_estacionamento, p.totalDeclarado, brl);
   par('Hotel', decl.hotel, p.hotelDeclarado, brl);
   par('Outras despesas', decl.outros, p.outrosDeclarado, brl);
@@ -389,7 +396,7 @@ function desenharNumeros() {
       <div class="valor">${numeroBr(p.totalKm)}</div>
     </div>
     <div class="numero destaque">
-      <div class="rotulo">Valor do km (× ${brl(estado.valor_km)})</div>
+      <div class="rotulo">${ehGerente() ? 'Combustível do mês' : `Valor do km (× ${brl(estado.valor_km)})`}</div>
       <div class="valor">${brl(p.valorKm)}</div>
     </div>
     <div class="numero">
@@ -412,7 +419,7 @@ function desenharGrade() {
   const html = estado.grade
     .filter((d) => {
       if (!esconder) return true;
-      const preenchido = d.km_inicial || d.km_final || d.itinerario || d.pedagio || d.estacionamento;
+      const preenchido = d.km_inicial || d.km_final || d.itinerario || d.pedagio || d.estacionamento || d.combustivel;
       return preenchido || (!d.fim_de_semana && !d.feriado);
     })
     .map((d) => desenharDia(d, editavel))
@@ -475,6 +482,15 @@ function desenharDia(d, editavel) {
         <input type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" ${trava}
                data-data="${d.data}" data-campo="estacionamento" value="${valorNoCampo(d.estacionamento)}">
       </div>
+      ${
+        ehGerente()
+          ? `<div>
+        <label>Combustível (R$)</label>
+        <input type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" ${trava}
+               data-data="${d.data}" data-campo="combustivel" value="${valorNoCampo(d.combustivel)}">
+      </div>`
+          : ''
+      }
       <div class="rodou" data-rodou="${d.data}">${rodou > 0 ? `${numeroBr(rodou)} km neste dia` : ''}</div>
     </div>
     ${
@@ -521,14 +537,19 @@ function atualizarLinhaLocal(data) {
 
 // Recalcula na tela sem ida ao servidor, pra resposta ser instantanea.
 function recalcularLocal() {
-  let km = 0, ped = 0, est = 0;
+  let km = 0, ped = 0, est = 0, comb = 0;
   for (const d of estado.grade) {
     km += Math.max(0, Number(d.km_final) - Number(d.km_inicial));
     ped += Number(d.pedagio || 0);
     est += Number(d.estacionamento || 0);
+    comb += Number(d.combustivel || 0);
   }
   estado.previa.totalKm = km;
-  estado.previa.valorKm = Number((km * estado.valor_km).toFixed(2));
+  estado.previa.totalCombustivel = Number(comb.toFixed(2));
+  // Gerente recebe o combustivel; os demais, km x valor do km.
+  estado.previa.valorKm = ehGerente()
+    ? Number(comb.toFixed(2))
+    : Number((km * estado.valor_km).toFixed(2));
   estado.previa.pedagioDeclarado = Number(ped.toFixed(2));
   estado.previa.estacDeclarado = Number(est.toFixed(2));
   desenharNumeros();
@@ -563,6 +584,7 @@ function desenharAnexos() {
               }</span>`
             : ''
         }
+        ${a.tipo === 'danfe' && a.valor ? `<span class="selo CERTA">${brl(a.valor)}</span>` : ''}
         <span class="peso">${tamanhoBr(a.tamanho)}</span>
         ${
           // `aceita_anexo`, nao `editavel`: quem ja enviou precisa poder TROCAR
@@ -656,6 +678,17 @@ async function enviarArquivos(arquivos) {
       extras.set(arquivo, km);
     }
   }
+  // Gerente: cada nota vai com o valor dela - e com a soma das notas que o
+  // combustivel dos dias e conferido.
+  if (tipoEmUso === 'danfe' && ehGerente()) {
+    for (const arquivo of arquivos) {
+      const valor = await pedirValorDaNota(arquivo);
+      if (valor === null) {
+        return mostrarRecado('recado', 'Envio cancelado — a nota precisa do valor.', 'atencao');
+      }
+      extras.set(arquivo, { valor });
+    }
+  }
 
   mostrarRecado('recado', `Enviando ${arquivos.length} arquivo(s)...`, 'info');
   try {
@@ -747,6 +780,46 @@ function pedirKm(arquivo) {
 
     fundo.querySelector('#km-ok').addEventListener('click', confirmar);
     fundo.querySelector('#km-cancela').addEventListener('click', () => fechar(null));
+    campo.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') confirmar();
+    });
+  });
+}
+
+// Caixa que pede o valor total da nota de abastecimento (so para gerente).
+function pedirValorDaNota(arquivo) {
+  return new Promise((resolve) => {
+    const fundo = document.createElement('div');
+    fundo.className = 'fundo-modal';
+    fundo.innerHTML = `
+      <div class="modal" style="max-width:480px">
+        <h2>Qual o valor desta nota?</h2>
+        <p class="sub">${escapar(arquivo.name)}</p>
+        <div id="recado-valor"></div>
+        <label for="valor-nota">Valor total da nota (R$)</label>
+        <input type="text" id="valor-nota" inputmode="decimal" placeholder="ex.: 133,80" autocomplete="off">
+        <div class="linha-botoes">
+          <button id="valor-ok">Anexar</button>
+          <button class="secundario" id="valor-cancela">Cancelar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(fundo);
+    const campo = fundo.querySelector('#valor-nota');
+    campo.focus();
+
+    const fechar = (v) => {
+      fundo.remove();
+      resolve(v);
+    };
+    const confirmar = () => {
+      const v = lerNumeroBr(campo.value, NaN);
+      if (!Number.isFinite(v) || v <= 0) {
+        return mostrarRecado('recado-valor', 'Digite o valor total que está na nota.', 'erro');
+      }
+      fechar(Number(v.toFixed(2)));
+    };
+    fundo.querySelector('#valor-ok').addEventListener('click', confirmar);
+    fundo.querySelector('#valor-cancela').addEventListener('click', () => fechar(null));
     campo.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') confirmar();
     });
@@ -1027,6 +1100,7 @@ function linhasParaEnviar() {
     itinerario: d.itinerario,
     pedagio: d.pedagio,
     estacionamento: d.estacionamento,
+    combustivel: d.combustivel || 0,
     justificativa_hora: d.justificativa_hora,
   }));
 }
@@ -1169,6 +1243,7 @@ function luzesDoMes() {
   // diferenca de valor continua sendo problema.
   const doPedagio = achados.filter((a) => a.codigo.startsWith('pedagio') && a.gravidade === 'erro');
   const semNota = achados.some((a) => a.codigo === 'sem_danfe');
+  const notaNaoBate = achados.some((a) => ['combustivel_nao_bate', 'danfe_sem_valor'].includes(a.codigo));
   // Sem RDV lido nao ha o que conferir: os achados vem vazios, e isso nao quer
   // dizer "tudo certo". Conta recem-criada abria com pedagio, fotos e
   // pendencias em verde.
@@ -1180,11 +1255,19 @@ function luzesDoMes() {
       estado: lido ? 'ok' : tem('rdv') ? 'alerta' : 'falha',
       texto: lido ? `${numeroBr(p.totalKm)} km lidos` : tem('rdv') ? 'Anexado, falta ler' : 'Anexe o PDF',
     },
-    {
-      icone: 'nota', ir: 'comprovantes', titulo: 'Nota do combustível',
-      estado: tem('danfe') && !semNota ? 'ok' : 'falha',
-      texto: tem('danfe') && !semNota ? 'Enviada' : 'Falta enviar',
-    },
+    // Gerente: obrigatoria e tem que bater com o combustivel. Os demais: so
+    // recomendada - sem ela o relatorio nao reprova.
+    ehGerente()
+      ? {
+        icone: 'nota', ir: 'comprovantes', titulo: 'Nota do combustível',
+        estado: !tem('danfe') || semNota || notaNaoBate ? 'falha' : 'ok',
+        texto: !tem('danfe') ? 'Falta enviar' : notaNaoBate ? 'Valor não bate' : 'Enviada',
+      }
+      : {
+        icone: 'nota', ir: 'comprovantes', titulo: 'Nota do combustível',
+        estado: tem('danfe') ? 'ok' : 'alerta',
+        texto: tem('danfe') ? 'Enviada' : 'Recomendada',
+      },
     {
       icone: 'pedagio', ir: faltaExtrato ? 'comprovantes' : 'conferencia',
       titulo: 'Pedágio',
@@ -1285,7 +1368,7 @@ async function carregarHistorico() {
       <table>
         <thead><tr>
           <th>Mês</th><th>Status</th><th class="num">Km</th>
-          <th class="num">Valor do km</th>
+          <th class="num">${ehGerente() ? 'Combustível' : 'Valor do km'}</th>
           <th class="num">Pedágio</th><th class="num">Estacion.</th>
           <th class="num">Total</th>
           <th>O que fazer</th>

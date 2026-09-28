@@ -666,6 +666,7 @@ async function abrirDetalhe(id) {
                   <span class="nome"><a href="/api/anexo/${a.id}" target="_blank" rel="noopener">${escapar(
                     a.nome_original,
                   )}</a></span>
+                  ${a.tipo === 'danfe' && a.valor ? `<span class="selo CERTA">${brl(a.valor)}</span>` : ''}
                   <span class="peso">${tamanhoBr(a.tamanho)}</span>
                 </div>`,
               )
@@ -679,6 +680,7 @@ async function abrirDetalhe(id) {
           <thead><tr>
             <th>Data</th><th class="num">Km ini</th><th class="num">Km fim</th>
             <th class="num">Rodou</th><th>Itinerário</th><th class="num">Pedágio</th><th class="num">Estac.</th>
+            ${d.linhas.some((l) => Number(l.combustivel) > 0) ? '<th class="num">Combustível</th>' : ''}
           </tr></thead>
           <tbody>
             ${d.linhas
@@ -691,6 +693,7 @@ async function abrirDetalhe(id) {
               <td>${escapar(l.itinerario || '—')}</td>
               <td class="num">${l.pedagio ? brl(l.pedagio) : '—'}</td>
               <td class="num">${l.estacionamento ? brl(l.estacionamento) : '—'}</td>
+              ${d.linhas.some((x) => Number(x.combustivel) > 0) ? `<td class="num">${Number(l.combustivel) ? brl(l.combustivel) : '—'}</td>` : ''}
             </tr>`,
               )
               .join('')}

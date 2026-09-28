@@ -112,6 +112,9 @@ O que voce PRECISA verificar:
    Nao escreva achado sobre isso - o sistema cria a pendencia.
 
 Regras de julgamento:
+- Falta da nota de abastecimento: NAO escreva achado. Quem decide se a falta
+  reprova e o sistema (so reprova gerente). Apenas responda
+  tem_danfe_de_abastecimento.
 - Falta da nota de abastecimento, sozinha, e o unico problema => "SO_FALTA_DANFE".
 - Qualquer outra divergencia => "ERRADA".
 - Tudo conferido => "CERTA".
@@ -524,11 +527,15 @@ function montarResumo({ usuario, rel, linhas, resultadoRegra, vlrKm }) {
     `Colaborador: ${usuario.nome}`,
     usuario.placas ? `Placas declaradas: ${usuario.placas}` : 'Placas declaradas: nenhuma',
     `Mes de referencia: ${rel.mes_ref}`,
-    `Valor pago por km: R$ ${vlrKm.toFixed(2).replace('.', ',')}`,
+    resultadoRegra.gerente
+      ? 'GERENTE: e reembolsado pelo COMBUSTIVEL abastecido, nao pelo km. O km e as fotos de odometro continuam valendo como controle. O sistema ja conferiu a soma do combustivel contra as notas (valor digitado em cada nota) - nao refaca essa conta.'
+      : `Valor pago por km: R$ ${vlrKm.toFixed(2).replace('.', ',')}`,
     '',
     'DECLARADO NO RELATORIO:',
     `  Total de km: ${resultadoRegra.totalKm}`,
-    `  Valor do km: R$ ${resultadoRegra.valorKm.toFixed(2).replace('.', ',')}`,
+    resultadoRegra.gerente
+      ? `  Combustivel do mes: R$ ${resultadoRegra.totalCombustivel.toFixed(2).replace('.', ',')}`
+      : `  Valor do km: R$ ${resultadoRegra.valorKm.toFixed(2).replace('.', ',')}`,
     `  Pedagio: R$ ${resultadoRegra.pedagioDeclarado.toFixed(2).replace('.', ',')}`,
     `  Estacionamento: R$ ${resultadoRegra.estacDeclarado.toFixed(2).replace('.', ',')}`,
     `  Pedagio + estacionamento: R$ ${resultadoRegra.totalDeclarado.toFixed(2).replace('.', ',')}`,
@@ -553,6 +560,8 @@ function montarResumo({ usuario, rel, linhas, resultadoRegra, vlrKm }) {
     if (Number(l.pedagio) > 0) extras.push(`pedagio R$ ${Number(l.pedagio).toFixed(2)}`);
     if (Number(l.estacionamento) > 0)
       extras.push(`estac. R$ ${Number(l.estacionamento).toFixed(2)}`);
+    if (Number(l.combustivel) > 0)
+      extras.push(`abasteceu R$ ${Number(l.combustivel).toFixed(2)}`);
     return `  ${dataBr(l.data)} | ${l.km_inicial} -> ${l.km_final} (${rodou} km) | ${
       l.itinerario || '(itinerario em branco)'
     }${extras.length ? ` | ${extras.join(', ')}` : ''}`;

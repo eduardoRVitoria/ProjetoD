@@ -48,10 +48,14 @@ const HORA_LIMITE = 18;
 //      sem assinatura e erro; o sistema soma o pedagio, nao mais a IA.
 //   6  hotel e outras despesas: podem ser somados ao mes, mas cada um so vale
 //      com o SEU comprovante - o do hotel e o da outra despesa, separados.
+//   7  gerente e pago pelo combustivel: a soma do abastecimento dos dias tem
+//      que bater com o total do RDV e com a soma das notas (valor digitado em
+//      cada DANFE). A DANFE so e obrigatoria para gerente - para os outros, a
+//      falta dela vira aviso e o relatorio nao cai mais em "So falta DANFE".
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 6;
+export const VERSAO_REGRAS = 7;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -229,9 +233,11 @@ function diasSeguidos(dataAnterior, dataAtual) {
  * @param {Array}  anexos  anexos ja enviados
  * @param {number} vlrKm   valor pago por km (padrao 0,90)
  * @param {string} empresa empresa do dono do relatorio (DISO, DSO, PROMOTORES, ALPHA)
+ * @param {string} funcao  funcao do dono - Gerente e pago pelo combustivel
  */
-export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, empresa = null) {
+export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, empresa = null, funcao = null) {
   const achados = [];
+  const gerente = ehGerente(funcao);
 
   // Dia com data que nao existe ("2026-13-45", campo em branco) vira pendencia
   // e sai da conta. Antes ele chegava nas contas de calendario e derrubava a
@@ -417,7 +423,12 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
     (s, l) => s + Math.max(0, num(l.km_final) - num(l.km_inicial)),
     0,
   );
-  const valorKm = Number((totalKm * num(vlrKm)).toFixed(2));
+  // Gerente: o que se paga e o combustivel abastecido no mes, nao km x valor
+  // do km. No RDV dele a linha "KM R$" do resumo ja e a soma do combustivel.
+  const totalCombustivel = Number(
+    linhas.reduce((s, l) => s + num(l.combustivel), 0).toFixed(2),
+  );
+  const valorKm = gerente ? totalCombustivel : Number((totalKm * num(vlrKm)).toFixed(2));
 
   // Quando o RDV veio de PDF, o total que vale para a comparacao e o que a
   // PESSOA escreveu no documento, nao o que o sistema gravou. E aqui que o erro
@@ -451,7 +462,19 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
   }
 
   // Sem tolerancia: o valor tem que ser a conta exata, em centavos.
-  if (declaradoValor != null && Math.round(valorKm * 100) !== Math.round(declaradoValor * 100)) {
+  if (gerente) {
+    if (declaradoValor != null && Math.round(valorKm * 100) !== Math.round(declaradoValor * 100)) {
+      achados.push(
+        achado(
+          'erro',
+          'valor_combustivel',
+          `A soma do combustivel dos dias da ${brl(valorKm)}, mas o relatorio declara ${brl(
+            Number(declaradoValor),
+          )}. Diferenca de ${brl(valorKm - Number(declaradoValor))}.`,
+        ),
+      );
+    }
+  } else if (declaradoValor != null && Math.round(valorKm * 100) !== Math.round(declaradoValor * 100)) {
     achados.push(
       achado(
         'erro',
@@ -571,11 +594,49 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
   }
 
   // -------------------------------------------------------- 6. abastecimento
-  const temDanfe = anexos.some((a) => a.tipo === 'danfe');
+  //
+  // A nota so e obrigatoria para GERENTE, que e pago pelo combustivel. Para o
+  // resto (vendedor, supervisor, promotor) o reembolso e por km: a nota ajuda,
+  // mas a falta dela e so um aviso para quem confere.
+  const notas = anexos.filter((a) => a.tipo === 'danfe');
+  const temDanfe = notas.length > 0;
   if (!temDanfe) {
     achados.push(
-      achado('erro', 'sem_danfe', 'Nao foi enviada a nota/DANFE de abastecimento do mes.'),
+      gerente
+        ? achado('erro', 'sem_danfe', 'Nao foi enviada a nota/DANFE de abastecimento do mes.')
+        : achado('aviso', 'sem_danfe', 'Nao foi enviada nota de abastecimento neste mes.'),
     );
+  }
+
+  // Gerente: a soma do que ele abasteceu nos dias tem que ser a soma das notas.
+  // O valor de cada nota e digitado no envio - a conta e do sistema, sem IA.
+  let totalNotas = null;
+  if (gerente && temDanfe) {
+    const semValor = notas.filter((a) => !(Number(a.valor) > 0));
+    if (semValor.length) {
+      achados.push(
+        achado(
+          'erro',
+          'danfe_sem_valor',
+          `${semValor.length} nota(s) de abastecimento sem o valor digitado: ${semValor
+            .slice(0, 3)
+            .map((a) => a.nome_original)
+            .join(', ')}. Apague e anexe de novo informando o valor da nota.`,
+        ),
+      );
+    }
+    totalNotas = Number(notas.reduce((s, a) => s + num(a.valor), 0).toFixed(2));
+    if (!semValor.length && Math.round(totalNotas * 100) !== Math.round(totalCombustivel * 100)) {
+      achados.push(
+        achado(
+          'erro',
+          'combustivel_nao_bate',
+          `O combustivel lancado nos dias soma ${brl(totalCombustivel)}, mas as notas anexadas somam `
+            + `${brl(totalNotas)}. Diferenca de ${brl(totalCombustivel - totalNotas)}. `
+            + 'Confira o valor de cada dia e de cada nota.',
+        ),
+      );
+    }
   }
 
   // -------------------------------------------------------- 7. odometro
@@ -862,6 +923,9 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
     hotelDeclarado,
     outrosDeclarado,
     temDanfe,
+    gerente,
+    totalCombustivel,
+    totalNotas,
     qtdFotosOdometro: fotos.length,
     achados,
     statusSugerido: erros.length === 0 ? 'CERTA' : soFaltaDanfe ? 'SO_FALTA_DANFE' : 'ERRADA',
@@ -951,6 +1015,9 @@ export function fotosQueFaltam(esperadas, fotos) {
   }
   return faltam;
 }
+
+/** Quem e pago pelo combustivel em vez do km. */
+export const ehGerente = (funcao) => funcao === 'Gerente';
 
 export function dataBr(iso) {
   const [a, m, d] = String(iso).split('-');

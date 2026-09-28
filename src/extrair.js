@@ -180,6 +180,12 @@ REGRAS DE TRANSCRICAO
    total de km do dia e nao os dois valores, coloque km_inicial = 0 e
    km_final = o total do dia, e registre isso em problemas_de_leitura.
 
+4.1 Combustivel POR DIA: o RDV de GERENTE tem uma coluna "R$ COMBUSTIVEL" com o
+   valor abastecido em cada dia. Copie esse valor em "combustivel". Celula vazia,
+   "-" ou "R$ -" e 0. Nos outros formularios essa coluna nao existe: devolva 0.
+   No RDV de gerente a linha "KM R$" do resumo e a soma do combustivel - ela vai
+   em valor_total_km do mesmo jeito.
+
 5. Itinerario: copie o texto como esta. Se estiver vazio, devolva string vazia -
    nao invente trajeto, nao deduza a partir da quilometragem.
 
@@ -254,8 +260,9 @@ const FERRAMENTA = {
             itinerario: { type: 'string' },
             pedagio: { type: 'number' },
             estacionamento: { type: 'number' },
+            combustivel: { type: 'number', description: 'Valor abastecido no dia (RDV de gerente). 0 se nao houver.' },
           },
-          required: ['data', 'km_inicial', 'km_final', 'itinerario', 'pedagio', 'estacionamento'],
+          required: ['data', 'km_inicial', 'km_final', 'itinerario', 'pedagio', 'estacionamento', 'combustivel'],
           additionalProperties: false,
         },
       },
@@ -496,16 +503,17 @@ function normalizar(d, mesEsperado) {
     const kf = num(l.km_final);
     const ped = num(l.pedagio);
     const est = num(l.estacionamento);
+    const comb = Math.max(0, num(l.combustivel));
     const itin = String(l.itinerario || '').trim().slice(0, 500);
 
-    if (ki === 0 && kf === 0 && ped === 0 && est === 0 && !itin) continue;
+    if (ki === 0 && kf === 0 && ped === 0 && est === 0 && comb === 0 && !itin) continue;
 
     if (!data.startsWith(mesQueVale)) {
       foraDoMes.push(data);
       continue;
     }
 
-    linhas.push({ data, km_inicial: ki, km_final: kf, itinerario: itin, pedagio: ped, estacionamento: est });
+    linhas.push({ data, km_inicial: ki, km_final: kf, itinerario: itin, pedagio: ped, estacionamento: est, combustivel: comb });
   }
 
   linhas.sort((a, b) => a.data.localeCompare(b.data));

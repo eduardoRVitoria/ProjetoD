@@ -374,7 +374,7 @@ function linhasDo(relId) {
 function anexosDo(relId) {
   return db
     .prepare(
-      `SELECT id, tipo, nome_original, mime, tamanho, km, data_leitura, enviado_em
+      `SELECT id, tipo, nome_original, mime, tamanho, km, data_leitura, valor, enviado_em
          FROM anexos WHERE relatorio_id = ? ORDER BY tipo, km, id`,
     )
     .all(relId);
@@ -384,7 +384,7 @@ function anexosDo(relId) {
 // semana e 18h so sao aviso na DSO). Todo lugar que confere passa por aqui,
 // para nenhum esquecer de mandar a empresa.
 function conferirRel(rel, linhas, anexos) {
-  const dono = db.prepare('SELECT empresa FROM usuarios WHERE id = ?').get(rel.usuario_id);
+  const dono = db.prepare('SELECT empresa, funcao FROM usuarios WHERE id = ?').get(rel.usuario_id);
   return conferir(
     rel,
     linhas,
@@ -392,6 +392,7 @@ function conferirRel(rel, linhas, anexos) {
     valorDoKm(),
     mesAnteriorDe(rel.usuario_id, rel.mes_ref),
     dono?.empresa ?? null,
+    dono?.funcao ?? null,
   );
 }
 
@@ -438,6 +439,7 @@ function gradeDoMes(mes, linhas) {
       itinerario: l ? l.itinerario || '' : '',
       pedagio: l ? l.pedagio : 0,
       estacionamento: l ? l.estacionamento : 0,
+      combustivel: l ? l.combustivel || 0 : 0,
       justificativa_hora: l ? l.justificativa_hora || '' : '',
     };
   });
@@ -492,8 +494,8 @@ async function salvarRelatorio(req, res, usuario) {
     db.prepare('DELETE FROM linhas WHERE relatorio_id = ?').run(rel.id);
 
     const inserir = db.prepare(
-      `INSERT INTO linhas (relatorio_id, data, km_inicial, km_final, itinerario, pedagio, estacionamento, ordem, hora_pedagio, justificativa_hora)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO linhas (relatorio_id, data, km_inicial, km_final, itinerario, pedagio, estacionamento, ordem, hora_pedagio, justificativa_hora, combustivel)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     let ordem = 0;
@@ -502,6 +504,7 @@ async function salvarRelatorio(req, res, usuario) {
       const kf = numero(l.km_final);
       const ped = numero(l.pedagio);
       const est = numero(l.estacionamento);
+      const comb = Math.max(0, numero(l.combustivel));
       const itin = String(l.itinerario || '').trim().slice(0, 500);
       // Hora da passagem mais tarde do dia, e o porque dela quando passa das 18h.
       const horaRecebida = String(l.hora_pedagio || '').trim();
@@ -510,10 +513,10 @@ async function salvarRelatorio(req, res, usuario) {
       // Dia totalmente em branco nao vira linha. Justificativa escrita conta
       // como preenchido: a foto de um sabado sem lancamento tambem pode pedir
       // explicacao (troca de carro), e ela nao pode se perder no salvar.
-      if (ki === 0 && kf === 0 && ped === 0 && est === 0 && !itin && !porQue) continue;
+      if (ki === 0 && kf === 0 && ped === 0 && est === 0 && comb === 0 && !itin && !porQue) continue;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(l.data || ''))) continue;
       if (!String(l.data).startsWith(mes)) continue;
-      inserir.run(rel.id, l.data, ki, kf, itin, ped, est, ordem++, hora, porQue);
+      inserir.run(rel.id, l.data, ki, kf, itin, ped, est, ordem++, hora, porQue, comb);
     }
 
     const linhas = linhasDo(rel.id);
@@ -636,8 +639,8 @@ async function lerRdv(req, res, usuario) {
     db.prepare('DELETE FROM linhas WHERE relatorio_id = ?').run(rel.id);
 
     const inserir = db.prepare(
-      `INSERT INTO linhas (relatorio_id, data, km_inicial, km_final, itinerario, pedagio, estacionamento, ordem, hora_pedagio, justificativa_hora)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO linhas (relatorio_id, data, km_inicial, km_final, itinerario, pedagio, estacionamento, ordem, hora_pedagio, justificativa_hora, combustivel)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     let ordem = 0;
     for (const l of extraido.linhas) {
@@ -655,6 +658,7 @@ async function lerRdv(req, res, usuario) {
         // estes dois campos ficam nulos e sao preenchidos pelo salvar.
         null,
         null,
+        l.combustivel || 0,
       );
     }
 
@@ -821,7 +825,10 @@ async function enviarRelatorio(req, res, usuario) {
 
   const codigos = new Set(r.achados.map((a) => a.codigo));
   const faltando = [];
-  if (codigos.has('sem_danfe')) faltando.push('a nota de abastecimento');
+  // A nota so reprova gerente; para os outros ela nao entra no "faltou".
+  if (r.achados.some((a) => a.codigo === 'sem_danfe' && a.gravidade === 'erro')) {
+    faltando.push('a nota de abastecimento');
+  }
   if (codigos.has('sem_odometro')) faltando.push('a foto do odometro');
 
   db.prepare(
@@ -907,6 +914,7 @@ async function subirAnexo(req, res, url, usuario) {
   const nomeBruto = url.searchParams.get('nome') || 'arquivo';
   const kmBruto = url.searchParams.get('km');
   const dataLeitura = url.searchParams.get('data');
+  const valorBruto = url.searchParams.get('valor');
 
   if (!mesValido(mes)) return erro(res, 'Mes invalido.');
   if (!TIPOS_DE_ANEXO.has(tipo)) return erro(res, 'Tipo de anexo invalido.');
@@ -925,6 +933,18 @@ async function subirAnexo(req, res, url, usuario) {
 
   if (dataLeitura && !/^\d{4}-\d{2}-\d{2}$/.test(dataLeitura)) {
     return erro(res, 'Data da leitura invalida.');
+  }
+
+  // Nota de abastecimento leva o valor. Para gerente e obrigatorio: e com a
+  // soma das notas que o combustivel dele e conferido.
+  let valorNota = null;
+  if (tipo === 'danfe' && valorBruto != null && valorBruto !== '') {
+    valorNota = numero(valorBruto, NaN);
+    if (!Number.isFinite(valorNota) || valorNota <= 0) return erro(res, 'Valor da nota invalido.');
+    if (valorNota > 100_000) return erro(res, 'Esse valor de nota parece alto demais. Confira.');
+  }
+  if (tipo === 'danfe' && usuario.funcao === 'Gerente' && valorNota == null) {
+    return erro(res, 'Digite o valor total da nota de abastecimento.');
   }
 
   const rel = acharOuCriar(usuario.id, mes);
@@ -978,8 +998,8 @@ async function subirAnexo(req, res, url, usuario) {
 
   db.prepare(
     `INSERT INTO anexos (relatorio_id, tipo, nome_original, arquivo, mime, tamanho,
-                         km, data_leitura, enviado_em)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                         km, data_leitura, valor, enviado_em)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     rel.id,
     tipo,
@@ -989,6 +1009,7 @@ async function subirAnexo(req, res, url, usuario) {
     dados.length,
     km,
     dataLeitura || null,
+    valorNota,
     agora(),
   );
 
