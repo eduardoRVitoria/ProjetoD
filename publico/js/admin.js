@@ -51,11 +51,11 @@ const SECOES = [
   { titulo: 'Vendedores', funcoes: ['Vendedor'] },
   { titulo: 'Promotores', funcoes: ['Promotor'] },
   { titulo: 'Supervisores', funcoes: ['Supervisor'] },
-  { titulo: 'Administrativo', funcoes: ['Adm Promotor', 'Adm DISO', 'Adm DSO'] },
+  { titulo: 'Administrativo', funcoes: ['Adm Promotor', 'Adm DISO', 'Adm DSO', 'Adm ALPHA'] },
 ];
 
-const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO', 'Adm DSO'];
-const EMPRESAS = ['DISO', 'DSO', 'PROMOTORES'];
+const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO', 'Adm DSO', 'Adm ALPHA'];
+const EMPRESAS = ['DISO', 'DSO', 'PROMOTORES', 'ALPHA'];
 
 // ATENCAO: tudo que for `const`/`let` e usado durante a inicializacao precisa
 // ficar ACIMA dos `await` de topo de modulo. O `await` pausa a avaliacao do

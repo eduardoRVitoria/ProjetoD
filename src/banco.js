@@ -219,13 +219,13 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
 
 // As frentes do grupo. PROMOTORES e uma janela propria: todo promotor mora la,
 // e nao dentro da DISO ou da DSO.
-export const EMPRESAS = ['DISO', 'DSO', 'PROMOTORES'];
+export const EMPRESAS = ['DISO', 'DSO', 'PROMOTORES', 'ALPHA'];
 
 // A funcao entra junto da empresa e vira a sigla: DISO (V), DSO (P).
 // As funcoes administrativas ja trazem a empresa no nome, entao aparecem
 // inteiras no cracha em vez de virar "DISO (Adm DISO)".
 export const FUNCOES = [
-  'Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO', 'Adm DSO',
+  'Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO', 'Adm DSO', 'Adm ALPHA',
 ];
 
 export const SIGLA_FUNCAO = {
@@ -241,6 +241,7 @@ export const SIGLA_FUNCAO = {
 const EMPRESA_DA_FUNCAO = {
   'Adm DISO': 'DISO',
   'Adm DSO': 'DSO',
+  'Adm ALPHA': 'ALPHA',
   'Adm Promotor': 'PROMOTORES',
   Promotor: 'PROMOTORES',
 };
@@ -308,6 +309,7 @@ export const ehAdmin = (u) => u?.papel === 'admin' || u?.papel === 'super';
  * Cada administrativo fica preso a propria janela:
  *   Adm DISO     -> empresa DISO
  *   Adm DSO      -> empresa DSO
+ *   Adm ALPHA    -> empresa ALPHA
  *   Adm Promotor -> empresa PROMOTORES, onde moram todos os promotores
  *
  * O recorte por funcao (`funcoes`) continua valendo no filtro e na checagem,

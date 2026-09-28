@@ -33,6 +33,7 @@
   --pastel-amarelo: #fdecc8; --amarelo: #7a4b00;
   --pastel-azul: #d6e8ff;    --azul: #1d4ed8;
   --pastel-lilas: #e2d9ff;   --lilas: #5b3cc4;
+  --pastel-laranja: #ffe2cc; --laranja: #9a3d00;
 
   /* Nomes antigos que o JS ou o HTML ainda usam em estilo inline. */
   --verde-fundo: var(--pastel-verde);
@@ -69,6 +70,7 @@
     --pastel-amarelo: #3e2e0e; --amarelo: #f7d488;
     --pastel-azul: #182a4a;    --azul: #a9c8ff;
     --pastel-lilas: #2b2250;   --lilas: #c9b8ff;
+    --pastel-laranja: #43250f; --laranja: #ffc49a;
     --marca-anel: rgba(242, 242, 242, .2);
   }
 }
@@ -179,6 +181,9 @@ a { color: var(--texto); }
 }
 .abas-empresa button[data-empresa="PROMOTORES"].ativa {
   background: var(--pastel-verde); color: var(--verde); border-color: var(--verde);
+}
+.abas-empresa button[data-empresa="ALPHA"].ativa {
+  background: var(--pastel-laranja); color: var(--laranja); border-color: var(--laranja);
 }
 .abas-empresa button.ativa .n { background: rgba(255, 255, 255, .45); }
 
@@ -470,8 +475,10 @@ button.pequeno { padding: 5px 11px; font-size: 13px; }
 .emp.DISO       { background: var(--pastel-azul);  color: var(--azul); }
 .emp.DSO        { background: var(--pastel-lilas); color: var(--lilas); }
 .emp.PROMOTORES { background: var(--pastel-verde); color: var(--verde); }
+.emp.ALPHA      { background: var(--pastel-laranja); color: var(--laranja); }
 
-tr.de-DISO td:first-child, tr.de-DSO td:first-child, tr.de-PROMOTORES td:first-child { box-shadow: none; }
+tr.de-DISO td:first-child, tr.de-DSO td:first-child, tr.de-PROMOTORES td:first-child,
+tr.de-ALPHA td:first-child { box-shadow: none; }
 
 .titulo-empresa { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 0 0 4px; }
 .titulo-empresa .sigla { font-size: 20px; font-weight: 600; }
@@ -518,6 +525,7 @@ tr.inativo td:first-child .emp { text-decoration: none; }
 .avatar.DISO       { background: var(--pastel-azul);  color: var(--azul); }
 .avatar.DSO        { background: var(--pastel-lilas); color: var(--lilas); }
 .avatar.PROMOTORES { background: var(--pastel-verde); color: var(--verde); }
+.avatar.ALPHA      { background: var(--pastel-laranja); color: var(--laranja); }
 
 .pessoa-id { flex: 1; min-width: 0; }
 .pessoa-nome { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14.5px; font-weight: 500; }

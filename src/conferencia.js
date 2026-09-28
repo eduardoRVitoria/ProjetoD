@@ -100,7 +100,8 @@ function achado(gravidade, codigo, mensagem, data = null) {
  */
 export function passagensSemExplicacao(passagens, linhas, empresa = null) {
   // So a DSO cobra explicacao por horario, e como AVISO: aparece para quem
-  // confere, mas nao reprova. DISO e PROMOTORES sairam da regra (versao 5).
+  // confere, mas nao reprova. DISO e PROMOTORES sairam da regra (versao 5), e a
+  // ALPHA ja entrou fora dela.
   if (empresa !== 'DSO') return [];
 
   const explicacaoDoDia = new Map(
@@ -227,7 +228,7 @@ function diasSeguidos(dataAnterior, dataAtual) {
  * @param {Array}  linhas  linhas do RDV, em ordem de data
  * @param {Array}  anexos  anexos ja enviados
  * @param {number} vlrKm   valor pago por km (padrao 0,90)
- * @param {string} empresa empresa do dono do relatorio (DISO, DSO, PROMOTORES)
+ * @param {string} empresa empresa do dono do relatorio (DISO, DSO, PROMOTORES, ALPHA)
  */
 export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, empresa = null) {
   const achados = [];
