@@ -225,13 +225,14 @@ export const EMPRESAS = ['DISO', 'DSO', 'PROMOTORES', 'ALPHA'];
 // As funcoes administrativas ja trazem a empresa no nome, entao aparecem
 // inteiras no cracha em vez de virar "DISO (Adm DISO)".
 export const FUNCOES = [
-  'Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO', 'Adm DSO', 'Adm ALPHA',
+  'Vendedor', 'Promotor', 'Supervisor', 'Gerente', 'Adm Promotor', 'Adm DISO', 'Adm DSO', 'Adm ALPHA',
 ];
 
 export const SIGLA_FUNCAO = {
   Vendedor: 'V',
   Promotor: 'P',
   Supervisor: 'S',
+  Gerente: 'G',
   'Adm Promotor': 'AP',
 };
 

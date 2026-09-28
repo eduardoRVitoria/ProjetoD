@@ -51,10 +51,11 @@ const SECOES = [
   { titulo: 'Vendedores', funcoes: ['Vendedor'] },
   { titulo: 'Promotores', funcoes: ['Promotor'] },
   { titulo: 'Supervisores', funcoes: ['Supervisor'] },
+  { titulo: 'Gerentes', funcoes: ['Gerente'] },
   { titulo: 'Administrativo', funcoes: ['Adm Promotor', 'Adm DISO', 'Adm DSO', 'Adm ALPHA'] },
 ];
 
-const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor', 'Adm Promotor', 'Adm DISO', 'Adm DSO', 'Adm ALPHA'];
+const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor', 'Gerente', 'Adm Promotor', 'Adm DISO', 'Adm DSO', 'Adm ALPHA'];
 const EMPRESAS = ['DISO', 'DSO', 'PROMOTORES', 'ALPHA'];
 
 // ATENCAO: tudo que for `const`/`let` e usado durante a inicializacao precisa
