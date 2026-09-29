@@ -8,6 +8,52 @@ import {
 
 const $ = (id) => document.getElementById(id);
 
+// --------------------------------------------------------------- downloads
+//
+// Planilha, caderno de impressao, pacote e backup eram abertos com
+// location.href. Quando nao havia o que baixar (mes sem RDV nem comprovante),
+// a tela inteira trocava por uma pagina com o erro cru em JSON, e a pessoa
+// tinha que voltar. Agora o arquivo e buscado por tras: deu certo, baixa;
+// nao deu, sobe um aviso na propria tela e nada muda de lugar.
+let avisoFlutuante = null;
+
+function avisar(texto, tipo = 'erro', segundos = 6) {
+  avisoFlutuante?.remove();
+  const el = document.createElement('div');
+  el.className = `aviso-flutuante ${tipo}`;
+  el.setAttribute('role', 'status');
+  el.textContent = texto;
+  document.body.appendChild(el);
+  avisoFlutuante = el;
+  if (segundos) setTimeout(() => el.isConnected && el.remove(), segundos * 1000);
+  return el;
+}
+
+async function baixar(url) {
+  const espera = avisar('Preparando o arquivo...', 'info', 0);
+  try {
+    const r = await fetch(url, { credentials: 'same-origin' });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      avisar(d.erro || 'Não foi possível gerar o arquivo agora. Tente de novo.', r.status === 404 ? 'atencao' : 'erro');
+      return;
+    }
+    const blob = await r.blob();
+    const cd = r.headers.get('Content-Disposition') || '';
+    const nome = decodeURIComponent((cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i) || [])[1] || 'arquivo');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = nome;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+    espera.remove();
+  } catch {
+    avisar('Sem conexão com o portal. Confira a internet e tente de novo.');
+  }
+}
+
 // Le um campo de filtro sem quebrar se ele nao existir na pagina.
 // Um HTML antigo em cache com o JS novo derrubava a tela inteira: sem os
 // filtros, o `$(id).value` estourava e a lista nunca era desenhada.
@@ -111,10 +157,10 @@ aoClicar(
   'reconferir os relatórios com regras antigas',
 );
 $('botao-exportar').addEventListener('click', () => {
-  location.href = `/api/admin/exportar?mes=${mes}`;
+  baixar(`/api/admin/exportar?mes=${mes}`);
 });
 $('botao-imprimir-mes').addEventListener('click', () => {
-  location.href = `/api/admin/impressao?mes=${mes}`;
+  baixar(`/api/admin/impressao?mes=${mes}`);
 });
 $('botao-criar-usuario').addEventListener('click', criarUsuario);
 
@@ -415,7 +461,7 @@ function desenharTabela() {
   }
   for (const b of $('tabela').querySelectorAll('[data-imprimir-rel]')) {
     b.addEventListener('click', () => {
-      location.href = `/api/admin/impressao?mes=${mes}&usuario_id=${b.dataset.imprimirRel}`;
+      baixar(`/api/admin/impressao?mes=${mes}&usuario_id=${b.dataset.imprimirRel}`);
     });
   }
 }
@@ -751,7 +797,7 @@ async function abrirDetalhe(id) {
   // mesmo hoje, mas se um dia deixarem de ser, imprimir o mes errado sem avisar
   // seria o pior desfecho.
   fundo.querySelector('#imprimir-daqui')?.addEventListener('click', () => {
-    location.href = `/api/admin/impressao?mes=${r.mes_ref}&usuario_id=${r.usuario_id}`;
+    baixar(`/api/admin/impressao?mes=${r.mes_ref}&usuario_id=${r.usuario_id}`);
   });
 
   fundo.querySelector('#conferir-daqui')?.addEventListener('click', async (ev) => {
@@ -1319,17 +1365,17 @@ function ligarBotoesDeUsuario() {
   }
   for (const b of raiz.querySelectorAll('[data-pacote]')) {
     b.addEventListener('click', () => {
-      location.href = `/api/admin/pacote?usuario_id=${b.dataset.pacote}`;
+      baixar(`/api/admin/pacote?usuario_id=${b.dataset.pacote}`);
     });
   }
   for (const b of raiz.querySelectorAll('[data-imprimir]')) {
     b.addEventListener('click', () => {
-      location.href = `/api/admin/impressao?mes=${mes}&usuario_id=${b.dataset.imprimir}`;
+      baixar(`/api/admin/impressao?mes=${mes}&usuario_id=${b.dataset.imprimir}`);
     });
   }
   for (const b of raiz.querySelectorAll('[data-historico]')) {
     b.addEventListener('click', () => {
-      location.href = `/api/admin/historico?usuario_id=${b.dataset.historico}`;
+      baixar(`/api/admin/historico?usuario_id=${b.dataset.historico}`);
     });
   }
 
@@ -1557,11 +1603,11 @@ async function abrirGaleria(usuarioId) {
     if (ev.target === fundo) fechar();
   });
   fundo.querySelector('#baixar-tudo').addEventListener('click', () => {
-    location.href = `/api/admin/pacote?usuario_id=${usuarioId}`;
+    baixar(`/api/admin/pacote?usuario_id=${usuarioId}`);
   });
   for (const b of fundo.querySelectorAll('[data-baixar-mes]')) {
     b.addEventListener('click', () => {
-      location.href = `/api/admin/pacote?usuario_id=${usuarioId}&mes=${b.dataset.baixarMes}`;
+      baixar(`/api/admin/pacote?usuario_id=${usuarioId}&mes=${b.dataset.baixarMes}`);
     });
   }
 }
@@ -1724,7 +1770,7 @@ async function carregarResumoBackup() {
 
 $('botao-baixar-backup')?.addEventListener('click', () => {
   mostrarRecado('recado-backup', 'Gerando o arquivo... pode demorar um pouco com muitos anexos.', 'info');
-  location.href = '/api/admin/backup';
+  baixar('/api/admin/backup');
   // O download não avisa quando termina; a data vem do servidor na recarga.
   setTimeout(() => {
     mostrarRecado('recado-backup', 'Backup gerado. Guarde o arquivo fora do servidor.', 'ok');

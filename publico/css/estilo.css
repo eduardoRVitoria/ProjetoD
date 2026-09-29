@@ -898,3 +898,15 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
     font-size: 15px; font-weight: 600;
   }
 }
+
+/* Aviso que sobe na tela (download sem arquivo, por exemplo). */
+.aviso-flutuante {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  z-index: 80; max-width: min(520px, calc(100% - 32px));
+  padding: 12px 18px; border-radius: var(--raio);
+  font-size: 14.5px; font-weight: 500; line-height: 1.45;
+  box-shadow: var(--sombra-alta);
+  background: var(--superficie); color: var(--texto); border: 1px solid var(--borda-forte);
+}
+.aviso-flutuante.erro    { background: var(--pastel-rosa);    color: var(--vermelho); border-color: currentColor; }
+.aviso-flutuante.atencao { background: var(--pastel-amarelo); color: var(--amarelo);  border-color: currentColor; }

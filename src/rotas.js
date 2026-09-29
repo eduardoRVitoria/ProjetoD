@@ -1861,7 +1861,7 @@ async function baixarImpressao(res, url, quem) {
 
   const caderno = await montarImpressao(mes, id, escopoDe(quem));
   if (!caderno) {
-    return erro(res, 'Nao ha RDV, nota de abastecimento ou comprovante de pedagio nesse mes.', 404);
+    return erro(res, 'Não há comprovantes nem RDV neste mês, então não dá para imprimir.', 404);
   }
 
   res.writeHead(200, {
@@ -2360,7 +2360,7 @@ async function exportarCsv(res, url, quem) {
     .all(mes, ...argsEscopo);
 
   if (linhas.length === 0) {
-    return erro(res, `Nenhum relatorio enviado em ${mesPorExtenso(mes)}.`, 404);
+    return erro(res, `Nenhum RDV foi enviado em ${mesPorExtenso(mes)}, então ainda não há planilha para baixar.`, 404);
   }
 
   const relatorios = linhas.map((r) => ({
