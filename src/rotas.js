@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {
   db, agora, valorDoKm, lerConfig, gravarConfig, PASTA_ANEXOS,
-  EMPRESAS, FUNCOES, cracha, empresaDaFuncao, podeDarFuncao,
+  EMPRESAS, FUNCOES, cracha, empresaDaFuncao, podeDarFuncao, CARROS, carroPadrao,
   PAPEIS, ehSuper, ehAdmin, escopoDe, podeMexerNoUsuario, podeVerUsuario, filtroSql,
 } from './banco.js';
 import {
@@ -322,6 +322,7 @@ const publico = (u) => ({
   papel: u.papel,
   empresa: u.empresa,
   funcao: u.funcao,
+  carro: u.carro,
   cracha: cracha(u.empresa, u.funcao),
   placas: u.placas,
   trocar_senha: Boolean(u.trocar_senha),
@@ -417,7 +418,7 @@ function anexosDo(relId) {
 // semana e 18h so sao aviso na DSO). Todo lugar que confere passa por aqui,
 // para nenhum esquecer de mandar a empresa.
 function conferirRel(rel, linhas, anexos) {
-  const dono = db.prepare('SELECT empresa, funcao FROM usuarios WHERE id = ?').get(rel.usuario_id);
+  const dono = db.prepare('SELECT empresa, funcao, carro FROM usuarios WHERE id = ?').get(rel.usuario_id);
   return conferir(
     rel,
     linhas,
@@ -426,6 +427,7 @@ function conferirRel(rel, linhas, anexos) {
     mesAnteriorDe(rel.usuario_id, rel.mes_ref),
     dono?.empresa ?? null,
     dono?.funcao ?? null,
+    dono?.carro ?? 'pessoal',
   );
 }
 
@@ -1952,7 +1954,7 @@ function listarUsuarios(res, quem) {
     res,
     db
       .prepare(
-        `SELECT u.id, u.login, u.nome, u.email, u.papel, u.empresa, u.funcao, u.placas, u.ativo,
+        `SELECT u.id, u.login, u.nome, u.email, u.papel, u.empresa, u.funcao, u.carro, u.placas, u.ativo,
                 u.trocar_senha, u.criado_em,
                 (SELECT COUNT(*) FROM anexos a
                    JOIN relatorios r ON r.id = a.relatorio_id
@@ -1974,7 +1976,7 @@ function listarUsuarios(res, quem) {
 async function novoUsuario(req, res, quem) {
   const {
     login, nome, email, papel = 'colaborador', senha, placas,
-    empresa = 'DISO', funcao = 'Vendedor',
+    empresa = 'DISO', funcao = 'Vendedor', carro,
   } = await lerJson(req);
   if (!login || !nome || !senha) return erro(res, 'Login, nome e senha sao obrigatorios.');
   // Mesma regra da troca de login: minusculas, sem espaco, sem caractere solto.
@@ -1991,6 +1993,7 @@ async function novoUsuario(req, res, quem) {
   if (!podeDarFuncao(quem, funcao)) {
     return erro(res, `So o Adm Promotor cadastra ${funcao}.`, 403);
   }
+  if (carro != null && !CARROS.includes(carro)) return erro(res, 'Carro invalido. Use pessoal ou empresa.');
 
   // "Adm DISO" / "Adm DSO" ja dizem a empresa - nao deixa ficar cruzado.
   const empresaFinal = empresaDaFuncao(funcao) || empresa;
@@ -2016,6 +2019,7 @@ async function novoUsuario(req, res, quem) {
       // Mesma peneira da leitura do RDV: o campo aceita placa, nao texto livre.
       placas: placaLimpa(placas),
       empresa: empresaFinal, funcao,
+      carro: carro ?? carroPadrao(funcao),
     });
     responderJson(res, { ok: true, id });
   } catch (e) {
@@ -2084,7 +2088,8 @@ async function gravarValorPago(req, res, quem) {
 }
 
 async function mudarEmpresa(req, res, quem) {
-  const { usuario_id, empresa, funcao } = await lerJson(req);
+  const { usuario_id, empresa, funcao, carro } = await lerJson(req);
+  if (carro != null && !CARROS.includes(carro)) return erro(res, 'Carro invalido. Use pessoal ou empresa.');
 
   const alvo = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(Number(usuario_id));
   if (!podeMexerNoUsuario(quem, alvo)) {
@@ -2127,8 +2132,12 @@ async function mudarEmpresa(req, res, quem) {
     }
   }
 
-  const u = db.prepare('SELECT empresa, funcao FROM usuarios WHERE id = ?').get(Number(usuario_id));
-  responderJson(res, { ok: true, cracha: u ? cracha(u.empresa, u.funcao) : null });
+  if (carro != null) {
+    db.prepare('UPDATE usuarios SET carro = ? WHERE id = ?').run(carro, Number(usuario_id));
+  }
+
+  const u = db.prepare('SELECT empresa, funcao, carro FROM usuarios WHERE id = ?').get(Number(usuario_id));
+  responderJson(res, { ok: true, cracha: u ? cracha(u.empresa, u.funcao) : null, carro: u?.carro });
 }
 
 /**

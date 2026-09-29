@@ -1307,6 +1307,10 @@ function linhaUsuario(u) {
           (e) => `<option value="${e}"${u.empresa === e ? ' selected' : ''}>${e}</option>`,
         ).join('')}
       </select>
+      <select data-carro="${u.id}" aria-label="Carro de ${nome}" title="Carro pessoal: foto do odômetro obrigatória">
+        <option value="pessoal"${u.carro !== 'empresa' ? ' selected' : ''}>Carro pessoal</option>
+        <option value="empresa"${u.carro === 'empresa' ? ' selected' : ''}>Carro da empresa</option>
+      </select>
       <select data-funcao="${u.id}" aria-label="Função de ${nome}">
         ${FUNCOES.filter((f) => f !== 'Coordenador' || possoDarCoordenador || u.funcao === f)
           .map((f) => `<option value="${f}"${u.funcao === f ? ' selected' : ''}>${f}</option>`)
@@ -1355,7 +1359,13 @@ function ligarBotoesDeUsuario() {
         metodo: 'POST',
         corpo: { usuario_id: Number(elemento.dataset[campo]), [campo]: elemento.value },
       });
-      mostrarRecado('recado-usuario', `Atualizado para ${r.cracha}.`, 'ok');
+      mostrarRecado(
+        'recado-usuario',
+        campo === 'carro'
+          ? (r.carro === 'empresa' ? 'Agora com carro da empresa: a foto do odômetro deixa de ser cobrada.' : 'Agora com carro pessoal: a foto do odômetro volta a ser obrigatória.')
+          : `Atualizado para ${r.cracha}.`,
+        'ok',
+      );
       carregarUsuarios();
     } catch (e) {
       mostrarRecado('recado-usuario', e.message, 'erro');
@@ -1367,6 +1377,9 @@ function ligarBotoesDeUsuario() {
   }
   for (const s of raiz.querySelectorAll('[data-funcao]')) {
     s.addEventListener('change', () => salvarCracha(s, 'funcao'));
+  }
+  for (const s of raiz.querySelectorAll('[data-carro]')) {
+    s.addEventListener('change', () => salvarCracha(s, 'carro'));
   }
   for (const b of raiz.querySelectorAll('[data-galeria]')) {
     aoClicar(b, () => abrirGaleria(Number(b.dataset.galeria)), 'abrir a galeria');
@@ -1685,6 +1698,11 @@ function grupo(titulo, itens) {
       .join('')}`;
 }
 
+// Gerente e coordenador andam de carro da empresa: ja sugere. Da para trocar.
+$('u-funcao')?.addEventListener('change', () => {
+  $('u-carro').value = ['Gerente', 'Coordenador'].includes($('u-funcao').value) ? 'empresa' : 'pessoal';
+});
+
 async function criarUsuario() {
   const corpo = {
     nome: $('u-nome').value.trim(),
@@ -1695,6 +1713,7 @@ async function criarUsuario() {
     papel: $('u-papel').value,
     empresa: $('u-empresa').value,
     funcao: $('u-funcao').value,
+    carro: $('u-carro').value,
   };
   try {
     await api('/api/admin/usuarios', { metodo: 'POST', corpo });

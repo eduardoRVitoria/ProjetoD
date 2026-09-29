@@ -265,6 +265,13 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
   if (!colUsuarios.has('funcao')) {
     db.exec("ALTER TABLE usuarios ADD COLUMN funcao TEXT NOT NULL DEFAULT 'Vendedor'");
   }
+  if (!colUsuarios.has('carro')) {
+    // Carro pessoal: foto do odometro obrigatoria. Carro da empresa: nao.
+    // Gerente anda de carro da empresa; o resto comeca como pessoal e o admin
+    // troca quem tambem usa o da empresa (alguns supervisores).
+    db.exec("ALTER TABLE usuarios ADD COLUMN carro TEXT NOT NULL DEFAULT 'pessoal'");
+    db.exec("UPDATE usuarios SET carro = 'empresa' WHERE funcao IN ('Gerente', 'Coordenador')");
+  }
 }
 
 // As frentes do grupo. PROMOTORES e uma janela propria: todo promotor mora la,
@@ -301,6 +308,10 @@ const EMPRESA_DA_FUNCAO = {
 };
 
 export const empresaDaFuncao = (funcao) => EMPRESA_DA_FUNCAO[funcao] || null;
+
+// De quem e o carro. Com carro da empresa a foto do odometro nao e cobrada.
+export const CARROS = ['pessoal', 'empresa'];
+export const carroPadrao = (funcao) => (funcao === 'Gerente' || funcao === 'Coordenador' ? 'empresa' : 'pessoal');
 
 // Coordenador lidera os promotores: so o Adm Promotor (e o dono) coloca alguem
 // nessa funcao. Os outros administrativos nem enxergam a janela PROMOTORES,

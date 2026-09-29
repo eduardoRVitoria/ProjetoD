@@ -20,18 +20,18 @@ export function senhaConfere(senha, hashGravado, salt) {
 
 export function criarUsuario({
   login, nome, email = null, papel = 'colaborador', senha, placas = null,
-  empresa = 'DISO', funcao = 'Vendedor',
+  empresa = 'DISO', funcao = 'Vendedor', carro = 'pessoal',
 }) {
   const { hash, salt } = gerarHash(senha);
   const info = db
     .prepare(
       `INSERT INTO usuarios (login, nome, email, papel, senha_hash, senha_salt, trocar_senha,
-                             placas, empresa, funcao, criado_em)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+                             placas, empresa, funcao, carro, criado_em)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
     )
     .run(
       login.trim().toLowerCase(), nome.trim(), email, papel, hash, salt,
-      placas, empresa, funcao, agora(),
+      placas, empresa, funcao, carro, agora(),
     );
   return Number(info.lastInsertRowid);
 }

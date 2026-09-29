@@ -117,6 +117,8 @@ let salvando = false;
 
 // Gerente (e coordenador, mesma regra) e reembolsado pelo combustivel abastecido, nao pelo km.
 const ehGerente = () => eu?.funcao === 'Gerente' || eu?.funcao === 'Coordenador';
+// Carro da empresa nao precisa de foto do odometro.
+const carroDaEmpresa = () => eu?.carro === 'empresa';
 
 // ------------------------------------------------------------------- inicio
 
@@ -1276,8 +1278,10 @@ function luzesDoMes() {
     },
     {
       icone: 'odometro', ir: 'comprovantes', titulo: 'Fotos do odômetro',
-      estado: !fotos || doOdometro.some((a) => a.gravidade === 'erro') ? 'falha' : doOdometro.length ? 'alerta' : 'ok',
-      texto: fotos ? `${fotos} foto${fotos > 1 ? 's' : ''}${doOdometro.length ? ', confira' : ''}` : 'Nenhuma foto',
+      // Carro da empresa: a foto nao e cobrada, entao "nenhuma" nao e falha.
+      estado: (!fotos && !carroDaEmpresa()) || doOdometro.some((a) => a.gravidade === 'erro') ? 'falha' : doOdometro.length ? 'alerta' : 'ok',
+      texto: fotos ? `${fotos} foto${fotos > 1 ? 's' : ''}${doOdometro.length ? ', confira' : ''}`
+        : carroDaEmpresa() ? 'Carro da empresa: não precisa' : 'Nenhuma foto',
     },
     {
       icone: 'pendencia', ir: 'conferencia', titulo: 'Pendências',

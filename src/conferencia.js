@@ -54,10 +54,12 @@ const HORA_LIMITE = 18;
 //      que bater com o total do RDV e com a soma das notas (valor digitado em
 //      cada DANFE). A DANFE so e obrigatoria para gerente - para os outros, a
 //      falta dela vira aviso e o relatorio nao cai mais em "So falta DANFE".
+//   9  carro da empresa (gerente, alguns supervisores): foto do odometro nao
+//      e obrigatoria.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 8;
+export const VERSAO_REGRAS = 9;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -236,8 +238,11 @@ function diasSeguidos(dataAnterior, dataAtual) {
  * @param {number} vlrKm   valor pago por km (padrao 0,90)
  * @param {string} empresa empresa do dono do relatorio (DISO, DSO, PROMOTORES, ALPHA)
  * @param {string} funcao  funcao do dono - Gerente e pago pelo combustivel
+ * @param {string} carro   'pessoal' ou 'empresa' - carro da empresa nao cobra foto do odometro
  */
-export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, empresa = null, funcao = null) {
+export function conferir(
+  rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, empresa = null, funcao = null, carro = 'pessoal',
+) {
   const achados = [];
   const gerente = ehGerente(funcao);
 
@@ -681,7 +686,12 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
 
   // -------------------------------------------------------- 7. odometro
   const fotos = anexos.filter((a) => a.tipo === 'odometro');
-  if (fotos.length === 0) {
+  // Carro da empresa: a foto nao e cobrada. Se vier, as checagens de cada foto
+  // (7.1 em diante) continuam valendo.
+  const carroDaEmpresa = carro === 'empresa';
+  if (carroDaEmpresa) {
+    // nada a cobrar
+  } else if (fotos.length === 0) {
     achados.push(
       achado(
         'erro',
@@ -967,6 +977,7 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
     totalCombustivel,
     totalNotas,
     qtdFotosOdometro: fotos.length,
+    carroDaEmpresa,
     achados,
     statusSugerido: erros.length === 0 ? 'CERTA' : soFaltaDanfe ? 'SO_FALTA_DANFE' : 'ERRADA',
   };
