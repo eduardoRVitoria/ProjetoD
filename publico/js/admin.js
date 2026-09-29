@@ -670,7 +670,7 @@ async function abrirDetalhe(id) {
                   <span class="nome"><a href="/api/anexo/${a.id}" target="_blank" rel="noopener">${escapar(
                     a.nome_original,
                   )}</a></span>
-                  ${a.tipo === 'danfe' && a.valor ? `<span class="selo CERTA">${brl(a.valor)}</span>` : ''}
+                  ${a.valor ? `<span class="selo CERTA">${brl(a.valor)}</span>` : ''}
                   <span class="peso">${tamanhoBr(a.tamanho)}</span>
                 </div>`,
               )

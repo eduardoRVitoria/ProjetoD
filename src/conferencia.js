@@ -48,6 +48,8 @@ const HORA_LIMITE = 18;
 //      sem assinatura e erro; o sistema soma o pedagio, nao mais a IA.
 //   6  hotel e outras despesas: podem ser somados ao mes, mas cada um so vale
 //      com o SEU comprovante - o do hotel e o da outra despesa, separados.
+//   8  hotel e outras despesas: o valor vem do RDV e a soma dos comprovantes
+//      (valor digitado em cada um) tem que bater com ele.
 //   7  gerente e pago pelo combustivel: a soma do abastecimento dos dias tem
 //      que bater com o total do RDV e com a soma das notas (valor digitado em
 //      cada DANFE). A DANFE so e obrigatoria para gerente - para os outros, a
@@ -55,7 +57,7 @@ const HORA_LIMITE = 18;
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 7;
+export const VERSAO_REGRAS = 8;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -591,6 +593,44 @@ export function conferir(rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, e
           + 'delas. O comprovante do hotel nao cobre esta linha: cada despesa pede o seu.',
       ),
     );
+  }
+
+  // Com comprovante anexado, a soma deles tem que ser o valor do RDV. O valor
+  // de cada comprovante e digitado no envio - a conta e do sistema, sem IA.
+  for (const [tipo, declaradoTipo, nome, codigo] of [
+    ['hotel', hotelDeclarado, 'hotel', 'hotel_nao_bate'],
+    ['outras_despesas', outrosDeclarado, 'outras despesas', 'outros_nao_bate'],
+  ]) {
+    const comp = anexos.filter((a) => a.tipo === tipo);
+    if (!comp.length) continue;
+    const semValor = comp.filter((a) => !(Number(a.valor) > 0));
+    if (semValor.length) {
+      achados.push(
+        achado(
+          'erro',
+          `${codigo.split('_')[0]}_sem_valor`,
+          `${semValor.length} comprovante(s) de ${nome} sem o valor: ${semValor
+            .slice(0, 3)
+            .map((a) => a.nome_original)
+            .join(', ')}. Apague e anexe de novo informando o valor.`,
+        ),
+      );
+      continue;
+    }
+    const soma = Number(comp.reduce((s, a) => s + num(a.valor), 0).toFixed(2));
+    if (Math.round(soma * 100) !== Math.round(declaradoTipo * 100)) {
+      achados.push(
+        achado(
+          'erro',
+          codigo,
+          declaradoTipo > 0
+            ? `O RDV declara ${brl(declaradoTipo)} de ${nome}, mas os comprovantes somam ${brl(soma)}. `
+              + `Diferenca de ${brl(soma - declaradoTipo)}.`
+            : `Ha comprovante(s) de ${nome} somando ${brl(soma)}, mas o RDV nao declara ${nome}. `
+              + 'Confira o quadro de resumo do RDV.',
+        ),
+      );
+    }
   }
 
   // -------------------------------------------------------- 6. abastecimento

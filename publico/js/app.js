@@ -192,9 +192,6 @@ $('botao-manual').addEventListener('click', () => {
 $('botao-salvar').addEventListener('click', () => salvar(true));
 $('botao-enviar').addEventListener('click', enviar);
 $('observacao').addEventListener('input', () => marcarSujo());
-for (const id of ['hotel', 'outros', 'outros-descricao']) {
-  $(id).addEventListener('input', () => marcarSujo());
-}
 
 // As duas listas da aba Conferencia sao redesenhadas o tempo todo, entao o
 // clique e escutado no cartao, que nao troca, e nao no botao.
@@ -227,11 +224,6 @@ async function carregar() {
     estado = await api(`/api/relatorio?mes=${mes}`);
     sujo = false;
     $('observacao').value = estado.relatorio.observacao || '';
-    // Zero fica como campo vazio de proposito: "0,00" em toda tela passa a
-    // impressao de que o mes tem despesa de hotel a preencher.
-    $('hotel').value = valorNoCampo(estado.relatorio.hotel_declarado);
-    $('outros').value = valorNoCampo(estado.relatorio.outros_declarado);
-    $('outros-descricao').value = estado.relatorio.outros_descricao || '';
     desenharTudo();
     carregarHistorico();
   } catch (e) {
@@ -584,7 +576,7 @@ function desenharAnexos() {
               }</span>`
             : ''
         }
-        ${a.tipo === 'danfe' && a.valor ? `<span class="selo CERTA">${brl(a.valor)}</span>` : ''}
+        ${a.valor ? `<span class="selo CERTA">${brl(a.valor)}</span>` : ''}
         <span class="peso">${tamanhoBr(a.tamanho)}</span>
         ${
           // `aceita_anexo`, nao `editavel`: quem ja enviou precisa poder TROCAR
@@ -680,9 +672,11 @@ async function enviarArquivos(arquivos) {
   }
   // Gerente: cada nota vai com o valor dela - e com a soma das notas que o
   // combustivel dos dias e conferido.
-  if (tipoEmUso === 'danfe' && ehGerente()) {
+  // Hotel e outras despesas tambem: a soma dos comprovantes e conferida contra
+  // o que o RDV declara.
+  if ((tipoEmUso === 'danfe' && ehGerente()) || tipoEmUso === 'hotel' || tipoEmUso === 'outras_despesas') {
     for (const arquivo of arquivos) {
-      const valor = await pedirValorDaNota(arquivo);
+      const valor = await pedirValorDaNota(arquivo, tipoEmUso);
       if (valor === null) {
         return mostrarRecado('recado', 'Envio cancelado — a nota precisa do valor.', 'atencao');
       }
@@ -787,16 +781,21 @@ function pedirKm(arquivo) {
 }
 
 // Caixa que pede o valor total da nota de abastecimento (so para gerente).
-function pedirValorDaNota(arquivo) {
+function pedirValorDaNota(arquivo, tipo = 'danfe') {
+  const titulo = {
+    danfe: 'Qual o valor desta nota?',
+    hotel: 'Qual o valor desta nota de hotel?',
+    outras_despesas: 'Qual o valor deste comprovante?',
+  }[tipo] || 'Qual o valor deste comprovante?';
   return new Promise((resolve) => {
     const fundo = document.createElement('div');
     fundo.className = 'fundo-modal';
     fundo.innerHTML = `
       <div class="modal" style="max-width:480px">
-        <h2>Qual o valor desta nota?</h2>
+        <h2>${titulo}</h2>
         <p class="sub">${escapar(arquivo.name)}</p>
         <div id="recado-valor"></div>
-        <label for="valor-nota">Valor total da nota (R$)</label>
+        <label for="valor-nota">Valor total (R$)</label>
         <input type="text" id="valor-nota" inputmode="decimal" placeholder="ex.: 133,80" autocomplete="off">
         <div class="linha-botoes">
           <button id="valor-ok">Anexar</button>
@@ -814,7 +813,7 @@ function pedirValorDaNota(arquivo) {
     const confirmar = () => {
       const v = lerNumeroBr(campo.value, NaN);
       if (!Number.isFinite(v) || v <= 0) {
-        return mostrarRecado('recado-valor', 'Digite o valor total que está na nota.', 'erro');
+        return mostrarRecado('recado-valor', 'Digite o valor total que está no comprovante.', 'erro');
       }
       fechar(Number(v.toFixed(2)));
     };
@@ -1116,9 +1115,6 @@ async function salvar(avisar) {
         mes,
         linhas: linhasParaEnviar(),
         observacao: $('observacao').value,
-        hotel: Math.max(0, lerNumeroBr($('hotel').value)),
-        outros: Math.max(0, lerNumeroBr($('outros').value)),
-        outros_descricao: $('outros-descricao').value,
         justificativa: estado.relatorio.justificativa || '',
       },
     });

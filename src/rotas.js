@@ -548,7 +548,6 @@ async function salvarRelatorio(req, res, usuario) {
     db.prepare(
       `UPDATE relatorios
           SET total_km = ?, valor_km = ?, pedagio_declarado = ?, estac_declarado = ?,
-              hotel_declarado = ?, outros_declarado = ?, outros_descricao = ?,
               observacao = ?, justificativa = ?
         WHERE id = ?`,
     ).run(
@@ -556,12 +555,8 @@ async function salvarRelatorio(req, res, usuario) {
       r.valorKm,
       r.pedagioDeclarado,
       r.estacDeclarado,
-      // Valor digitado pela pessoa. O conferir acima ainda leu o valor antigo -
-      // igual ao que ja acontece com a justificativa -, mas a previa devolvida
-      // na resposta e refeita com o relatorio atualizado, logo abaixo.
-      numero(corpo.hotel),
-      numero(corpo.outros),
-      String(corpo.outros_descricao || '').trim().slice(0, 300) || null,
+      // Hotel e outras despesas nao passam mais por aqui: o valor e o que o RDV
+      // declara (gravado na leitura do PDF), e a prova sao os comprovantes.
       String(corpo.observacao || '').slice(0, 2000),
       corpo.justificativa === undefined
         ? rel.justificativa
@@ -967,6 +962,15 @@ async function subirAnexo(req, res, url, usuario) {
   }
   if (tipo === 'danfe' && usuario.funcao === 'Gerente' && valorNota == null) {
     return erro(res, 'Digite o valor total da nota de abastecimento.');
+  }
+  // Hotel e outras despesas: a soma dos comprovantes e conferida contra o RDV.
+  if ((tipo === 'hotel' || tipo === 'outras_despesas') && valorBruto != null && valorBruto !== '') {
+    valorNota = numero(valorBruto, NaN);
+    if (!Number.isFinite(valorNota) || valorNota <= 0) return erro(res, 'Valor do comprovante invalido.');
+    if (valorNota > 100_000) return erro(res, 'Esse valor parece alto demais. Confira.');
+  }
+  if ((tipo === 'hotel' || tipo === 'outras_despesas') && valorNota == null) {
+    return erro(res, 'Digite o valor total do comprovante.');
   }
 
   const rel = acharOuCriar(usuario.id, mes);
