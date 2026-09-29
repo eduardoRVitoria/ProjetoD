@@ -1056,8 +1056,8 @@ export function fotosQueFaltam(esperadas, fotos) {
   return faltam;
 }
 
-/** Quem e pago pelo combustivel em vez do km. */
-export const ehGerente = (funcao) => funcao === 'Gerente';
+/** Quem e pago pelo combustivel em vez do km. Coordenador segue a regra do gerente. */
+export const ehGerente = (funcao) => funcao === 'Gerente' || funcao === 'Coordenador';
 
 export function dataBr(iso) {
   const [a, m, d] = String(iso).split('-');

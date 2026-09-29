@@ -249,7 +249,8 @@ export const EMPRESAS = ['DISO', 'DSO', 'PROMOTORES', 'ALPHA'];
 // As funcoes administrativas ja trazem a empresa no nome, entao aparecem
 // inteiras no cracha em vez de virar "DISO (Adm DISO)".
 export const FUNCOES = [
-  'Vendedor', 'Promotor', 'Supervisor', 'Gerente', 'Adm Promotor', 'Adm DISO', 'Adm DSO', 'Adm ALPHA',
+  'Vendedor', 'Promotor', 'Supervisor', 'Gerente', 'Coordenador',
+  'Adm Promotor', 'Adm DISO', 'Adm DSO', 'Adm ALPHA',
 ];
 
 export const SIGLA_FUNCAO = {
@@ -257,6 +258,7 @@ export const SIGLA_FUNCAO = {
   Promotor: 'P',
   Supervisor: 'S',
   Gerente: 'G',
+  Coordenador: 'C',
   'Adm Promotor': 'AP',
 };
 
@@ -269,9 +271,18 @@ const EMPRESA_DA_FUNCAO = {
   'Adm ALPHA': 'ALPHA',
   'Adm Promotor': 'PROMOTORES',
   Promotor: 'PROMOTORES',
+  Coordenador: 'PROMOTORES',
 };
 
 export const empresaDaFuncao = (funcao) => EMPRESA_DA_FUNCAO[funcao] || null;
+
+// Coordenador lidera os promotores: so o Adm Promotor (e o dono) coloca alguem
+// nessa funcao. Os outros administrativos nem enxergam a janela PROMOTORES,
+// mas a regra fica explicita para nao depender so do recorte por empresa.
+const FUNCOES_SO_ADM_PROMOTOR = ['Coordenador'];
+
+export const podeDarFuncao = (quem, funcao) =>
+  !FUNCOES_SO_ADM_PROMOTOR.includes(funcao) || ehSuper(quem) || quem?.funcao === 'Adm Promotor';
 
 // "Adm DISO" e "Adm DSO" ja dizem a empresa, entao aparecem inteiras.
 // As demais viram sigla ao lado da empresa: DISO (V), DSO (AP).

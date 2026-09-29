@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {
   db, agora, valorDoKm, lerConfig, gravarConfig, PASTA_ANEXOS,
-  EMPRESAS, FUNCOES, cracha, empresaDaFuncao,
+  EMPRESAS, FUNCOES, cracha, empresaDaFuncao, podeDarFuncao,
   PAPEIS, ehSuper, ehAdmin, escopoDe, podeMexerNoUsuario, podeVerUsuario, filtroSql,
 } from './banco.js';
 import {
@@ -22,6 +22,7 @@ import {
   conferir,
   diferencaDePedagio as achadoDeDiferenca,
   passagensSemExplicacao,
+  ehGerente,
   VERSAO_REGRAS,
 } from './conferencia.js';
 import { conferirComIa, iaDisponivel, textoDosIgnorados } from './ia.js';
@@ -960,7 +961,7 @@ async function subirAnexo(req, res, url, usuario) {
     if (!Number.isFinite(valorNota) || valorNota <= 0) return erro(res, 'Valor da nota invalido.');
     if (valorNota > 100_000) return erro(res, 'Esse valor de nota parece alto demais. Confira.');
   }
-  if (tipo === 'danfe' && usuario.funcao === 'Gerente' && valorNota == null) {
+  if (tipo === 'danfe' && ehGerente(usuario.funcao) && valorNota == null) {
     return erro(res, 'Digite o valor total da nota de abastecimento.');
   }
   // Hotel e outras despesas: a soma dos comprovantes e conferida contra o RDV.
@@ -1930,6 +1931,9 @@ async function novoUsuario(req, res, quem) {
   if (!FUNCOES.includes(funcao)) {
     return erro(res, `Funcao invalida. Use ${FUNCOES.join(', ')}.`);
   }
+  if (!podeDarFuncao(quem, funcao)) {
+    return erro(res, `So o Adm Promotor cadastra ${funcao}.`, 403);
+  }
 
   // "Adm DISO" / "Adm DSO" ja dizem a empresa - nao deixa ficar cruzado.
   const empresaFinal = empresaDaFuncao(funcao) || empresa;
@@ -2053,6 +2057,9 @@ async function mudarEmpresa(req, res, quem) {
   if (funcao != null) {
     if (!FUNCOES.includes(funcao)) {
       return erro(res, `Funcao invalida. Use ${FUNCOES.join(', ')}.`);
+    }
+    if (funcao !== alvo.funcao && !podeDarFuncao(quem, funcao)) {
+      return erro(res, `So o Adm Promotor coloca alguem como ${funcao}.`, 403);
     }
     db.prepare('UPDATE usuarios SET funcao = ? WHERE id = ?').run(funcao, Number(usuario_id));
 

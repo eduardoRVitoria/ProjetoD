@@ -115,8 +115,8 @@ let estado = null; // { relatorio, grade, anexos, previa }
 let sujo = false;
 let salvando = false;
 
-// Gerente e reembolsado pelo combustivel abastecido, nao pelo km.
-const ehGerente = () => eu?.funcao === 'Gerente';
+// Gerente (e coordenador, mesma regra) e reembolsado pelo combustivel abastecido, nao pelo km.
+const ehGerente = () => eu?.funcao === 'Gerente' || eu?.funcao === 'Coordenador';
 
 // ------------------------------------------------------------------- inicio
 

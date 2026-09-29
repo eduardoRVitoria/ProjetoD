@@ -98,10 +98,11 @@ const SECOES = [
   { titulo: 'Promotores', funcoes: ['Promotor'] },
   { titulo: 'Supervisores', funcoes: ['Supervisor'] },
   { titulo: 'Gerentes', funcoes: ['Gerente'] },
+  { titulo: 'Coordenadores', funcoes: ['Coordenador'] },
   { titulo: 'Administrativo', funcoes: ['Adm Promotor', 'Adm DISO', 'Adm DSO', 'Adm ALPHA'] },
 ];
 
-const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor', 'Gerente', 'Adm Promotor', 'Adm DISO', 'Adm DSO', 'Adm ALPHA'];
+const FUNCOES = ['Vendedor', 'Promotor', 'Supervisor', 'Gerente', 'Coordenador', 'Adm Promotor', 'Adm DISO', 'Adm DSO', 'Adm ALPHA'];
 const EMPRESAS = ['DISO', 'DSO', 'PROMOTORES', 'ALPHA'];
 
 // ATENCAO: tudo que for `const`/`let` e usado durante a inicializacao precisa
@@ -122,12 +123,16 @@ let valoresPagos = [];
 // ------------------------------------------------------------------- inicio
 
 let souSuper = false;
+let possoDarCoordenador = false;
 
 try {
   const dados = await api('/api/eu');
   $('meu-nome').textContent = dados.usuario.nome;
   lembrarQuemEsta(dados.usuario.login);
   souSuper = dados.usuario.papel === 'super';
+  // Coordenador so o Adm Promotor (e o dono) coloca. A rota recusa os outros.
+  possoDarCoordenador = souSuper || dados.usuario.funcao === 'Adm Promotor';
+  if (possoDarCoordenador) $('opcao-coordenador')?.classList.remove('esconde');
   marcarAmbiente(dados.ambiente);
   // Backup e restauracao sao do dono do sistema. As rotas ja recusam quem nao
   // e super; esconder o cartao evita oferecer um botao que so devolve 403.
@@ -1300,9 +1305,9 @@ function linhaUsuario(u) {
         ).join('')}
       </select>
       <select data-funcao="${u.id}" aria-label="Função de ${nome}">
-        ${FUNCOES.map(
-          (f) => `<option value="${f}"${u.funcao === f ? ' selected' : ''}>${f}</option>`,
-        ).join('')}
+        ${FUNCOES.filter((f) => f !== 'Coordenador' || possoDarCoordenador || u.funcao === f)
+          .map((f) => `<option value="${f}"${u.funcao === f ? ' selected' : ''}>${f}</option>`)
+          .join('')}
       </select>
       ${
         u.ativo
