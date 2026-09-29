@@ -886,3 +886,15 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 @media (prefers-reduced-motion: reduce) {
   .abas.gaveta, .gaveta-fundo { transition: none; }
 }
+
+/* Botao "Instalar o app": so existe na gaveta do celular. */
+.gaveta-instalar { display: none; }
+@media (max-width: 860px) {
+  .abas.gaveta .gaveta-instalar:not(.esconde) {
+    display: flex; justify-content: center;
+    margin-top: auto;
+    min-height: 48px;
+    background: var(--tinta); color: var(--tinta-texto);
+    font-size: 15px; font-weight: 600;
+  }
+}

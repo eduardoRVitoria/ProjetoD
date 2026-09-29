@@ -1446,6 +1446,62 @@ function fecharMenu() {
   $('botao-menu').setAttribute('aria-expanded', 'false');
 }
 
+// ------------------------------------------------------ instalar o app
+//
+// Android/Chrome avisa que o site pode ser instalado (beforeinstallprompt) e
+// deixa a gente abrir a pergunta pelo nosso botao. O iPhone nao tem esse
+// aviso: la o botao mostra o caminho pelo Compartilhar. Ja instalado (aberto
+// como app), o botao some.
+let pedidoDeInstalacao = null;
+const jaInstalado = () =>
+  window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+const ehIphone = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+function mostrarBotaoInstalar(sim) {
+  $('botao-instalar').classList.toggle('esconde', !sim || jaInstalado());
+}
+
+window.addEventListener('beforeinstallprompt', (ev) => {
+  ev.preventDefault();
+  pedidoDeInstalacao = ev;
+  mostrarBotaoInstalar(true);
+});
+window.addEventListener('appinstalled', () => {
+  pedidoDeInstalacao = null;
+  mostrarBotaoInstalar(false);
+});
+if (ehIphone()) mostrarBotaoInstalar(true);
+
+$('botao-instalar').addEventListener('click', async () => {
+  fecharMenu();
+  if (pedidoDeInstalacao) {
+    pedidoDeInstalacao.prompt();
+    const { outcome } = await pedidoDeInstalacao.userChoice;
+    if (outcome === 'accepted') mostrarBotaoInstalar(false);
+    pedidoDeInstalacao = null;
+    return;
+  }
+  const fundo = document.createElement('div');
+  fundo.className = 'fundo-modal';
+  fundo.innerHTML = ehIphone()
+    ? `<div class="modal">
+        <h2>Instalar no iPhone</h2>
+        <p>1. Toque no botão <strong>Compartilhar</strong> (o quadrado com a seta para cima), na barra do Safari.</p>
+        <p>2. Role e toque em <strong>Adicionar à Tela de Início</strong>.</p>
+        <p>3. Toque em <strong>Adicionar</strong>. O ícone do Portal RDV aparece junto dos outros apps.</p>
+        <p class="sub">Precisa ser pelo <strong>Safari</strong> — no Chrome do iPhone essa opção não aparece.</p>
+        <div class="linha-botoes"><button id="fechar-instalar">Entendi</button></div>
+      </div>`
+    : `<div class="modal">
+        <h2>Instalar no celular</h2>
+        <p>Abra o menu do navegador (os <strong>três pontinhos</strong>) e toque em
+           <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>.</p>
+        <div class="linha-botoes"><button id="fechar-instalar">Entendi</button></div>
+      </div>`;
+  document.body.appendChild(fundo);
+  fundo.querySelector('#fechar-instalar').addEventListener('click', () => fundo.remove());
+});
+
 $('botao-menu').addEventListener('click', abrirMenu);
 $('fechar-menu').addEventListener('click', fecharMenu);
 $('fundo-menu').addEventListener('click', fecharMenu);
