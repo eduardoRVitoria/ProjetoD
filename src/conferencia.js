@@ -22,7 +22,7 @@ const USO_PARTICULAR_ESPERADO = 600;
 // A foto do painel e do inicio ou do fim do dia, entao a leitura tem que cair
 // dentro do que o RDV registra naquele dia. A folga cobre o trecho entre tirar
 // a foto e comecar a rodar - casa, posto, primeira visita.
-const FOLGA_DA_FOTO = 30;
+const FOLGA_DA_FOTO = 0;
 
 // A partir desta hora, pedagio e estacionamento pedem explicacao: e despesa
 // fora do expediente, e sem motivo escrito ninguem consegue julgar depois.
@@ -56,10 +56,12 @@ const HORA_LIMITE = 18;
 //      falta dela vira aviso e o relatorio nao cai mais em "So falta DANFE".
 //   9  carro da empresa (gerente, alguns supervisores): foto do odometro nao
 //      e obrigatoria.
+//  10  excecao da 9: gerente da ALPHA manda a foto do odometro mesmo com
+//      carro da empresa.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 9;
+export const VERSAO_REGRAS = 10;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -686,10 +688,10 @@ export function conferir(
 
   // -------------------------------------------------------- 7. odometro
   const fotos = anexos.filter((a) => a.tipo === 'odometro');
-  // Carro da empresa: a foto nao e cobrada. Se vier, as checagens de cada foto
-  // (7.1 em diante) continuam valendo.
+  // Carro da empresa: a foto nao e cobrada - menos para gerente da ALPHA. Se
+  // vier, as checagens de cada foto (7.1 em diante) continuam valendo.
   const carroDaEmpresa = carro === 'empresa';
-  if (carroDaEmpresa) {
+  if (!cobraFotoOdometro(empresa, funcao, carro)) {
     // nada a cobrar
   } else if (fotos.length === 0) {
     achados.push(
@@ -1069,6 +1071,13 @@ export function fotosQueFaltam(esperadas, fotos) {
 
 /** Quem e pago pelo combustivel em vez do km. Coordenador segue a regra do gerente. */
 export const ehGerente = (funcao) => funcao === 'Gerente' || funcao === 'Coordenador';
+
+/**
+ * Se a foto do odometro e obrigatoria. Carro da empresa dispensa, menos para
+ * gerente da ALPHA: ele manda a foto mesmo com carro da empresa.
+ */
+export const cobraFotoOdometro = (empresa, funcao, carro) =>
+  carro !== 'empresa' || (empresa === 'ALPHA' && ehGerente(funcao));
 
 export function dataBr(iso) {
   const [a, m, d] = String(iso).split('-');

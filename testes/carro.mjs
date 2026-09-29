@@ -21,4 +21,9 @@ assert.equal(empresa.carroDaEmpresa, true);
 // Sem o parametro, continua cobrando (padrao pessoal).
 assert.ok(codigos(conferir(rel, linhas, [], 0.9, null, 'DISO', 'Vendedor')).includes('sem_odometro'));
 
-console.log('OK - carro da empresa dispensa a foto do odometro');
+// Gerente da ALPHA manda a foto mesmo com carro da empresa.
+assert.ok(codigos(conferir(rel, linhas, [], 0.9, null, 'ALPHA', 'Gerente', 'empresa')).includes('sem_odometro'), 'gerente ALPHA cobra a foto');
+assert.ok(!codigos(conferir(rel, linhas, [], 0.9, null, 'DISO', 'Gerente', 'empresa')).includes('sem_odometro'), 'gerente de outra empresa nao');
+assert.ok(!codigos(conferir(rel, linhas, [], 0.9, null, 'ALPHA', 'Vendedor', 'empresa')).includes('sem_odometro'), 'so gerente na ALPHA');
+
+console.log('OK - carro da empresa dispensa a foto do odometro (menos gerente da ALPHA)');
