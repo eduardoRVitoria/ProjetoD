@@ -123,6 +123,10 @@ let valoresPagos = [];
 // ------------------------------------------------------------------- inicio
 
 let souSuper = false;
+// `function`: e usada na lista, que pode montar durante a inicializacao.
+function ehAdministrativo(funcao) {
+  return String(funcao || '').startsWith('Adm ');
+}
 let possoDarCoordenador = false;
 
 try {
@@ -1307,10 +1311,15 @@ function linhaUsuario(u) {
           (e) => `<option value="${e}"${u.empresa === e ? ' selected' : ''}>${e}</option>`,
         ).join('')}
       </select>
-      <select data-carro="${u.id}" aria-label="Carro de ${nome}" title="Carro pessoal: foto do odômetro obrigatória">
+      ${
+        // Administrativo nao manda RDV: carro nao se aplica.
+        ehAdministrativo(u.funcao)
+          ? ''
+          : `<select data-carro="${u.id}" aria-label="Carro de ${nome}" title="Carro pessoal: foto do odômetro obrigatória">
         <option value="pessoal"${u.carro !== 'empresa' ? ' selected' : ''}>Carro pessoal</option>
         <option value="empresa"${u.carro === 'empresa' ? ' selected' : ''}>Carro da empresa</option>
-      </select>
+      </select>`
+      }
       <select data-funcao="${u.id}" aria-label="Função de ${nome}">
         ${FUNCOES.filter((f) => f !== 'Coordenador' || possoDarCoordenador || u.funcao === f)
           .map((f) => `<option value="${f}"${u.funcao === f ? ' selected' : ''}>${f}</option>`)
@@ -1699,8 +1708,11 @@ function grupo(titulo, itens) {
 }
 
 // Gerente e coordenador andam de carro da empresa: ja sugere. Da para trocar.
+// Administrativo nao manda RDV, entao o campo nem aparece.
 $('u-funcao')?.addEventListener('change', () => {
-  $('u-carro').value = ['Gerente', 'Coordenador'].includes($('u-funcao').value) ? 'empresa' : 'pessoal';
+  const funcao = $('u-funcao').value;
+  $('u-carro').value = ['Gerente', 'Coordenador'].includes(funcao) ? 'empresa' : 'pessoal';
+  $('u-carro').parentElement.classList.toggle('esconde', ehAdministrativo(funcao));
 });
 
 async function criarUsuario() {

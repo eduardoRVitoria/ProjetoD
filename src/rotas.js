@@ -2019,7 +2019,8 @@ async function novoUsuario(req, res, quem) {
       // Mesma peneira da leitura do RDV: o campo aceita placa, nao texto livre.
       placas: placaLimpa(placas),
       empresa: empresaFinal, funcao,
-      carro: carro ?? carroPadrao(funcao),
+      // Gerente e coordenador sempre entram com carro da empresa.
+      carro: carroPadrao(funcao) === 'empresa' ? 'empresa' : (carro ?? 'pessoal'),
     });
     responderJson(res, { ok: true, id });
   } catch (e) {
@@ -2129,6 +2130,11 @@ async function mudarEmpresa(req, res, quem) {
     const daFuncao = empresaDaFuncao(funcao);
     if (daFuncao) {
       db.prepare('UPDATE usuarios SET empresa = ? WHERE id = ?').run(daFuncao, Number(usuario_id));
+    }
+
+    // Virou gerente ou coordenador: ja passa para carro da empresa.
+    if (funcao !== alvo.funcao && carro == null && carroPadrao(funcao) === 'empresa') {
+      db.prepare("UPDATE usuarios SET carro = 'empresa' WHERE id = ?").run(Number(usuario_id));
     }
   }
 
