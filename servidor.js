@@ -15,6 +15,7 @@ import { tratarApi } from './src/rotas.js';
 import { responderJson, erro, ipDoPedido } from './src/util.js';
 import * as log from './src/log.js';
 import { agendarBackupDiario } from './src/backup-automatico.js';
+import { vigiarEspaco } from './src/arquivamento.js';
 
 const aqui = path.dirname(fileURLToPath(import.meta.url));
 const PUBLICO = path.join(aqui, 'publico');
@@ -292,6 +293,7 @@ limparSessoesVencidas();
 soltarConferenciasInterrompidas();
 const senhaInicial = garantirAdmin();
 agendarBackupDiario();
+vigiarEspaco();
 
 // Conexao ociosa fica aberta 65s, nao os 5s padrao do Node.
 //
@@ -302,6 +304,9 @@ agendarBackupDiario();
 // headersTimeout tem que ser maior que o keepAliveTimeout, senao a corrida volta.
 servidor.keepAliveTimeout = 65_000;
 servidor.headersTimeout = 66_000;
+// Devolver um bloco de arquivamento sobe um zip de centenas de MB; os 5 minutos
+// padrao do Node cortariam o envio no meio.
+servidor.requestTimeout = 60 * 60_000;
 
 servidor.listen(PORTA, '0.0.0.0', () => {
   console.log('');

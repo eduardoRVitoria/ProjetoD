@@ -577,6 +577,7 @@ function desenharAnexos() {
             : ''
         }
         ${a.valor ? `<span class="selo CERTA">${brl(a.valor)}</span>` : ''}
+        ${a.arquivado_em ? '<span class="selo">Arquivado</span>' : ''}
         <span class="peso">${tamanhoBr(a.tamanho)}</span>
         ${
           // `aceita_anexo`, nao `editavel`: quem ja enviou precisa poder TROCAR

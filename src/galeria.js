@@ -35,6 +35,7 @@ function anexosDoColaborador(usuarioId, mes = null) {
          FROM anexos a
          JOIN relatorios r ON r.id = a.relatorio_id
         WHERE r.usuario_id = ? ${filtroMes}
+          AND a.arquivado_em IS NULL
         ORDER BY r.mes_ref DESC, a.tipo, a.enviado_em`,
     )
     .all(...args);

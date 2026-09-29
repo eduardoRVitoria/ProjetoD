@@ -181,6 +181,32 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     // conferida sem precisar da IA ler nota por nota.
     db.exec('ALTER TABLE anexos ADD COLUMN valor REAL');
   }
+  if (!colAnexos.has('arquivado_em')) {
+    // Arquivo tirado do servidor para liberar espaco: o registro fica, o
+    // arquivo esta no bloco que o dono baixou. Ver src/arquivamento.js.
+    db.exec('ALTER TABLE anexos ADD COLUMN arquivado_em TEXT');
+    db.exec('ALTER TABLE anexos ADD COLUMN arquivado_bloco INTEGER');
+  }
+  // Cada zip de arquivamento baixado. `itens` e a lista dos anexos que foram
+  // no zip; `bytes_zip` e o tamanho exato gerado, conferido contra o arquivo
+  // que o dono escolhe no PC antes de apagar qualquer coisa.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS blocos (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      rotulo        TEXT NOT NULL,
+      empresa       TEXT,
+      usuario_id    INTEGER,
+      anexos        INTEGER NOT NULL,
+      bytes         INTEGER NOT NULL,
+      bytes_zip     INTEGER,
+      itens         TEXT NOT NULL,
+      status        TEXT NOT NULL,   -- GERANDO | BAIXADO | FALHOU | LIMPO | DEVOLVIDO
+      criado_por    INTEGER,
+      criado_em     TEXT NOT NULL,
+      limpo_em      TEXT,
+      devolvido_em  TEXT
+    )
+  `);
 
   // Uma vez so: relatorio lido antes de existir a coluna de hotel/outros tem 0
   // nela e o valor so dentro de `extraido`. A conferencia passou a confiar na

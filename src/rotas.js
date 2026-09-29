@@ -30,6 +30,7 @@ import { conferirEmDemo } from './ia-demo.js';
 import { gerarPlanilha, gerarHistorico } from './planilha.js';
 import { enviarBackup, restaurarBackup, resumoDosDados, bancoFechadoPelaRestauracao } from './backup.js';
 import { montarImpressao } from './impressao.js';
+import { resumoDoArmazenamento, enviarBloco, liberarBloco, devolverBloco } from './arquivamento.js';
 import { extrairDoRdv, motivoDeNaoConseguirLer } from './extrair.js';
 import * as log from './log.js';
 import { verificarAssinatura, achadosDaAssinatura } from './assinatura.js';
@@ -177,6 +178,10 @@ export async function tratarApi(req, res, url, usuario, seguro) {
       '/api/admin/restaurar',
       '/api/admin/dados',
       '/api/admin/tudo',
+      '/api/admin/armazenamento',
+      '/api/admin/bloco',
+      '/api/admin/bloco-liberar',
+      '/api/admin/bloco-devolver',
     ];
     if (soSuper.includes(rota) && !ehSuper(usuario)) {
       return erro(
@@ -215,6 +220,10 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/restaurar' && metodo === 'POST') return subirBackup(req, res, usuario);
     if (rota === '/api/admin/dados' && metodo === 'GET') return responderJson(res, resumoDosDados());
     if (rota === '/api/admin/tudo' && metodo === 'GET') return verTudo(res, usuario);
+    if (rota === '/api/admin/armazenamento' && metodo === 'GET') return responderJson(res, resumoDoArmazenamento());
+    if (rota === '/api/admin/bloco' && metodo === 'GET') return baixarBloco(res, url, usuario);
+    if (rota === '/api/admin/bloco-liberar' && metodo === 'POST') return liberarUmBloco(req, res, usuario);
+    if (rota === '/api/admin/bloco-devolver' && metodo === 'POST') return devolverUmBloco(req, res, usuario);
   }
 
   return erro(res, 'Rota nao encontrada.', 404);
@@ -397,7 +406,8 @@ function linhasDo(relId) {
 function anexosDo(relId) {
   return db
     .prepare(
-      `SELECT id, tipo, nome_original, mime, tamanho, km, data_leitura, valor, enviado_em
+      `SELECT id, tipo, nome_original, mime, tamanho, km, data_leitura, valor, enviado_em,
+              arquivado_em, arquivado_bloco
          FROM anexos WHERE relatorio_id = ? ORDER BY tipo, km, id`,
     )
     .all(relId);
@@ -1106,6 +1116,14 @@ function baixarAnexo(req, res, rota, usuario) {
   if (!achado) return erro(res, 'Anexo nao encontrado.', 404);
 
   const caminho = path.join(PASTA_ANEXOS, achado.anexo.arquivo);
+  if (achado.anexo.arquivado_em) {
+    return erro(
+      res,
+      `Esse comprovante foi arquivado no computador do dono em ${new Date(achado.anexo.arquivado_em).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} `
+        + `(bloco ${achado.anexo.arquivado_bloco}). Para ver aqui, devolva o bloco ao portal.`,
+      410,
+    );
+  }
   if (!fs.existsSync(caminho)) return erro(res, 'Arquivo sumiu do servidor.', 404);
 
   const nomeLimpo = nomeDeArquivoSeguro(achado.anexo.nome_original);
@@ -1357,6 +1375,15 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
   const linhas = linhasDo(rel.id);
   const anexos = db.prepare('SELECT * FROM anexos WHERE relatorio_id = ?').all(rel.id);
   const vlrKm = valorDoKm();
+
+  // Conferir sem os comprovantes daria parecer falso ("faltou a nota").
+  const arquivado = anexos.find((a) => a.arquivado_em);
+  if (arquivado) {
+    throw conferenciaNaoRoda(
+      `Os comprovantes deste relatorio foram arquivados (bloco ${arquivado.arquivado_bloco}). `
+        + 'Devolva o bloco ao portal antes de conferir de novo.',
+    );
+  }
 
   if (linhas.length === 0) {
     const e = new Error(
@@ -1707,6 +1734,36 @@ function baixarBackup(res, quem) {
   gravarConfig('ultimo_backup_em', agora());
   log.info('backup', 'backup baixado', { por: quem?.login });
   return enviarBackup(res, `portal-rdv-backup-${carimbo}.zip`);
+}
+
+// ------------------------------------------------- arquivamento em blocos
+
+function baixarBloco(res, url, quem) {
+  const empresa = url.searchParams.get('empresa') || null;
+  const usuarioId = Number(url.searchParams.get('usuario_id')) || null;
+  if (empresa && !EMPRESAS.includes(empresa)) return erro(res, 'Empresa invalida.');
+  if (!empresa && !usuarioId) return erro(res, 'Escolha a empresa ou a pessoa.');
+  if (!enviarBloco(res, { empresa, usuarioId, quem })) {
+    return erro(res, 'Nao ha comprovante de relatorio aprovado para arquivar aqui.', 404);
+  }
+}
+
+async function liberarUmBloco(req, res, quem) {
+  const { id, tamanho } = await lerJson(req);
+  try {
+    responderJson(res, { ok: true, ...liberarBloco(id, tamanho, quem) });
+  } catch (e) {
+    erro(res, e.message, 400);
+  }
+}
+
+async function devolverUmBloco(req, res, quem) {
+  try {
+    responderJson(res, { ok: true, ...(await devolverBloco(req, quem)) });
+  } catch (e) {
+    log.aviso('arquivo', 'bloco nao devolvido', { por: quem?.login, motivo: e.message });
+    erro(res, e.message, 400);
+  }
 }
 
 async function subirBackup(req, res, quem) {

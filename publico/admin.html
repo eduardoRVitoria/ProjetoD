@@ -61,6 +61,7 @@
 
 <main class="conteudo larga">
   <div id="recado"></div>
+  <div id="aviso-espaco"></div>
 
   <!-- ----------------------------------------------------------- painel -->
   <section id="aba-painel">
@@ -334,6 +335,30 @@
       <div class="linha-botoes">
         <button class="perigo" id="botao-restaurar">Restaurar deste arquivo</button>
       </div>
+    </div>
+
+    <div class="cartao" id="cartao-armazenamento">
+      <h2>Armazenamento</h2>
+      <p class="sub">
+        Tira do servidor os comprovantes de relatórios <strong>aprovados</strong>, em blocos
+        por empresa ou por pessoa. Baixe o bloco, guarde no seu computador e depois clique em
+        "Liberar espaço" escolhendo o mesmo arquivo. O relatório continua no portal; só o
+        arquivo sai. Quando o disco passa de 3 GB, o portal avisa aqui e por e-mail.
+      </p>
+      <div id="resumo-armazenamento"><p class="carregando">Carregando...</p></div>
+      <div id="recado-armazenamento"></div>
+
+      <h3 style="margin-top:24px">Devolver um bloco</h3>
+      <p class="sub">
+        Envia de volta um bloco baixado antes. Os arquivos voltam para os relatórios e
+        abrem normalmente de novo. Não mexe em mais nada.
+      </p>
+      <input type="file" id="arquivo-devolver" accept=".zip,application/zip" style="margin-bottom:12px">
+      <div class="linha-botoes">
+        <button class="secundario" id="botao-devolver">Devolver este bloco</button>
+      </div>
+      <!-- escolhido pelo "Liberar espaço": so o tamanho e lido, nada e enviado -->
+      <input type="file" id="arquivo-liberar" accept=".zip,application/zip" class="esconde">
     </div>
   </section>
   <!-- ---------------------------------------------------------- tudo -->

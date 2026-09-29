@@ -137,6 +137,8 @@ try {
   // Backup e restauracao sao do dono do sistema. As rotas ja recusam quem nao
   // e super; esconder o cartao evita oferecer um botao que so devolve 403.
   if (!souSuper) $('cartao-backup')?.remove();
+  if (!souSuper) $('cartao-armazenamento')?.remove();
+  if (souSuper) avisoDeEspaco();
   // A aba "Tudo" e o perfil "Dono" so existem para quem ve tudo. A rota ja
   // recusa os outros; esconder evita oferecer o que so devolveria 403.
   if (souSuper) {
@@ -722,6 +724,7 @@ async function abrirDetalhe(id) {
                     a.nome_original,
                   )}</a></span>
                   ${a.valor ? `<span class="selo CERTA">${brl(a.valor)}</span>` : ''}
+                  ${a.arquivado_em ? `<span class="selo" title="Tirado do servidor. Devolva o bloco para abrir aqui.">Arquivado · bloco ${a.arquivado_bloco}</span>` : ''}
                   <span class="peso">${tamanhoBr(a.tamanho)}</span>
                 </div>`,
               )
@@ -1729,6 +1732,7 @@ async function carregarConfig() {
     mostrarRecado('recado-config', e.message, 'erro');
   }
   carregarResumoBackup();
+  carregarArmazenamento();
 }
 
 // ------------------------------------------------------------------ backup
@@ -1811,6 +1815,198 @@ $('botao-restaurar')?.addEventListener('click', async () => {
     carregarResumoBackup();
   } catch (e) {
     mostrarRecado('recado-backup', e.message, 'erro');
+  }
+});
+
+// ------------------------------------------------------------ armazenamento
+
+// `function`, nao `const`: o aviso de espaco roda durante a inicializacao,
+// antes de o modulo chegar aqui (ver o ATENCAO no topo).
+function gb(b) {
+  return `${(b / 1024 ** 3).toFixed(2).replace('.', ',')} GB`;
+}
+
+function rotuloDoBloco(status) {
+  return {
+    GERANDO: 'baixando…',
+    BAIXADO: 'no servidor e no seu PC',
+    LIMPO: 'só no seu PC',
+    DEVOLVIDO: 'devolvido ao servidor',
+  }[status] || status;
+}
+
+// Faixa no topo para o dono: passou de 3 GB, e hora de baixar blocos.
+async function avisoDeEspaco() {
+  try {
+    const d = await api('/api/admin/armazenamento');
+    if (!d.passou_do_limite) return;
+    $('aviso-espaco').innerHTML = `
+      <div class="aviso atencao" style="margin-bottom:16px">
+        <strong>O servidor está com ${gb(d.usado)} de ${gb(d.capacidade)}.</strong>
+        Baixe os blocos dos relatórios aprovados e libere espaço antes de encher.
+        <button class="secundario pequeno" id="ir-armazenamento" style="margin-left:8px">Abrir armazenamento</button>
+      </div>`;
+    $('ir-armazenamento').addEventListener('click', () => {
+      document.querySelector('.abas button[data-aba="config"]')?.click();
+      setTimeout(() => $('cartao-armazenamento')?.scrollIntoView({ behavior: 'smooth' }), 100);
+    });
+  } catch {
+    // o aviso e extra; sem ele o resto da tela segue
+  }
+}
+
+async function carregarArmazenamento() {
+  const alvo = $('resumo-armazenamento');
+  if (!alvo) return;
+  try {
+    const d = await api('/api/admin/armazenamento');
+    const pct = Math.min(100, Math.round((d.usado / d.capacidade) * 100));
+    const tom = d.passou_do_limite ? 'atencao' : 'ok';
+
+    const empresas = d.empresas.length
+      ? d.empresas
+          .map(
+            (e) => `
+        <details style="margin-top:10px">
+          <summary style="cursor:pointer">
+            <strong>${escapar(e.empresa)}</strong> — ${e.anexos} arquivo(s), ${tamanhoBr(e.bytes)}
+            <button class="pequeno" data-bloco-empresa="${escapar(e.empresa)}" style="margin-left:8px">Baixar bloco da empresa</button>
+          </summary>
+          ${e.pessoas
+            .map(
+              (p) => `<div class="anexo">
+                <span class="nome">${escapar(p.nome)}</span>
+                <span class="peso">${p.anexos} arquivo(s) · ${tamanhoBr(p.bytes)}</span>
+                <button class="secundario pequeno" data-bloco-pessoa="${p.usuario_id}">Baixar bloco</button>
+              </div>`,
+            )
+            .join('')}
+        </details>`,
+          )
+          .join('')
+      : '<p class="sub">Nenhum comprovante de relatório aprovado ainda no servidor.</p>';
+
+    const blocos = d.blocos.length
+      ? `<h3 style="margin-top:20px">Blocos baixados</h3>
+         ${d.blocos
+           .map(
+             (b) => `<div class="anexo">
+               <span class="peso">Bloco ${b.id}</span>
+               <span class="nome">${escapar(b.rotulo)} — ${b.anexos} arquivo(s), ${tamanhoBr(b.bytes)}
+                 <br><span class="sub">${dataHoraBr(b.criado_em)} · ${rotuloDoBloco(b.status)}</span></span>
+               ${
+                 b.status === 'BAIXADO' || b.status === 'DEVOLVIDO'
+                   ? `<button class="pequeno" data-liberar="${b.id}">Liberar espaço</button>`
+                   : ''
+               }
+             </div>`,
+           )
+           .join('')}`
+      : '';
+
+    alvo.innerHTML = `
+      <div class="aviso ${tom}">
+        Em uso: <strong>${gb(d.usado)}</strong> de ${gb(d.capacidade)} (${pct}%).
+        ${d.passou_do_limite ? 'Passou do limite de aviso — hora de liberar espaço.' : `O aviso dispara em ${gb(d.limite)}.`}
+      </div>
+      ${empresas}
+      ${blocos}`;
+  } catch (e) {
+    alvo.innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
+  }
+}
+
+// Um bloco pode ter GBs: vai por download direto do navegador, nao pelo
+// fetch() dos outros downloads, que seguraria o arquivo inteiro na memoria.
+function baixarBloco(parametros) {
+  const a = document.createElement('a');
+  a.href = `/api/admin/bloco?${new URLSearchParams(parametros)}`;
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  mostrarRecado(
+    'recado-armazenamento',
+    'O download começou. Quando terminar, guarde o arquivo no computador e clique em "Liberar espaço" no bloco abaixo.',
+    'info',
+  );
+  // O bloco entra na lista quando o servidor termina de gerar.
+  setTimeout(carregarArmazenamento, 4000);
+}
+
+let liberandoBloco = null;
+
+$('resumo-armazenamento')?.addEventListener('click', (ev) => {
+  const empresa = ev.target.closest('[data-bloco-empresa]');
+  const pessoa = ev.target.closest('[data-bloco-pessoa]');
+  const liberar = ev.target.closest('[data-liberar]');
+  if (empresa) {
+    ev.preventDefault(); // o botao mora dentro do <summary>
+    baixarBloco({ empresa: empresa.dataset.blocoEmpresa });
+  } else if (pessoa) {
+    baixarBloco({ usuario_id: pessoa.dataset.blocoPessoa });
+  } else if (liberar) {
+    liberandoBloco = Number(liberar.dataset.liberar);
+    $('arquivo-liberar').value = '';
+    $('arquivo-liberar').click();
+  }
+});
+
+// So o tamanho do arquivo sai daqui. E a prova de que o zip inteiro esta no PC
+// antes de o servidor apagar alguma coisa.
+$('arquivo-liberar')?.addEventListener('change', async () => {
+  const arquivo = $('arquivo-liberar').files?.[0];
+  if (!arquivo || !liberandoBloco) return;
+  if (!confirm(
+    `Tirar do servidor os arquivos do bloco ${liberandoBloco}?\n\n`
+      + `Confira que "${arquivo.name}" está guardado num lugar seguro: depois disso, `
+      + 'a única cópia desses comprovantes é esse arquivo.',
+  )) return;
+  try {
+    const r = await api('/api/admin/bloco-liberar', {
+      metodo: 'POST',
+      corpo: { id: liberandoBloco, tamanho: arquivo.size },
+    });
+    mostrarRecado(
+      'recado-armazenamento',
+      `Pronto: ${r.apagados} arquivo(s) saíram do servidor (${tamanhoBr(r.bytes)} liberados).`
+        + (r.pulados ? ` ${r.pulados} ficaram porque o relatório não está mais aprovado.` : ''),
+      'ok',
+    );
+    carregarArmazenamento();
+    carregarResumoBackup();
+  } catch (e) {
+    mostrarRecado('recado-armazenamento', e.message, 'erro');
+  }
+});
+
+$('botao-devolver')?.addEventListener('click', async () => {
+  const arquivo = $('arquivo-devolver').files?.[0];
+  if (!arquivo) {
+    return mostrarRecado('recado-armazenamento', 'Escolha primeiro o arquivo .zip do bloco.', 'atencao');
+  }
+  mostrarRecado('recado-armazenamento', 'Enviando o bloco... não feche esta página.', 'info');
+  try {
+    const r = await fetch('/api/admin/bloco-devolver', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/zip' },
+      body: arquivo,
+      credentials: 'same-origin',
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.erro || 'Falha ao devolver o bloco.');
+    mostrarRecado(
+      'recado-armazenamento',
+      `Bloco ${d.bloco}: ${d.voltaram} arquivo(s) voltaram para o portal.`
+        + (d.ja_estavam ? ` ${d.ja_estavam} já estavam no servidor.` : '')
+        + (d.sem_registro ? ` ${d.sem_registro} não voltaram porque o anexo foi excluído do portal.` : ''),
+      'ok',
+    );
+    $('arquivo-devolver').value = '';
+    carregarArmazenamento();
+    carregarResumoBackup();
+  } catch (e) {
+    mostrarRecado('recado-armazenamento', e.message, 'erro');
   }
 });
 
