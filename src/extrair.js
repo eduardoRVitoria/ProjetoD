@@ -622,6 +622,15 @@ export async function motivoDeNaoConseguirLer(caminho, ext) {
     }
   }
 
+  // PowerPoint so serve pelas fotos que tem dentro: sem foto, nao ha o que ler.
+  if (ext === '.pptx') {
+    const { fotosDoPptx } = await import('./pptx.js');
+    if (!(await fotosDoPptx(caminho, 1)).length) {
+      return 'Esse PowerPoint nao tem nenhuma foto dentro (ou nao abre). '
+        + 'Cole as fotos nos slides e salve de novo, ou anexe as fotos direto.';
+    }
+  }
+
   if (ext === '.pdf') {
     try {
       const { PDFDocument } = await import('pdf-lib');

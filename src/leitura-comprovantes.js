@@ -21,11 +21,12 @@ import { db, PASTA_ANEXOS, agora } from './banco.js';
 import { linhasDoPdf } from './leitura-rdv.js';
 import { planilhaEmTexto } from './extrair.js';
 import { textoDaImagem, qrDaImagem, paginasDoPdfComoImagem } from './ocr.js';
+import { fotosDoPptx } from './pptx.js';
 import { somarExtrato } from './conferencia.js';
 import * as log from './log.js';
 
 // Mudou o jeito de ler? Sobe a versao e as leituras guardadas sao refeitas.
-const VERSAO_LEITURA = 2;
+const VERSAO_LEITURA = 3;
 
 // Quantas paginas de um PDF escaneado passam pelo OCR. Eram 6, e o PDF de
 // aplicativo de escanear com os cupons do mes inteiro ficava lido pela metade.
@@ -194,6 +195,14 @@ async function textoDoAnexo(caminho, ext) {
     for (const imagem of imagens) partes.push(await textoDaImagem(imagem));
     const texto = partes.join('\n');
     return { metodo: 'pdf-ocr', linhas: texto.split(/\r?\n/).map((l) => l.trim().split(/\s+/).filter(Boolean)), texto, imagens };
+  }
+  if (ext === '.pptx') {
+    // Fotos coladas num PowerPoint: OCR em cada uma, como se fossem soltas.
+    const imagens = (await fotosDoPptx(caminho, PAGINAS_DE_OCR)).map((f) => f.dados);
+    const partes = [];
+    for (const imagem of imagens) partes.push(await textoDaImagem(imagem));
+    const texto = partes.join('\n');
+    return { metodo: 'pptx-ocr', linhas: texto.split(/\r?\n/).map((l) => l.trim().split(/\s+/).filter(Boolean)), texto, imagens };
   }
   if (PLANILHA.has(ext)) {
     const texto = await planilhaEmTexto(caminho, ext);

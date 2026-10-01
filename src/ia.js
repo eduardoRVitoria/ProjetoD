@@ -352,14 +352,23 @@ export async function conferirComIa({ usuario, rel, linhas, anexos, resultadoReg
     // vai pagina a pagina, cada uma como foto encolhida. E o PDF de aplicativo
     // de escanear: dezenas de fotos de cupom ou de painel num arquivo de 15 MB.
     // Antes ele era descartado inteiro ("grande demais") e ninguem lia nada.
-    if (path.extname(a.nome_original).toLowerCase() === '.pdf') {
-      const paginasDoArquivo = await paginasDoPdf(caminho);
-      const naoVaiInteiro = tamanho > LIMITE_POR_ANEXO
+    //
+    // O PowerPoint (.pptx) vai sempre assim: a API nao le o arquivo, mas le as
+    // fotos que a pessoa colou nos slides.
+    const extDoAnexo = path.extname(a.nome_original).toLowerCase();
+    const ehPptx = extDoAnexo === '.pptx';
+    if (extDoAnexo === '.pdf' || ehPptx) {
+      const fotosDoSlide = ehPptx ? await pptxEmFotos(caminho) : null;
+      const paginasDoArquivo = ehPptx ? fotosDoSlide.length : await paginasDoPdf(caminho);
+      const naoVaiInteiro = ehPptx
+        || tamanho > LIMITE_POR_ANEXO
         || acumulado + tamanho > LIMITE_TOTAL
         || imagens + paginasDoArquivo > MAX_IMAGENS;
-      if (naoVaiInteiro && !(await pdfProtegido(caminho))) {
+      if (naoVaiInteiro && (ehPptx || !(await pdfProtegido(caminho)))) {
         const vagas = MAX_IMAGENS - imagens;
-        const fotos = vagas > 0 ? await pdfEmFotos(caminho, Math.min(paginasDoArquivo, vagas)) : [];
+        const fotos = vagas <= 0 ? []
+          : ehPptx ? fotosDoSlide.slice(0, vagas)
+            : await pdfEmFotos(caminho, Math.min(paginasDoArquivo, vagas));
         const cabem = [];
         for (const f of fotos) {
           if (acumulado + f.bytes > LIMITE_TOTAL) break;
@@ -370,15 +379,19 @@ export async function conferirComIa({ usuario, rel, linhas, anexos, resultadoReg
           conteudo.push({
             type: 'text',
             text: `\n--- Anexo: ${a.nome_original} (marcado pelo colaborador como "${rotulo(a.tipo)}"; `
-              + `PDF enviado pagina a pagina, ${cabem.length} de ${paginasDoArquivo}) ---`,
+              + `${ehPptx ? 'PowerPoint enviado foto a foto' : 'PDF enviado pagina a pagina'}, ${cabem.length} de ${paginasDoArquivo}) ---`,
           });
           for (const f of cabem) {
             conteudo.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: f.base64 } });
           }
           imagens += cabem.length;
           if (cabem.length < paginasDoArquivo) {
-            ignorar(a, `so as ${cabem.length} primeiras paginas de ${paginasDoArquivo} couberam na conferencia`);
+            ignorar(a, `so as ${cabem.length} primeiras ${ehPptx ? 'fotos' : 'paginas'} de ${paginasDoArquivo} couberam na conferencia`);
           }
+          continue;
+        }
+        if (ehPptx) {
+          ignorar(a, fotosDoSlide.length ? 'as fotos do PowerPoint nao couberam na conferencia' : 'PowerPoint sem nenhuma foto dentro');
           continue;
         }
         // Nao deu para desenhar as paginas: segue pelas regras de sempre.
@@ -701,6 +714,31 @@ async function encolher(caminho) {
   } catch (e) {
     log.aviso('ia', 'nao consegui encolher a imagem', { arquivo: path.basename(caminho), erro: e.message });
     return null;
+  }
+}
+
+// As fotos coladas num PowerPoint, em jpeg e dentro do lado maximo da API.
+async function pptxEmFotos(caminho) {
+  try {
+    const { fotosDoPptx } = await import('./pptx.js');
+    const { default: sharp } = await import('sharp');
+    const fotos = [];
+    for (const f of await fotosDoPptx(caminho, MAX_IMAGENS)) {
+      try {
+        const jpg = await sharp(f.dados, { failOn: 'none' })
+          .rotate()
+          .resize({ width: LADO_MAXIMO, height: LADO_MAXIMO, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toBuffer();
+        fotos.push({ base64: jpg.toString('base64'), bytes: jpg.length });
+      } catch {
+        // imagem do slide que o sharp nao abre: fica de fora
+      }
+    }
+    return fotos;
+  } catch (e) {
+    log.aviso('ia', 'nao consegui abrir o PowerPoint', { arquivo: path.basename(caminho), erro: e.message });
+    return [];
   }
 }
 

@@ -33,6 +33,8 @@ const ACEITOS = [
   'application/vnd.ms-excel',
   'text/csv',
   '.pdf', 'application/pdf',
+  // Fotos coladas num PowerPoint: o portal le as fotos de dentro do arquivo.
+  '.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'image/*',
 ].join(',');
 
@@ -40,6 +42,8 @@ const ACEITOS = [
 // a API le imagem e PDF, e um .xlsx e um ZIP de XMLs. Sem isto o relatorio era
 // conferido sem que ninguem olhasse o proprio RDV.
 const SO_PDF_E_FOTO = ['.pdf', 'application/pdf', 'image/*'].join(',');
+// A foto do painel chega solta, em PDF ou colada num PowerPoint.
+const DO_ODOMETRO_ACEITOS = ['.pdf', 'application/pdf', '.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'image/*'].join(',');
 
 // O que o servidor REALMENTE recusa no envio.
 //
@@ -620,8 +624,10 @@ for (const zona of document.querySelectorAll('.solta')) {
     // O RDV so entra em PDF ou foto: planilha o portal ate le, mas a
     // conferencia nao consegue olhar - o servidor tambem recusa.
     seletor.accept =
-      // O painel pode vir em PDF (foto passada por aplicativo de escanear).
-      tipoEmUso === 'odometro' || tipoEmUso === 'rdv' ? SO_PDF_E_FOTO
+      // O painel pode vir em PDF (foto passada por aplicativo de escanear) ou
+      // colado num PowerPoint.
+      tipoEmUso === 'odometro' ? DO_ODOMETRO_ACEITOS
+        : tipoEmUso === 'rdv' ? SO_PDF_E_FOTO
           : ACEITOS;
 
     // NAO usar `capture` aqui.
@@ -715,8 +721,9 @@ async function enviarArquivos(arquivos) {
 // Caixa que mostra a foto escolhida e pede o numero do painel e o dia.
 // Ver a imagem na hora de digitar evita o erro bobo de trocar as fotos.
 function pedirKm(arquivo) {
-  // PDF nao abre dentro de <img>: vira um link para a pessoa conferir o numero.
-  const ehPdf = arquivo.type === 'application/pdf' || /\.pdf$/i.test(arquivo.name);
+  // PDF e PowerPoint nao abrem dentro de <img>: viram um link para a pessoa
+  // conferir o numero no proprio arquivo.
+  const ehPdf = arquivo.type === 'application/pdf' || /\.(pdf|pptx)$/i.test(arquivo.name);
   return new Promise((resolve) => {
     const fundo = document.createElement('div');
     fundo.className = 'fundo-modal';
@@ -725,7 +732,7 @@ function pedirKm(arquivo) {
         <h2>Qual o KM desta foto?</h2>
         <p class="sub">${escapar(arquivo.name)}</p>
         ${ehPdf
-          ? `<p class="sub"><a id="previa-pdf" target="_blank" rel="noopener">Abrir o PDF para ver o painel</a></p>`
+          ? `<p class="sub"><a id="previa-pdf" target="_blank" rel="noopener">Abrir o arquivo para ver o painel</a></p>`
           : `<img alt="foto do odômetro" id="previa-foto" class="foto-odometro">
         <p class="sub" style="font-size:13px">Toque na foto para ampliar.</p>`}
         <div id="recado-km"></div>
