@@ -20,6 +20,7 @@ const normal = interpretarRdv([
   linha(1, 410, '17:PEDAGIO + ESTACIONAMENTO | 356:R$ | 410:249,64'),
   linha(1, 399, '17:HOTEL | 356:R$ | 424:- | 538:Placa do veículo: | 619:ABC1D23'),
   linha(1, 387, '17:OUTROS | 356:R$ | 410:159,00'),
+  linha(1, 365, '120:Subtotal das Despesas | 356:R$ | 401:3.159,04'),
   linha(1, 343, '482:0,41 | 637:ASSINATURA POR EXTENSO'),
   linha(1, 330, '46:Data | 134:Km Inicial | 266:Km Final | 379:Total KM | 449:R$ | 512:0,90 | 637:Itinerário de Trabalho'),
   linha(1, 319, '33:03/08/2026 | 141:134.029 | 268:134.110 | 392:81 | 449:R$ | 507:72,90 | 671:JUNDIAI'),
@@ -38,7 +39,7 @@ assert.equal(normal.linhas[1].itinerario, 'SALTO DE PIRAPORA');
 assert.equal(normal.linhas[2].itinerario, 'HOME OFFICE');
 assert.deepEqual(normal.totais_declarados, {
   total_km: 350, taxa_por_km: 0.9, valor_total_km: 2750.4, pedagio_estacionamento: 249.64,
-  hotel: 0, outros: 159, outros_descricao: null,
+  hotel: 0, outros: 159, outros_descricao: null, subtotal: 3159.04,
 });
 
 // ---- 2. Excel em ingles: mes/dia e "1,793.70".

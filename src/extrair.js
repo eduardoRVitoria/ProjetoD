@@ -297,6 +297,10 @@ const FERRAMENTA = {
             type: ['number', 'null'],
             description: 'Total da linha de outras despesas declarado no quadro de resumo.',
           },
+          subtotal: {
+            type: ['number', 'null'],
+            description: 'O "Subtotal das Despesas" do quadro de resumo: o total geral que o documento declara, como esta escrito. Nao some voce mesmo.',
+          },
           outros_descricao: {
             type: ['string', 'null'],
             description:
@@ -310,6 +314,7 @@ const FERRAMENTA = {
           'pedagio_estacionamento',
           'hotel',
           'outros',
+          'subtotal',
           'outros_descricao',
         ],
         additionalProperties: false,
@@ -566,6 +571,7 @@ function normalizar(d, mesEsperado) {
       pedagio_estacionamento: valor(t.pedagio_estacionamento),
       hotel: valor(t.hotel),
       outros: valor(t.outros),
+      subtotal: valor(t.subtotal),
       outros_descricao: String(t.outros_descricao || '').trim() || null,
     },
     confianca: ['alta', 'media', 'baixa'].includes(d.confianca) ? d.confianca : 'baixa',

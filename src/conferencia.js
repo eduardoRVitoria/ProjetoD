@@ -70,10 +70,12 @@ const HORA_LIMITE = 18;
 //  14  RDV sem assinatura nenhuma - nem gov.br, nem a mao - volta a reprovar.
 //      Assinado a mao continua valendo. So fica aviso quando ninguem consegue
 //      ver (papel escaneado ou foto, sem a IA).
+//  15  o total a receber (km + pedagio/estacionamento + hotel + outros) tem que
+//      bater com o "Subtotal das Despesas" que o RDV declara.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 14;
+export const VERSAO_REGRAS = 15;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -936,6 +938,26 @@ export function conferir(
   const totalDoMes = Number(
     (valorKm + declarado + hotelDeclarado + outrosDeclarado).toFixed(2),
   );
+
+  // -------------------------------------- 8.1 total a receber x subtotal do RDV
+  // O RDV traz o proprio total: "Subtotal das Despesas", ao lado da caixa azul.
+  // O que o portal soma para pagar tem que ser esse numero, no centavo. Quando
+  // nao e, alguma parcela foi lida ou lancada errada - e sem esta comparacao o
+  // total do portal ficava diferente do documento sem ninguem ser avisado.
+  const subtotalDoRdv = declaradoOuNulo(doPdf?.totais_declarados?.subtotal);
+  if (subtotalDoRdv != null && Math.round(subtotalDoRdv * 100) !== Math.round(totalDoMes * 100)) {
+    achados.push(
+      achado(
+        'erro',
+        'subtotal_nao_bate',
+        `O total a receber soma ${brl(totalDoMes)} (${gerente ? 'combustivel' : 'km'} ${brl(valorKm)} + `
+          + `pedagio/estacionamento ${brl(declarado)} + hotel ${brl(hotelDeclarado)} + outros ${brl(outrosDeclarado)}), `
+          + `mas o Subtotal das Despesas do RDV e ${brl(subtotalDoRdv)}. `
+          + `Diferenca de ${brl(Number((totalDoMes - subtotalDoRdv).toFixed(2)))}.`,
+      ),
+    );
+  }
+
   let comparacao = null;
 
   if (mesAnterior && mesAnterior.total > 0) {
@@ -998,6 +1020,7 @@ export function conferir(
     totalKm,
     valorKm,
     totalDoMes,
+    subtotalDoRdv,
     comparacao,
     // Quando o formulario nao tem coluna por dia, as linhas somam zero e o
     // valor real esta no quadro de resumo do documento. O `declarado` acima ja

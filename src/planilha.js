@@ -30,6 +30,8 @@ const COLUNAS = [
   { titulo: 'PEDAGIO + ESTAC. DECLARADO', largura: 16, formato: '"R$" #,##0.00' },
   { titulo: 'PEDAGIO + ESTAC. COMPROVADO', largura: 16, formato: '"R$" #,##0.00' },
   { titulo: 'DIFERENCA (COMPROVADO - DECLARADO)', largura: 16, formato: '"R$" #,##0.00' },
+  { titulo: 'HOTEL + OUTRAS DESPESAS', largura: 16, formato: '"R$" #,##0.00' },
+  { titulo: 'TOTAL A RECEBER', largura: 17, formato: '"R$" #,##0.00' },
   { titulo: 'MANDOU A DANFE DE ABASTECIMENTO?', largura: 14 },
   { titulo: 'O QUE FOI ENCONTRADO NA CONFERENCIA', largura: 60 },
   { titulo: 'O QUE O COLABORADOR PRECISA FAZER', largura: 60 },
@@ -268,7 +270,7 @@ function montarAba(wb, mes, relatorios, valorKm, empresa) {
   const textos = [
     [2, 'VERDE = aprovada, nada a fazer', 'CERTA'],
     [4, 'AMARELO = so falta a nota/DANFE de abastecimento; todo o resto conferiu', 'SO_FALTA_DANFE'],
-    [7, 'VERMELHO = tem divergencia de KM, pedagio, itinerario ou documento', 'ERRADA'],
+    [8, 'VERMELHO = tem divergencia de KM, pedagio, itinerario ou documento', 'ERRADA'],
   ];
   for (const [col, texto, status] of textos) {
     const c = legenda.getCell(col);
@@ -300,6 +302,7 @@ function montarAba(wb, mes, relatorios, valorKm, empresa) {
     for (const r of doGrupo) {
       const declarado = Number(r.pedagio_declarado || 0) + Number(r.estac_declarado || 0);
       const comprovado = r.pedagio_comprovado;
+      const hotelEOutros = Number(r.hotel_declarado || 0) + Number(r.outros_declarado || 0);
       const cor = CORES[status];
 
       const valores = [
@@ -310,6 +313,9 @@ function montarAba(wb, mes, relatorios, valorKm, empresa) {
         declarado,
         comprovado == null ? null : Number(comprovado),
         comprovado == null ? null : Number((comprovado - declarado).toFixed(2)),
+        hotelEOutros,
+        // O que a pessoa recebe: km + pedagio/estacionamento + hotel + outros.
+        Number((Number(r.valor_km || 0) + declarado + hotelEOutros).toFixed(2)),
         r.mandou_danfe == null ? (r.tem_danfe_por_anexo ? 'SIM' : 'NAO') : r.mandou_danfe ? 'SIM' : 'NAO',
         (r.achados || []).map((a) => a.mensagem).join(' | ') || (status === 'CERTA' ? 'Tudo conferido' : ''),
         r.o_que_fazer || (status === 'CERTA' ? 'Nada. Relatorio aprovado.' : ''),
@@ -320,9 +326,11 @@ function montarAba(wb, mes, relatorios, valorKm, empresa) {
         const cel = l.getCell(i + 1);
         cel.value = v;
         if (COLUNAS[i].formato) cel.numFmt = COLUNAS[i].formato;
-        cel.alignment = { vertical: 'top', wrapText: i >= 8 };
+        cel.alignment = { vertical: 'top', wrapText: i >= 10 };
         cel.border = { bottom: { style: 'hair', color: { argb: 'FFD9DEE7' } } };
       });
+
+      l.getCell(9).font = { bold: true };
 
       // Cor no status e no nome, como na planilha original.
       for (const col of [1, 2]) {

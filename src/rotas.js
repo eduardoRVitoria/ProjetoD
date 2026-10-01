@@ -35,6 +35,7 @@ import { enviarBackup, restaurarBackup, resumoDosDados, bancoFechadoPelaRestaura
 import { montarImpressao } from './impressao.js';
 import { resumoDoArmazenamento, enviarBloco, liberarBloco, devolverBloco } from './arquivamento.js';
 import { extrairDoRdv, motivoDeNaoConseguirLer } from './extrair.js';
+import { subtotalDoRdv } from './leitura-rdv.js';
 import * as log from './log.js';
 import {
   verificarAssinatura, achadosDaAssinatura, pdfSemMarcaDeAssinatura, rdvEstaAssinado,
@@ -658,6 +659,12 @@ async function lerRdv(req, res, usuario) {
     return erro(res, e.message, 502);
   }
 
+  // O "Subtotal das Despesas" e o total que o documento declara. Se a leitura
+  // nao trouxe, o codigo procura no texto do PDF.
+  if (extraido.totais_declarados && extraido.totais_declarados.subtotal == null) {
+    extraido.totais_declarados.subtotal = await subtotalDosRdvs(arquivos);
+  }
+
   // O relatorio e de outro mes. Recusar e melhor que arquivar julho dentro de
   // setembro ou esvaziar tudo porque o seletor estava errado.
   if (extraido.mes_do_documento && extraido.mes_do_documento !== mes) {
@@ -1239,6 +1246,13 @@ function painel(res, url, quem) {
       total_km: r.total_km,
       valor_km: r.valor_km,
       declarado: Number((r.pedagio_declarado + r.estac_declarado).toFixed(2)),
+      // O que a pessoa recebe no mes, e o total que o proprio RDV declara
+      // ("Subtotal das Despesas"). Os dois tem que ser o mesmo numero.
+      total_a_receber: Number(
+        (r.valor_km + r.pedagio_declarado + r.estac_declarado
+          + (r.hotel_declarado || 0) + (r.outros_declarado || 0)).toFixed(2),
+      ),
+      subtotal_rdv: subtotalGravado(r.extraido),
       comprovado: r.pedagio_comprovado,
       // Diferenca so existe quando ha DOIS numeros para comparar.
       //
@@ -1256,6 +1270,17 @@ function painel(res, url, quem) {
       achados: listaDeJson(r.achados),
     })),
   });
+}
+
+// O subtotal do RDV guardado junto da leitura, ou null.
+function subtotalGravado(extraido) {
+  if (!extraido) return null;
+  try {
+    const v = JSON.parse(extraido)?.totais_declarados?.subtotal;
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+  } catch {
+    return null;
+  }
 }
 
 function relatorioDetalhe(res, url, quem) {
@@ -1412,6 +1437,7 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
     throw e;
   }
 
+  await garantirSubtotal(rel, anexos);
   const porRegra = conferirRel(rel, linhas, anexos);
   const daAssinatura = conferirAssinatura(rel, anexos, usuario);
   porRegra.achados.push(...daAssinatura.achados);
@@ -1994,6 +2020,13 @@ async function editarRelatorio(req, res, admin) {
             + (novos.estac_declarado ?? rel.estac_declarado ?? 0)
           ).toFixed(2));
         }
+        // O admin assumiu os numeros: o subtotal declarado acompanha a soma
+        // deles, senao a conferencia cobraria o total antigo do documento.
+        t.subtotal = Number(
+          ['valor_km', 'pedagio_declarado', 'estac_declarado', 'hotel_declarado', 'outros_declarado']
+            .reduce((s, c) => s + Number(novos[c] ?? rel[c] ?? 0), 0)
+            .toFixed(2),
+        );
         sets.push('extraido = ?');
         args.push(JSON.stringify(doPdf));
       }
@@ -2093,6 +2126,41 @@ async function subirBackup(req, res, quem) {
       setTimeout(() => process.exit(1), 1500);
     }
   }
+}
+
+// O "Subtotal das Despesas" lido do texto do(s) PDF(s) de RDV, ou null.
+async function subtotalDosRdvs(anexos) {
+  for (const a of anexos) {
+    if (a.tipo !== 'rdv' || !/\.pdf$/i.test(a.nome_original || '')) continue;
+    const caminho = path.join(PASTA_ANEXOS, a.arquivo);
+    if (!fs.existsSync(caminho)) continue;
+    try {
+      const valor = await subtotalDoRdv(caminho);
+      if (valor != null) return valor;
+    } catch {
+      // PDF que nao abre: segue para o proximo
+    }
+  }
+  return null;
+}
+
+// Relatorio lido antes de o portal guardar o subtotal do RDV: procura agora e
+// grava junto da leitura, para a conferencia comparar com o total a receber.
+// Roda uma vez so - depois a chave existe, com o valor ou com null.
+async function garantirSubtotal(rel, anexos) {
+  if (!rel.extraido) return;
+  let doPdf;
+  try {
+    doPdf = JSON.parse(rel.extraido);
+  } catch {
+    return;
+  }
+  if (!doPdf || typeof doPdf !== 'object') return;
+  const t = (doPdf.totais_declarados ??= {});
+  if (t.subtotal !== undefined) return;
+  t.subtotal = await subtotalDosRdvs(anexos);
+  rel.extraido = JSON.stringify(doPdf);
+  db.prepare('UPDATE relatorios SET extraido = ? WHERE id = ?').run(rel.extraido, rel.id);
 }
 
 // A assinatura cobre a placa em algum dos PDFs de RDV? Devolve

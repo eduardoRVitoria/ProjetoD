@@ -104,6 +104,14 @@ try {
   // O parecer gravado e a decisao nao mudam sozinhos.
   assert.equal(d.relatorio.status, 'ERRADA');
 
+  // O painel mostra o total a receber, e o subtotal declarado acompanha o admin.
+  const doPainel = (await chamar('/api/admin/painel?mes=2026-09')).dados.relatorios.find((r) => r.id === rel);
+  assert.equal(doPainel.total_a_receber, 469, 'km 99 + pedagio 20 + hotel 350');
+  assert.equal(doPainel.subtotal_rdv, 469);
+  assert.ok(!codigos.includes('subtotal_nao_bate'));
+  const planilha = await fetch(`${base}/api/admin/exportar?mes=2026-09`, { headers: { cookie: `sid=${token}` } });
+  assert.equal(planilha.status, 200, 'a planilha do mes continua sendo gerada');
+
   // Comprovado em branco apaga a correcao do admin.
   assert.equal((await editar({ valores: { pedagio_comprovado: '' } })).status, 200);
   d = await ver();

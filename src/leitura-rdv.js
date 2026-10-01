@@ -142,6 +142,7 @@ export function interpretarRdv(linhasDoDocumento) {
     hotel: null,
     outros: null,
     outros_descricao: null,
+    subtotal: null,
   };
   let nome = '';
   let esperandoNome = false;
@@ -184,6 +185,9 @@ export function interpretarRdv(linhasDoDocumento) {
       totais.hotel ??= valorDaLinha(resumo);
     } else if (primeiro === 'OUTROS') {
       totais.outros ??= valorDaLinha(resumo);
+    } else if (primeiro === 'SUBTOTAL') {
+      // "Subtotal das Despesas": o total a receber que o proprio RDV declara.
+      totais.subtotal ??= valorDaLinha(resumo);
     }
 
     // ---- cabecalho da tabela: "Data | Km Inicial | Km Final | Total KM | R$ 0,90 | Itinerario"
@@ -330,11 +334,22 @@ const vazio = () => ({
   linhas: [],
   totais_declarados: {
     total_km: null, taxa_por_km: null, valor_total_km: null, pedagio_estacionamento: null,
-    hotel: null, outros: null, outros_descricao: null,
+    hotel: null, outros: null, outros_descricao: null, subtotal: null,
   },
   confianca: 'baixa',
   problemas_de_leitura: [],
 });
+
+/**
+ * So o "Subtotal das Despesas" do RDV em PDF, ou null. Serve para qualquer
+ * formulario com texto - inclusive o de gerente, que o leitor completo nao le -
+ * e para o relatorio lido antes de o portal guardar esse numero.
+ */
+export async function subtotalDoRdv(caminho) {
+  // O leitor completo ja trata Excel em ingles e formato contabil; daqui so
+  // interessa o quadro de resumo, que ele le mesmo quando nao entende os dias.
+  return interpretarRdv(await linhasDoPdf(caminho)).totais_declarados.subtotal ?? null;
+}
 
 /**
  * Le um RDV em PDF por codigo. Devolve null quando nao da - PDF sem texto, ou

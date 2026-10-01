@@ -442,10 +442,10 @@ function desenharTabela() {
       .map((e) => {
         const doGrupo = lista.filter((r) => (r.empresa || 'DISO') === e);
         const km = doGrupo.reduce((s, r) => s + Number(r.total_km || 0), 0);
-        const valor = doGrupo.reduce((s, r) => s + Number(r.valor_km || 0), 0);
+        const valor = doGrupo.reduce((s, r) => s + Number(r.total_a_receber || 0), 0);
         return (
-          `<tr class="grupo-empresa"><td colspan="8">
-             ${escapar(e)} — ${doGrupo.length} relatório(s) · ${numeroBr(km)} km · ${brl(valor)}
+          `<tr class="grupo-empresa"><td colspan="9">
+             ${escapar(e)} — ${doGrupo.length} relatório(s) · ${numeroBr(km)} km · ${brl(valor)} a receber
            </td></tr>` + doGrupo.map(linhaTabela).join('')
         );
       })
@@ -458,7 +458,8 @@ function desenharTabela() {
     <table>
       <thead><tr>
         <th>Status</th><th>Colaborador</th><th class="num">Km</th><th class="num">Valor km</th>
-        <th class="num">Declarado</th><th class="num">Comprovado</th><th class="num">Diferença</th>
+        <th class="num" title="Pedágio + estacionamento declarados">Ped.+estac.</th><th class="num">Comprovado</th><th class="num">Diferença</th>
+        <th class="num" title="Valor do km + pedágio + estacionamento + hotel + outras despesas">Total a receber</th>
         <th></th>
       </tr></thead>
       <tbody>${corpo}</tbody>
@@ -475,6 +476,14 @@ function desenharTabela() {
       baixar(`/api/admin/impressao?mes=${mes}&usuario_id=${b.dataset.imprimirRel}`);
     });
   }
+}
+
+// O total do portal diferente do "Subtotal das Despesas" do RDV, em vermelho.
+// Vazio quando bate ou quando o subtotal nao foi lido.
+function subtotalDiferente(total, subtotal) {
+  if (subtotal == null || Math.round(Number(total) * 100) === Math.round(Number(subtotal) * 100)) return '';
+  return `<br><span style="color:var(--vermelho); font-size:12.5px"
+    title="O Subtotal das Despesas escrito no RDV é diferente do total somado pelo portal.">RDV: ${brl(subtotal)}</span>`;
 }
 
 function linhaTabela(r) {
@@ -498,6 +507,7 @@ function linhaTabela(r) {
     <td class="num">${brl(r.declarado)}</td>
     <td class="num">${r.comprovado == null ? '—' : brl(r.comprovado)}</td>
     <td class="num">${dif}</td>
+    <td class="num"><strong>${brl(r.total_a_receber)}</strong>${subtotalDiferente(r.total_a_receber, r.subtotal_rdv)}</td>
     <td style="white-space:nowrap">
       <button class="secundario pequeno" data-ver="${r.id}">Abrir</button>
       ${pendente ? `<button class="pequeno" data-conferir="${r.id}">Conferir</button>` : ''}
@@ -684,6 +694,10 @@ async function abrirDetalhe(id) {
   }
 
   const r = d.relatorio;
+  // O total que o proprio RDV declara: tem que ser o total a receber.
+  const subtotalDoRel = r.extraido?.totais_declarados?.subtotal ?? null;
+  const subtotalBate = subtotalDoRel != null
+    && Math.round(subtotalDoRel * 100) === Math.round(totalAReceber(r) * 100);
   const fundo = document.createElement('div');
   fundo.className = 'fundo-modal';
   fundo.innerHTML = `
@@ -716,6 +730,8 @@ async function abrirDetalhe(id) {
           : ''}
         <div class="numero destaque"><div class="rotulo">Total a receber</div>
           <div class="valor">${brl(totalAReceber(r))}</div></div>
+        <div class="numero"><div class="rotulo">Subtotal no RDV</div>
+          <div class="valor" style="${subtotalDoRel == null ? '' : `color:${subtotalBate ? 'var(--verde)' : 'var(--vermelho)'}`}">${subtotalDoRel == null ? '—' : brl(subtotalDoRel)}</div></div>
       </div>
 
       ${r.observacao ? `<div class="aviso info"><strong>Observação do colaborador:</strong><br>${escapar(r.observacao)}</div>` : ''}
