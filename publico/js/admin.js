@@ -3,7 +3,7 @@
 import {
   api, mostrarRecado, escapar, brl, numeroBr, dataBr, dataHoraBr,
   tamanhoBr, mesAtual, sair, ROTULO_ANEXO, marcarAmbiente, anexoDoAchado, placaParaTela,
-  lembrarQuemEsta, lerNumeroBr, valorNoCampo,
+  lembrarQuemEsta, lerNumeroBr, valorNoCampo, agruparAchados, htmlDoGrupoDeAchados,
 } from '/js/comum.js';
 
 const $ = (id) => document.getElementById(id);
@@ -690,6 +690,7 @@ async function abrirDetalhe(id) {
     <div class="modal">
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px">
         <h2 style="margin:0; flex:1">${escapar(r.nome)}</h2>
+        ${r.status === 'CONFERINDO' ? '' : '<button class="secundario pequeno" id="editar">Editar valores</button>'}
         <button class="secundario pequeno" id="fechar">Fechar</button>
       </div>
       <p class="sub">
@@ -698,15 +699,23 @@ async function abrirDetalhe(id) {
         ${r.placas ? ` · placas: ${escapar(placaParaTela(r.placas))}` : " · sem placa declarada"}
       </p>
 
+      <div id="edicao" class="esconde"></div>
+      <div id="leitura">
       <div class="numeros" style="margin-bottom:16px">
         <div class="numero"><div class="rotulo">Total de km</div>
           <div class="valor">${numeroBr(r.total_km)}</div></div>
-        <div class="numero destaque"><div class="rotulo">Valor do km</div>
+        <div class="numero"><div class="rotulo">Valor do km</div>
           <div class="valor">${brl(r.valor_km)}</div></div>
         <div class="numero"><div class="rotulo">Ped.+estac. declarado</div>
           <div class="valor">${brl(r.pedagio_declarado + r.estac_declarado)}</div></div>
-        <div class="numero"><div class="rotulo">Comprovado</div>
+        <div class="numero"><div class="rotulo">Comprovado${r.pedagio_comprovado_admin != null ? ' (digitado)' : ''}</div>
           <div class="valor">${r.pedagio_comprovado == null ? '—' : brl(r.pedagio_comprovado)}</div></div>
+        ${Number(r.hotel_declarado) + Number(r.outros_declarado) > 0
+          ? `<div class="numero"><div class="rotulo">Hotel + outras</div>
+          <div class="valor">${brl(Number(r.hotel_declarado) + Number(r.outros_declarado))}</div></div>`
+          : ''}
+        <div class="numero destaque"><div class="rotulo">Total a receber</div>
+          <div class="valor">${brl(totalAReceber(r))}</div></div>
       </div>
 
       ${r.observacao ? `<div class="aviso info"><strong>Observação do colaborador:</strong><br>${escapar(r.observacao)}</div>` : ''}
@@ -785,6 +794,7 @@ async function abrirDetalhe(id) {
         <button class="secundario" id="imprimir-daqui"
                 title="PDF com o RDV, a nota de abastecimento e o pedágio deste vendedor no mês">Imprimir este</button>
       </div>
+      </div>
     </div>`;
 
   document.body.appendChild(fundo);
@@ -801,8 +811,32 @@ async function abrirDetalhe(id) {
     carregarPainel({ silencioso: true }).catch(() => {});
   };
   fundo.querySelector('#fechar').addEventListener('click', fechar);
+
+  // Editar troca a leitura pelo formulario, na mesma janela.
+  const edicao = fundo.querySelector('#edicao');
+  const leitura = fundo.querySelector('#leitura');
+  const botaoEditar = fundo.querySelector('#editar');
+  const mostrarEdicao = (sim) => {
+    edicao.classList.toggle('esconde', !sim);
+    leitura.classList.toggle('esconde', sim);
+    botaoEditar?.classList.toggle('esconde', sim);
+  };
+  botaoEditar?.addEventListener('click', () => {
+    edicao.innerHTML = formDeEdicao(d);
+    ligarEdicao(edicao, d, {
+      aoCancelar: () => mostrarEdicao(false),
+      aoSalvar: async () => {
+        fundo.remove();
+        await abrirDetalhe(id);
+        avisar('Alterações salvas. Confira de novo para atualizar o parecer.', 'info');
+      },
+    });
+    mostrarEdicao(true);
+  });
+
   fundo.addEventListener('click', (ev) => {
-    if (ev.target === fundo) fechar();
+    // No meio de uma edicao, clique fora nao fecha: perderia o que foi digitado.
+    if (ev.target === fundo && edicao.classList.contains('esconde')) fechar();
   });
 
   // O mes vem do relatorio aberto, nao do seletor do painel: sao sempre o
@@ -933,10 +967,18 @@ function blocoPendenciasAgora(pendencias, d) {
 
 function blocoAchados(r) {
   if (!r.achados?.length) return '';
+  // Erro primeiro, aviso depois; o mesmo problema em varios dias vira uma
+  // linha so, com os dias na frente.
+  const emOrdem = [
+    ...r.achados.filter((a) => a.gravidade === 'erro'),
+    ...r.achados.filter((a) => a.gravidade !== 'erro'),
+  ];
   return `<h2 style="margin-top:4px">O que foi encontrado</h2>
-    ${(r.achados || [])
-      .map(
-        (a) => `<div class="achado ${a.gravidade}">
+    ${agruparAchados(emOrdem)
+      .map((a) =>
+        a.grupo
+          ? htmlDoGrupoDeAchados(a)
+          : `<div class="achado ${a.gravidade}">
           <span class="icone">${a.gravidade === 'erro' ? '✕' : '!'}</span>
           <div class="corpo">
             <span>${escapar(a.mensagem)}</span>
@@ -944,6 +986,168 @@ function blocoAchados(r) {
           </div></div>`,
       )
       .join('')}`;
+}
+
+// ------------------------------------------------- edicao pelo admin
+//
+// O admin corrige os numeros do relatorio na mao: totais, valor de cada
+// comprovante e os lancamentos dos dias. So vai para o servidor o que mudou.
+
+const VALORES_EDITAVEIS = [
+  ['total_km', 'Total de km', 'km'],
+  ['valor_km', 'Valor do km (R$)', 'dinheiro'],
+  ['pedagio_declarado', 'Pedágio declarado', 'dinheiro'],
+  ['estac_declarado', 'Estacionamento declarado', 'dinheiro'],
+  ['hotel_declarado', 'Hotel', 'dinheiro'],
+  ['outros_declarado', 'Outras despesas', 'dinheiro'],
+  ['pedagio_comprovado', 'Pedágio comprovado', 'dinheiro'],
+];
+const CAMPOS_DA_LINHA = ['km_inicial', 'km_final', 'itinerario', 'pedagio', 'estacionamento', 'combustivel'];
+
+// Numero como a pessoa digita: virgula no decimal, vazio quando nao ha valor.
+const noCampo = (v) => (v == null || v === '' ? '' : String(Number(v)).replace('.', ','));
+const totalAReceber = (r) =>
+  ['valor_km', 'pedagio_declarado', 'estac_declarado', 'hotel_declarado', 'outros_declarado']
+    .reduce((s, c) => s + Number(r[c] || 0), 0);
+
+function campoDeEdicao(atributos, valor, classe = '') {
+  return `<input type="text" autocomplete="off" ${atributos} class="${classe}"
+            value="${escapar(valor)}" data-original="${escapar(valor)}">`;
+}
+
+function formDeEdicao(d) {
+  const r = d.relatorio;
+  const comCombustivel = d.gerente || d.linhas.some((l) => Number(l.combustivel) > 0);
+  return `
+    <div id="recado-edicao"></div>
+    <p class="sub">Mude o que precisar e salve. O parecer só muda quando você conferir de novo
+      ou decidir na mão.</p>
+
+    <div class="edicao-valores">
+      ${VALORES_EDITAVEIS.map(([campo, rotulo, tipo]) => `<div>
+          <label>${rotulo}</label>
+          ${campoDeEdicao(`data-valor="${campo}" inputmode="decimal"`, tipo === 'km' ? noCampo(r[campo] || '') : valorNoCampo(r[campo]))}
+        </div>`).join('')}
+      <div><label>Total a receber</label><input type="text" id="e-total" readonly></div>
+    </div>
+    <p class="sub">Total a receber = valor do km + pedágio + estacionamento + hotel + outras despesas.
+      Pedágio comprovado em branco volta a valer a leitura do comprovante.</p>
+
+    <h2 style="margin-top:20px">Comprovantes (${d.anexos.length})</h2>
+    ${d.anexos.length ? `<div class="rolagem"><table class="tabela-edicao">
+      <thead><tr><th>Tipo</th><th>Arquivo</th><th class="num">Valor (R$)</th><th class="num">KM da foto</th></tr></thead>
+      <tbody>${d.anexos.map((a) => `<tr data-anexo="${a.id}">
+        <td>${escapar(ROTULO_ANEXO[a.tipo] || a.tipo)}</td>
+        <td><a href="/api/anexo/${a.id}" target="_blank" rel="noopener">${escapar(a.nome_original)}</a></td>
+        <td class="num">${a.tipo === 'rdv' || a.tipo === 'odometro' ? '—' : campoDeEdicao('data-campo="valor" inputmode="decimal"', valorNoCampo(a.valor))}</td>
+        <td class="num">${a.tipo === 'odometro' ? campoDeEdicao('data-campo="km" inputmode="decimal"', noCampo(a.km || '')) : '—'}</td>
+      </tr>`).join('')}</tbody></table></div>` : '<p class="sub">Nenhum comprovante anexado.</p>'}
+
+    <h2 style="margin-top:20px">Lançamentos (${d.linhas.length} dias)</h2>
+    ${d.linhas.length ? `<div class="rolagem"><table class="tabela-edicao">
+      <thead><tr><th>Data</th><th class="num">Km ini</th><th class="num">Km fim</th><th>Itinerário</th>
+        <th class="num">Pedágio</th><th class="num">Estac.</th>${comCombustivel ? '<th class="num">Combustível</th>' : ''}</tr></thead>
+      <tbody>${d.linhas.map((l) => `<tr data-linha="${l.id}">
+        <td>${dataBr(l.data).slice(0, 5)}</td>
+        <td class="num">${campoDeEdicao('data-campo="km_inicial" inputmode="decimal"', noCampo(l.km_inicial || ''))}</td>
+        <td class="num">${campoDeEdicao('data-campo="km_final" inputmode="decimal"', noCampo(l.km_final || ''))}</td>
+        <td>${campoDeEdicao('data-campo="itinerario"', l.itinerario || '', 'largo')}</td>
+        <td class="num">${campoDeEdicao('data-campo="pedagio" inputmode="decimal"', valorNoCampo(l.pedagio))}</td>
+        <td class="num">${campoDeEdicao('data-campo="estacionamento" inputmode="decimal"', valorNoCampo(l.estacionamento))}</td>
+        ${comCombustivel ? `<td class="num">${campoDeEdicao('data-campo="combustivel" inputmode="decimal"', valorNoCampo(l.combustivel))}</td>` : ''}
+      </tr>`).join('')}</tbody></table></div>` : '<p class="sub">Sem lançamentos dia a dia.</p>'}
+
+    <div class="linha-botoes" style="margin-top:16px">
+      <button id="salvar-edicao">Salvar alterações</button>
+      <button class="secundario" id="cancelar-edicao">Cancelar</button>
+    </div>`;
+}
+
+// Liga as contas e os botoes do formulario. `aoSalvar` roda depois de gravar.
+function ligarEdicao(alvo, d, { aoSalvar, aoCancelar }) {
+  const campoDoValor = (campo) => alvo.querySelector(`[data-valor="${campo}"]`);
+  const mudou = (el) => el.value.trim() !== el.dataset.original.trim();
+  const numeroDe = (linha, campo) => lerNumeroBr(linha.querySelector(`[data-campo="${campo}"]`)?.value);
+
+  const refazerTotal = () => {
+    const soma = ['valor_km', 'pedagio_declarado', 'estac_declarado', 'hotel_declarado', 'outros_declarado']
+      .reduce((s, c) => s + lerNumeroBr(campoDoValor(c).value), 0);
+    alvo.querySelector('#e-total').value = brl(soma);
+  };
+
+  // Mexeu num dia: os totais acompanham, pela mesma conta do portal. Quem
+  // quiser um total diferente da soma dos dias digita por cima depois.
+  const refazerPelosDias = () => {
+    const linhas = [...alvo.querySelectorAll('[data-linha]')];
+    const km = linhas.reduce(
+      (s, l) => s + Math.max(0, numeroDe(l, 'km_final') - numeroDe(l, 'km_inicial')), 0);
+    const combustivel = linhas.reduce((s, l) => s + numeroDe(l, 'combustivel'), 0);
+    const pedagio = linhas.reduce((s, l) => s + numeroDe(l, 'pedagio'), 0);
+    const estac = linhas.reduce((s, l) => s + numeroDe(l, 'estacionamento'), 0);
+    campoDoValor('total_km').value = noCampo(km || '');
+    campoDoValor('valor_km').value = valorNoCampo(d.gerente ? combustivel : km * Number(d.valor_do_km || 0));
+    // Formulario sem pedagio por dia traz so o total do quadro: ai nao mexe.
+    if (pedagio + estac > 0) {
+      campoDoValor('pedagio_declarado').value = valorNoCampo(pedagio);
+      campoDoValor('estac_declarado').value = valorNoCampo(estac);
+    }
+  };
+
+  alvo.addEventListener('input', (ev) => {
+    if (ev.target.closest('[data-linha]') && ev.target.dataset.campo !== 'itinerario') refazerPelosDias();
+    refazerTotal();
+  });
+  refazerTotal();
+
+  alvo.querySelector('#cancelar-edicao').addEventListener('click', aoCancelar);
+
+  alvo.querySelector('#salvar-edicao').addEventListener('click', async (ev) => {
+    const valores = {};
+    for (const [campo] of VALORES_EDITAVEIS) {
+      const el = campoDoValor(campo);
+      if (!mudou(el)) continue;
+      // Comprovado em branco e "apagar", nao zero.
+      valores[campo] = campo === 'pedagio_comprovado' && !el.value.trim() ? '' : lerNumeroBr(el.value);
+    }
+
+    const linhas = [...alvo.querySelectorAll('[data-linha]')]
+      .filter((l) => [...l.querySelectorAll('input')].some(mudou))
+      .map((l) => ({
+        id: Number(l.dataset.linha),
+        ...Object.fromEntries(CAMPOS_DA_LINHA.map((c) => {
+          const el = l.querySelector(`[data-campo="${c}"]`);
+          if (c === 'itinerario') return [c, el.value];
+          // Coluna que a tabela nao mostra (combustivel) fica como estava.
+          return [c, el ? lerNumeroBr(el.value) : Number(d.linhas.find((x) => x.id === Number(l.dataset.linha))?.[c] || 0)];
+        })),
+      }));
+
+    const anexos = [...alvo.querySelectorAll('[data-anexo]')]
+      .map((l) => {
+        const item = { id: Number(l.dataset.anexo) };
+        for (const el of l.querySelectorAll('input')) {
+          if (mudou(el)) item[el.dataset.campo] = el.value.trim() ? lerNumeroBr(el.value) : '';
+        }
+        return item;
+      })
+      .filter((a) => Object.keys(a).length > 1);
+
+    if (!Object.keys(valores).length && !linhas.length && !anexos.length) {
+      return mostrarRecado('recado-edicao', 'Nada foi alterado.', 'info');
+    }
+
+    ev.target.disabled = true;
+    try {
+      await api('/api/admin/relatorio-editar', {
+        metodo: 'POST',
+        corpo: { relatorio_id: d.relatorio.id, valores, linhas, anexos },
+      });
+      await aoSalvar();
+    } catch (e) {
+      ev.target.disabled = false;
+      mostrarRecado('recado-edicao', e.message, 'erro');
+    }
+  });
 }
 
 function blocoParecer(p) {

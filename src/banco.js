@@ -152,6 +152,12 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     // controle existir, ou seja, antigo - que e a verdade.
     db.exec('ALTER TABLE relatorios ADD COLUMN versao_regras INTEGER');
   }
+  if (!colunas.has('pedagio_comprovado_admin')) {
+    // Pedagio comprovado que o admin digitou na mao. Enquanto existir, vale
+    // mais que a leitura do comprovante - senao "Conferir de novo" apagava a
+    // correcao dele. O reenvio pelo colaborador zera.
+    db.exec('ALTER TABLE relatorios ADD COLUMN pedagio_comprovado_admin REAL');
+  }
 
   const colLinhas = new Set(db.prepare('PRAGMA table_info(linhas)').all().map((c) => c.name));
   if (!colLinhas.has('hora_pedagio')) {

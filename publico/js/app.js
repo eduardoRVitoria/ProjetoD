@@ -3,6 +3,7 @@
 import {
   api, subirArquivo, mostrarRecado, escapar, brl, numeroBr,
   dataBr, dataHoraBr, tamanhoBr, mesAtual, hojeLocal, lerNumeroBr, valorNoCampo, lembrarQuemEsta, sair, ROTULO_ANEXO, marcarAmbiente, anexoDoAchado,
+  agruparAchados, htmlDoGrupoDeAchados,
 } from '/js/comum.js';
 
 const $ = (id) => document.getElementById(id);
@@ -362,13 +363,13 @@ function desenharStatus() {
       ${
         erros.length
           ? `<h2 style="margin:16px 0 8px">O que está errado (${erros.length})</h2>
-             ${erros.map((a) => linhaDeAchado(a)).join('')}`
+             ${linhasDeAchados(erros)}`
           : ''
       }
       ${
         avisos.length
           ? `<h2 style="margin:16px 0 8px">Confira também (${avisos.length})</h2>
-             ${avisos.map((a) => linhaDeAchado(a)).join('')}`
+             ${linhasDeAchados(avisos)}`
           : ''
       }`;
   } else if (r.status === 'CERTA') {
@@ -883,7 +884,7 @@ function desenharAchados(chavesUsadas) {
       : `<div class="aviso ok">Nenhuma pendência. Pode enviar.</div>`;
     return;
   }
-  $('achados').innerHTML = lista.map((a) => linhaDeAchado(a, chavesUsadas)).join('');
+  $('achados').innerHTML = linhasDeAchados(lista, chavesUsadas);
 }
 
 // O parecer chega em duas formas: o GET entrega array, e o PUT devolve a linha
@@ -915,7 +916,7 @@ function desenharParecer(chavesUsadas) {
       Conferido em ${dataHoraBr(r.conferido_em)}. É o que o conferente viu no seu
       relatório. O que se resolve explicando tem o botão de justificar aqui do lado.
     </p>
-    ${lista.map((a) => linhaDeAchado(a, chavesUsadas)).join('')}`;
+    ${linhasDeAchados(lista, chavesUsadas)}`;
 }
 
 // ------------------------------------------------------- justificativas
@@ -933,6 +934,15 @@ function textoJaEscrito(chave) {
   if (chave === 'mes') return estado?.relatorio.justificativa || '';
   const data = chave.slice(4);
   return estado?.grade.find((d) => d.data === data)?.justificativa_hora || '';
+}
+
+// O mesmo problema em varios dias vira uma linha so, com os dias na frente.
+// Os que tem botao de justificar por dia continuam separados: cada dia tem a
+// sua explicacao.
+function linhasDeAchados(lista, chavesUsadas = null) {
+  return agruparAchados(lista, { manter: (a) => PEDEM_JUSTIFICATIVA.has(a.codigo) })
+    .map((a) => (a.grupo ? htmlDoGrupoDeAchados(a) : linhaDeAchado(a, chavesUsadas)))
+    .join('');
 }
 
 // `chavesUsadas` e o conjunto do desenho da aba Conferencia. Sem ele o achado

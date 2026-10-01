@@ -201,6 +201,7 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/fila' && metodo === 'GET') return responderJson(res, estadoDaFila());
     if (rota === '/api/admin/fila-parar' && metodo === 'POST') return responderJson(res, pedirParada());
     if (rota === '/api/admin/decidir' && metodo === 'POST') return decidir(req, res, usuario);
+    if (rota === '/api/admin/relatorio-editar' && metodo === 'POST') return editarRelatorio(req, res, usuario);
     if (rota === '/api/admin/galeria' && metodo === 'GET') return verGaleria(res, url, usuario);
     if (rota === '/api/admin/pacote' && metodo === 'GET') return baixarPacote(res, url, usuario);
     if (rota === '/api/admin/impressao' && metodo === 'GET') return baixarImpressao(res, url, usuario);
@@ -869,7 +870,8 @@ async function enviarRelatorio(req, res, usuario) {
 
   db.prepare(
     `UPDATE relatorios SET status = 'ENVIADO', enviado_em = ?, achados = NULL, parecer_ia = NULL,
-            o_que_fazer = NULL, conferido_em = NULL, pedagio_comprovado = NULL
+            o_que_fazer = NULL, conferido_em = NULL, pedagio_comprovado = NULL,
+            pedagio_comprovado_admin = NULL
       WHERE id = ?`,
   ).run(agora(), rel.id);
 
@@ -1297,6 +1299,9 @@ function relatorioDetalhe(res, url, quem) {
     // (`/api/relatorio`) não tem este campo, e a prévia dele continua sem as
     // cobranças de anexo.
     pendencias_agora: pendenciasAgora,
+    // Para a tela de edicao refazer as contas enquanto o admin digita.
+    valor_do_km: valorDoKm(),
+    gerente: ehGerente(rel.funcao),
   });
 }
 
@@ -1445,8 +1450,8 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
       parecer = saida.parecer;
       // Pedagio que uma conferencia anterior ja confirmou no centavo nao volta
       // a ser duvida so porque o OCR de hoje nao leu o cupom.
-      const jaConfirmado = rel.pedagio_comprovado != null
-        && Math.round(rel.pedagio_comprovado * 100) === Math.round(porRegra.totalDeclarado * 100);
+      const jaConfirmado = rel.pedagio_comprovado_admin != null || (rel.pedagio_comprovado != null
+        && Math.round(rel.pedagio_comprovado * 100) === Math.round(porRegra.totalDeclarado * 100));
       achadosDoCodigo = saida.achados.filter((a) => !(jaConfirmado && a.codigo === 'pedagio_nao_confirmado'));
       avisoIa ??= 'Comprovantes lidos por codigo (sem IA).';
     } catch (e) {
@@ -1456,10 +1461,16 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
   }
   const porCodigo = parecer?.por === 'codigo';
 
+  // O comprovado que o admin digitou na mao vale mais que qualquer leitura:
+  // ele abriu o comprovante e somou. Sem isto, conferir de novo desfazia a
+  // correcao dele.
+  const comprovadoDoAdmin = rel.pedagio_comprovado_admin ?? null;
+  if (comprovadoDoAdmin != null && parecer && !demo) parecer.pedagio_comprovado = comprovadoDoAdmin;
+
   const achados = [...porRegra.achados, ...achadosDoCodigo];
   // Sem a leitura, ninguem somou os comprovantes. Fica dito, em amarelo, para
   // quem confere olhar o valor na mao - senao o relatorio sairia CERTA calado.
-  if (!parecer && !demo && porRegra.totalDeclarado > 0
+  if (!parecer && !demo && comprovadoDoAdmin == null && porRegra.totalDeclarado > 0
       && !achados.some((a) => a.codigo === 'pedagio_sem_comprovante')) {
     achados.push({
       gravidade: 'aviso',
@@ -1597,7 +1608,7 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
     // comprovado da conferencia anterior (ou nada).
     porCodigo
       ? (parecer.pedagio_comprovado ?? rel.pedagio_comprovado ?? null)
-      : parecer ? Number(parecer.pedagio_comprovado ?? 0) : null,
+      : parecer ? Number(parecer.pedagio_comprovado ?? 0) : comprovadoDoAdmin,
     agora(),
     decididoPor,
     porRegra.pedagioDeclarado,
@@ -1786,6 +1797,188 @@ async function decidir(req, res, admin) {
   });
 
   responderJson(res, { ok: true, status, rotulo_status: ROTULO_STATUS[status] });
+}
+
+/**
+ * O admin corrige os numeros de um relatorio na mao: os totais, o valor de
+ * cada comprovante e os lancamentos dos dias.
+ *
+ * So chega aqui o que MUDOU - a tela manda o campo que a pessoa mexeu, nao o
+ * formulario inteiro. Assim o log diz exatamente o que foi alterado, e o
+ * pedagio comprovado so vira "digitado pelo admin" quando ele digitou mesmo.
+ *
+ * O parecer gravado nao muda aqui: ele e a foto da ultima conferencia. Quem
+ * edita confere de novo (ou decide na mao) logo depois.
+ */
+async function editarRelatorio(req, res, admin) {
+  const corpo = await lerJson(req);
+  const rel = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(Number(corpo.relatorio_id));
+  if (!rel) return erro(res, 'Relatorio nao encontrado.', 404);
+
+  const dono = db.prepare('SELECT nome, empresa, funcao FROM usuarios WHERE id = ?').get(rel.usuario_id);
+  if (!podeVerUsuario(admin, dono)) {
+    return erro(res, 'Esse relatorio e de outra empresa.', 403);
+  }
+  if (rel.status === 'CONFERINDO' || conferindoAgora.has(rel.id)) {
+    return erro(res, 'Esse relatorio esta sendo conferido agora. Espere terminar para editar.', 409);
+  }
+
+  // Numero digitado, ou a frase do que esta errado.
+  const ruins = [];
+  const valorDe = (bruto, nome, teto = 1_000_000) => {
+    const n = numero(bruto, NaN);
+    if (!Number.isFinite(n) || n < 0 || n > teto) {
+      ruins.push(nome);
+      return 0;
+    }
+    return n;
+  };
+  const vazio = (v) => v == null || String(v).trim() === '';
+
+  const mudou = []; // para o log: "campo: antes -> depois"
+  const sets = [];
+  const args = [];
+
+  const valores = corpo.valores && typeof corpo.valores === 'object' ? corpo.valores : {};
+  const NOMES = {
+    total_km: 'total de km',
+    valor_km: 'valor do km',
+    pedagio_declarado: 'pedagio declarado',
+    estac_declarado: 'estacionamento declarado',
+    hotel_declarado: 'hotel',
+    outros_declarado: 'outras despesas',
+  };
+  const novos = {};
+  for (const [campo, nome] of Object.entries(NOMES)) {
+    if (valores[campo] === undefined) continue;
+    const n = campo === 'total_km'
+      ? valorDe(valores[campo], nome, 9_999_999)
+      : Number(valorDe(valores[campo], nome).toFixed(2));
+    novos[campo] = n;
+    sets.push(`${campo} = ?`);
+    args.push(n);
+    mudou.push(`${campo}: ${rel[campo]} -> ${n}`);
+  }
+  if (valores.pedagio_comprovado !== undefined) {
+    // Em branco apaga a correcao do admin: a proxima conferencia volta a ler.
+    const n = vazio(valores.pedagio_comprovado)
+      ? null
+      : Number(valorDe(valores.pedagio_comprovado, 'pedagio comprovado').toFixed(2));
+    sets.push('pedagio_comprovado = ?', 'pedagio_comprovado_admin = ?');
+    args.push(n, n);
+    mudou.push(`pedagio_comprovado: ${rel.pedagio_comprovado} -> ${n}`);
+  }
+
+  const linhasDoRel = new Map(linhasDo(rel.id).map((l) => [l.id, l]));
+  const linhasNovas = [];
+  for (const l of Array.isArray(corpo.linhas) ? corpo.linhas : []) {
+    const atual = linhasDoRel.get(Number(l?.id));
+    if (!atual) return erro(res, 'Um dos lancamentos nao e deste relatorio. Abra o relatorio de novo.');
+    const dia = atual.data.split('-').reverse().slice(0, 2).join('/');
+    linhasNovas.push({
+      id: atual.id,
+      data: atual.data,
+      km_inicial: valorDe(l.km_inicial, `KM inicial de ${dia}`, 9_999_999),
+      km_final: valorDe(l.km_final, `KM final de ${dia}`, 9_999_999),
+      itinerario: String(l.itinerario || '').trim().slice(0, 500),
+      pedagio: Number(valorDe(l.pedagio, `pedagio de ${dia}`).toFixed(2)),
+      estacionamento: Number(valorDe(l.estacionamento, `estacionamento de ${dia}`).toFixed(2)),
+      combustivel: Number(valorDe(l.combustivel, `combustivel de ${dia}`).toFixed(2)),
+    });
+  }
+
+  const anexosDoRel = new Map(
+    db.prepare('SELECT * FROM anexos WHERE relatorio_id = ?').all(rel.id).map((a) => [a.id, a]),
+  );
+  const anexosNovos = [];
+  for (const a of Array.isArray(corpo.anexos) ? corpo.anexos : []) {
+    const atual = anexosDoRel.get(Number(a?.id));
+    if (!atual) return erro(res, 'Um dos comprovantes nao e deste relatorio. Abra o relatorio de novo.');
+    const novo = { id: atual.id, nome: atual.nome_original };
+    if (a.valor !== undefined) {
+      novo.valor = vazio(a.valor) ? null : Number(valorDe(a.valor, `valor de ${atual.nome_original}`, 100_000).toFixed(2));
+    }
+    if (a.km !== undefined && atual.tipo === 'odometro') {
+      novo.km = vazio(a.km) ? null : valorDe(a.km, `KM da foto ${atual.nome_original}`, 9_999_999);
+    }
+    anexosNovos.push({ ...novo, antes: atual });
+  }
+
+  if (ruins.length) {
+    return erro(res, `Numero invalido em: ${ruins.slice(0, 5).join(', ')}. Confira e salve de novo.`);
+  }
+  if (!sets.length && !linhasNovas.length && !anexosNovos.length) {
+    return erro(res, 'Nada foi alterado.');
+  }
+
+  db.exec('BEGIN');
+  try {
+    const gravarLinha = db.prepare(
+      `UPDATE linhas SET km_inicial = ?, km_final = ?, itinerario = ?, pedagio = ?,
+              estacionamento = ?, combustivel = ? WHERE id = ?`,
+    );
+    for (const l of linhasNovas) {
+      gravarLinha.run(l.km_inicial, l.km_final, l.itinerario, l.pedagio, l.estacionamento, l.combustivel, l.id);
+      mudou.push(`dia ${l.data}`);
+    }
+
+    for (const a of anexosNovos) {
+      if ('valor' in a) {
+        db.prepare('UPDATE anexos SET valor = ? WHERE id = ?').run(a.valor, a.id);
+        mudou.push(`valor de ${a.nome}: ${a.antes.valor} -> ${a.valor}`);
+      }
+      if ('km' in a) {
+        db.prepare('UPDATE anexos SET km = ? WHERE id = ?').run(a.km, a.id);
+        mudou.push(`km de ${a.nome}: ${a.antes.km} -> ${a.km}`);
+      }
+    }
+
+    // O total que o admin digitou passa a ser o DECLARADO. A conferencia
+    // compara a soma dos dias com o que o documento dizia (`extraido`); sem
+    // acertar isso junto, ela continuaria cobrando o numero antigo do PDF.
+    if (rel.extraido && Object.keys(novos).length) {
+      let doPdf = null;
+      try {
+        doPdf = JSON.parse(rel.extraido);
+      } catch {
+        doPdf = null;
+      }
+      if (doPdf && typeof doPdf === 'object') {
+        const t = (doPdf.totais_declarados ??= {});
+        if ('total_km' in novos) t.total_km = novos.total_km;
+        if ('valor_km' in novos) t.valor_total_km = novos.valor_km;
+        if ('hotel_declarado' in novos) t.hotel = novos.hotel_declarado;
+        if ('outros_declarado' in novos) t.outros = novos.outros_declarado;
+        if ('pedagio_declarado' in novos || 'estac_declarado' in novos) {
+          t.pedagio_estacionamento = Number((
+            (novos.pedagio_declarado ?? rel.pedagio_declarado ?? 0)
+            + (novos.estac_declarado ?? rel.estac_declarado ?? 0)
+          ).toFixed(2));
+        }
+        sets.push('extraido = ?');
+        args.push(JSON.stringify(doPdf));
+      }
+    }
+
+    if (sets.length) {
+      db.prepare(`UPDATE relatorios SET ${sets.join(', ')} WHERE id = ?`).run(...args, rel.id);
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+
+  // Dinheiro mudando de valor pela mao de alguem: fica escrito quem e o que.
+  log.info('edicao', 'admin editou o relatorio', {
+    rel: rel.id,
+    mes: rel.mes_ref,
+    de: dono.nome,
+    por: admin.login,
+    mudou: mudou.join('; ').slice(0, 1500),
+  });
+
+  responderJson(res, { ok: true });
 }
 
 function baixarBackup(res, quem) {

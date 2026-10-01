@@ -209,6 +209,104 @@ export function anexoDoAchado(a) {
   </div>`;
 }
 
+// --------------------------------------------- achados iguais, numa linha so
+//
+// A conferencia gera um achado por dia: dez dias com o mesmo problema eram dez
+// faixas dizendo a mesma coisa, e a tela virava uma parede. Aqui os que falam
+// do mesmo assunto viram UMA linha, com os dias na frente; o texto de cada dia
+// (os numeros) fica guardado atras de "ver cada dia".
+
+const TITULO_DO_ACHADO = {
+  data_fim_de_semana: 'Lançamento em fim de semana',
+  data_feriado: 'Km lançado em feriado',
+  km_invertido: 'KM final menor que o inicial',
+  itinerario_vazio: 'Km lançado sem itinerário',
+  km_zerado: 'Itinerário preenchido com 0 km',
+  hodometro_retrocedeu: 'KM inicial menor que o KM final do dia anterior',
+  hodometro_salto: 'Salto de KM em relação ao dia anterior',
+  hodometro_lacuna_grande: 'Painel andou muito sem lançamento',
+  despesa_noturna_sem_justificativa: 'Pedágio ou estacionamento depois das 18h sem explicação',
+  foto_de_outro_mes: 'Foto de odômetro de outro mês',
+  foto_fora_da_sequencia: 'Foto de odômetro fora da sequência do mês',
+  foto_nao_bate_com_o_dia: 'Foto do painel não bate com o KM do dia',
+  foto_nao_bate_justificada: 'Foto do painel não bate com o KM do dia (justificado)',
+  fotos_em_ordem_errada: 'Foto do painel marca menos que a foto anterior',
+  troca_de_carro_justificada: 'Troca de carro justificada',
+};
+
+// "Dias 03, 04 e 12" quando e tudo do mesmo mes; senao cada um com o mes.
+function rotuloDosDias(datas) {
+  const dias = [...new Set(datas)].sort();
+  const mesmoMes = new Set(dias.map((d) => d.slice(0, 7))).size === 1;
+  const nomes = dias.map((d) => (mesmoMes ? d.slice(8, 10) : `${d.slice(8, 10)}/${d.slice(5, 7)}`));
+  const lista = nomes.length > 1 ? `${nomes.slice(0, -1).join(', ')} e ${nomes.at(-1)}` : nomes[0];
+  return `${nomes.length > 1 ? 'Dias' : 'Dia'} ${lista}`;
+}
+
+/**
+ * Junta os achados que falam da mesma coisa.
+ *
+ * Com dia: o mesmo codigo em varios dias vira um grupo. Sem dia: so junta
+ * texto identico (o mesmo recado repetido para varios comprovantes).
+ * `manter(a)` verdadeiro deixa o achado sozinho - e o caso dos que tem botao
+ * de justificar por dia na tela do colaborador.
+ *
+ * Devolve, na ordem em que apareceram, o achado como veio ou
+ * `{ grupo: true, gravidade, codigo, titulo, itens }`.
+ */
+export function agruparAchados(lista, { manter = () => false } = {}) {
+  const saida = [];
+  const grupos = new Map();
+  for (const a of lista || []) {
+    if (manter(a)) {
+      saida.push(a);
+      continue;
+    }
+    const chave = a.data
+      ? `${a.gravidade}|${a.codigo}`
+      : `${a.gravidade}|${a.codigo}|${a.mensagem}`;
+    let g = grupos.get(chave);
+    if (!g) {
+      g = { grupo: true, gravidade: a.gravidade, codigo: a.codigo, itens: [] };
+      grupos.set(chave, g);
+      saida.push(g);
+    }
+    g.itens.push(a);
+  }
+  return saida.map((g) => {
+    if (!g.grupo) return g;
+    if (g.itens.length === 1) return g.itens[0];
+    const primeiro = g.itens[0];
+    const titulo = !primeiro.data
+      ? primeiro.mensagem
+      : TITULO_DO_ACHADO[g.codigo]
+        // Codigo sem titulo proprio: o texto do primeiro dia, sem a data.
+        || String(primeiro.mensagem).replace(/^\d{2}\/\d{2}(\/\d{4})?(\s+as\s+\d{1,2}:\d{2})?\s*:?\s*/, '');
+    return { ...g, titulo };
+  });
+}
+
+/** O grupo de `agruparAchados` como uma faixa so. */
+export function htmlDoGrupoDeAchados(g) {
+  const comDia = Boolean(g.itens[0].data);
+  const cabeca = comDia
+    ? `<strong>${escapar(rotuloDosDias(g.itens.map((a) => a.data)))}</strong> — ${escapar(g.titulo)}`
+    : escapar(g.titulo);
+  const corpo = comDia
+    ? `<details class="detalhe-do-achado">
+         <summary>ver cada dia</summary>
+         <ul>${g.itens.map((a) => `<li>${escapar(a.mensagem)}${anexoDoAchado(a)}</li>`).join('')}</ul>
+       </details>`
+    : g.itens.map((a) => anexoDoAchado(a)).join('');
+  return `<div class="achado ${g.gravidade}">
+    <span class="icone">${g.gravidade === 'erro' ? '✕' : '!'}</span>
+    <div class="corpo">
+      <span>${cabeca}</span>
+      ${corpo}
+    </div>
+  </div>`;
+}
+
 /**
  * A placa como ela deve aparecer na tela.
  *
