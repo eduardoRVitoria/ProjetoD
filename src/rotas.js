@@ -37,6 +37,7 @@ import { resumoDoArmazenamento, enviarBloco, liberarBloco, devolverBloco } from 
 import { extrairDoRdv, motivoDeNaoConseguirLer } from './extrair.js';
 import * as log from './log.js';
 import { verificarAssinatura, achadosDaAssinatura } from './assinatura.js';
+import { assinaturaSobrePlaca } from './placa.js';
 import { galeriaDe, enviarPacote } from './galeria.js';
 import { comecarFila, estadoDaFila, pedirParada, naVezDaIa } from './fila.js';
 import { nomeDoFeriado, fimDeSemana, diaDaSemana } from './feriados.js';
@@ -1495,13 +1496,30 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
       const i = achados.findIndex((a) => a.codigo === 'sem_danfe');
       if (i >= 0) achados.splice(i, 1);
     }
-    // Selo do gov.br (ou qualquer assinatura) em cima da placa: a placa some
-    // do documento e ninguem consegue conferir o veiculo. Reprova.
-    if (parecer.assinatura_sobre_placa?.situacao === 'sim') {
+  }
+
+  // Selo do gov.br em cima da placa: a placa some do documento e ninguem
+  // consegue conferir o veiculo. Reprova - mas so quando a CONTA diz que cobre
+  // (posicao do selo contra a posicao do numero da placa no PDF). A IA julgava
+  // isso pela imagem e acusava selo que estava so encostado, na caixa de
+  // assinatura logo abaixo da placa; onde o codigo nao enxerga (escaneado,
+  // assinado a mao), a opiniao dela vira aviso para quem confere olhar.
+  if (!demo) {
+    const porCodigoNaPlaca = await placaCobertaNosRdvs(anexos);
+    if (porCodigoNaPlaca?.situacao === 'sim') {
       achados.push({
         gravidade: 'erro',
         codigo: 'assinatura_sobre_placa',
         mensagem: 'A assinatura esta em cima da placa do veiculo no RDV. Assine de novo deixando a placa visivel.',
+        data: null,
+        anexo_id: porCodigoNaPlaca.anexo.id,
+        anexo_nome: porCodigoNaPlaca.anexo.nome_original,
+      });
+    } else if (!porCodigoNaPlaca && parecer?.assinatura_sobre_placa?.situacao === 'sim') {
+      achados.push({
+        gravidade: 'aviso',
+        codigo: 'assinatura_perto_da_placa',
+        mensagem: 'A assinatura pode estar em cima da placa do veiculo no RDV. Abra o documento e confira se a placa esta visivel.',
         data: null,
         ...anexoDoAchado(parecer.assinatura_sobre_placa.anexo, anexos, rel.id),
       });
@@ -2054,6 +2072,22 @@ async function subirBackup(req, res, quem) {
       setTimeout(() => process.exit(1), 1500);
     }
   }
+}
+
+// A assinatura cobre a placa em algum dos PDFs de RDV? Devolve
+// `{ situacao: 'sim' | 'nao', anexo }`, ou null quando o codigo nao consegue
+// dizer (ver placa.js). Um arquivo coberto basta para o "sim".
+async function placaCobertaNosRdvs(anexos) {
+  let visivel = null;
+  for (const a of anexos) {
+    if (a.tipo !== 'rdv' || !/\.pdf$/i.test(a.nome_original || '')) continue;
+    const caminho = path.join(PASTA_ANEXOS, a.arquivo);
+    if (!fs.existsSync(caminho)) continue;
+    const r = await assinaturaSobrePlaca(caminho);
+    if (r?.situacao === 'sim') return { situacao: 'sim', anexo: a };
+    if (r?.situacao === 'nao') visivel = { situacao: 'nao', anexo: a };
+  }
+  return visivel;
 }
 
 // Verifica a assinatura digital do(s) arquivo(s) de RDV anexados.

@@ -64,10 +64,13 @@ const HORA_LIMITE = 18;
 //  12  sem IA, os comprovantes sao lidos por codigo (texto do PDF, OCR da foto,
 //      QR code da nota). A leitura por codigo confirma ou avisa em amarelo;
 //      nunca reprova.
+//  13  assinatura em cima da placa e decidida pela posicao do selo e da placa
+//      no PDF (placa.js), nao pela IA: selo encostado na placa nao reprova
+//      mais. Onde o codigo nao enxerga, a opiniao da IA vira aviso.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 12;
+export const VERSAO_REGRAS = 13;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;

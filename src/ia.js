@@ -113,6 +113,8 @@ O que voce PRECISA verificar:
    da placa no todo ou em parte. Responda em "assinatura_sobre_placa":
    "sim" se cobre, "nao" se a placa esta visivel, "sem_rdv" se nao veio o RDV
    ou ele nao tem campo de placa. So "sim" com a sobreposicao clara na imagem.
+   O selo na caixa de assinatura logo ABAIXO da linha da placa, com o numero
+   da placa inteiro e legivel, e "nao": encostado nao e em cima.
    Nao escreva achado sobre isso - o sistema cria a pendencia.
 
 Regras de julgamento:
