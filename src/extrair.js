@@ -12,7 +12,7 @@ import * as XLSX from 'xlsx';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chaveDaApi, lerConfig, PASTA_ANEXOS } from './banco.js';
-import { pensamentoDoModelo } from './util.js';
+import { pensamentoDoModelo, odometroInteiro, totalDeKmDeclarado } from './util.js';
 import { lerRdvPorCodigo } from './leitura-rdv.js';
 
 const LIMITE_POR_ANEXO = 12 * 1024 * 1024;
@@ -176,6 +176,8 @@ REGRAS DE TRANSCRICAO
 3. Numeros: o documento e brasileiro. "1.234,56" e mil duzentos e trinta e quatro
    e cinquenta e seis centavos - devolva 1234.56. Nunca troque ponto por virgula
    ao contrario.
+   O ponto sozinho e separador de MILHAR: "61.350" no odometro e 61350 e "4.547"
+   no total de km e 4547 - nunca 61.35 nem 4.547. Km e sempre numero inteiro.
 
 4. Km inicial e km final sao a leitura do odometro. Se a planilha so trouxer o
    total de km do dia e nao os dois valores, coloque km_inicial = 0 e
@@ -522,8 +524,11 @@ function normalizar(d, mesEsperado) {
     const data = String(l.data || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) continue;
 
-    const ki = num(l.km_inicial);
-    const kf = num(l.km_final);
+    // "61.350" lido como 61.35: volta a ser 61350. Com km inicial zerado o km
+    // final e o total do dia (regra 4 da transcricao), e fracao ali pode ser real.
+    const kiLido = num(l.km_inicial);
+    const ki = odometroInteiro(kiLido);
+    const kf = kiLido === 0 ? num(l.km_final) : odometroInteiro(l.km_final);
     const ped = num(l.pedagio);
     const est = num(l.estacionamento);
     const comb = Math.max(0, num(l.combustivel));
@@ -565,7 +570,10 @@ function normalizar(d, mesEsperado) {
     // outros: o RDV do Felipe trazia R$ 159,00 e o portal fechava R$ 159,00
     // abaixo do documento, sem apontar nada.
     totais_declarados: {
-      total_km: valor(t.total_km),
+      // "4.547" lido como 4.547: a soma dos dias diz qual dos dois e.
+      total_km: t.total_km == null
+        ? null
+        : totalDeKmDeclarado(num(t.total_km), linhas.reduce((s, l) => s + Math.max(0, l.km_final - l.km_inicial), 0)),
       taxa_por_km: valor(t.taxa_por_km),
       valor_total_km: valor(t.valor_total_km),
       pedagio_estacionamento: valor(t.pedagio_estacionamento),

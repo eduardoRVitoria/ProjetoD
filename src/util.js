@@ -74,6 +74,37 @@ export function numero(v, padrao = 0) {
   return lerNumeroBr(v, padrao);
 }
 
+// ------------------------------------------ ponto de milhar lido como decimal
+//
+// O RDV escreve "61.350" e "4.547" - sessenta e um mil, quatro mil. Quem le o
+// documento as vezes devolve o numero com o ponto no lugar: 61.35 e 4.547. Ai
+// o dia que rodou 20 km soma 0,02, e o total de 4.547 km vira "4 km e uns
+// quebrados". Foi o RDV do Julio Cesar de setembro: o portal somava 4.527 onde
+// o documento dizia 4.547.
+
+/**
+ * A leitura do odometro de um dia. Painel de carro nao marca fracao: numero
+ * abaixo de mil com casas decimais e o ponto de milhar no lugar errado.
+ */
+export function odometroInteiro(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return n > 0 && n < 1000 && !Number.isInteger(n) ? Math.round(n * 1000) : n;
+}
+
+/**
+ * O total de km que o documento declara. Aqui fracao pode ser de verdade
+ * (850,5 km), entao quem decide e a soma dos dias: vale a leitura que ficar
+ * mais perto dela.
+ */
+export function totalDeKmDeclarado(v, somaDosDias) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return v;
+  if (!(n > 0 && n < 1000) || Number.isInteger(n) || !(somaDosDias > 0)) return n;
+  const vezesMil = Math.round(n * 1000);
+  return Math.abs(vezesMil - somaDosDias) < Math.abs(n - somaDosDias) ? vezesMil : n;
+}
+
 export function mesValido(mes) {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(String(mes || ''));
 }

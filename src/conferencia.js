@@ -5,6 +5,7 @@
 
 import { fimDeSemana, nomeDoFeriado, diaDaSemana } from './feriados.js';
 import { MARGEM_AUMENTO } from './banco.js';
+import { totalDeKmDeclarado } from './util.js';
 
 // Entre dois dias uteis seguidos o carro nao tem por onde rodar muito fora do
 // trabalho - so a noite. Passou disto, e erro.
@@ -495,7 +496,10 @@ export function conferir(
   }
   // `declaradoOuNulo`: texto que nao vira numero e "nao sei", nao zero. Tratar
   // como zero acusaria a pessoa de ter declarado 0 km.
-  const declaradoKm = declaradoOuNulo(doPdf?.totais_declarados?.total_km ?? rel.total_km);
+  // Leitura antiga pode ter guardado "4.547" como 4,547 km: a soma dos dias
+  // diz se era quatro mil.
+  const declaradoKmLido = declaradoOuNulo(doPdf?.totais_declarados?.total_km ?? rel.total_km);
+  const declaradoKm = declaradoKmLido == null ? null : totalDeKmDeclarado(declaradoKmLido, totalKm);
   const declaradoValor = declaradoOuNulo(doPdf?.totais_declarados?.valor_total_km ?? rel.valor_km);
 
   if (declaradoKm != null && !perto(totalKm, declaradoKm, 0.5)) {

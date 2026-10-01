@@ -57,7 +57,7 @@ import {
   diasDoMes,
   mesPorExtenso,
   nomeDeArquivoSeguro,
-  ROTULO_STATUS, listaDeJson, textoDaIa, placaLimpa,
+  ROTULO_STATUS, listaDeJson, textoDaIa, placaLimpa, odometroInteiro,
 } from './util.js';
 
 const TIPOS_DE_ANEXO = new Set([
@@ -1438,7 +1438,16 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
   }
 
   await garantirSubtotal(rel, anexos);
+  const kmConsertado = consertarKmComPonto(linhas);
   const porRegra = conferirRel(rel, linhas, anexos);
+  // Os dias mudaram: o total de km e o valor gravados eram a soma errada.
+  if (kmConsertado) {
+    db.prepare('UPDATE relatorios SET total_km = ?, valor_km = ? WHERE id = ?')
+      .run(porRegra.totalKm, porRegra.valorKm, rel.id);
+    log.info('relatorio', 'km com ponto de milhar lido como decimal - corrigido', {
+      rel: rel.id, dias: kmConsertado, total_km: porRegra.totalKm,
+    });
+  }
   const daAssinatura = conferirAssinatura(rel, anexos, usuario);
   porRegra.achados.push(...daAssinatura.achados);
 
@@ -2126,6 +2135,25 @@ async function subirBackup(req, res, quem) {
       setTimeout(() => process.exit(1), 1500);
     }
   }
+}
+
+// Dias gravados com o ponto de milhar lido como decimal (61.35 no lugar de
+// 61350): corrige na lista e no banco. Devolve quantos dias mudaram.
+function consertarKmComPonto(linhas) {
+  let mudaram = 0;
+  const gravar = db.prepare('UPDATE linhas SET km_inicial = ?, km_final = ? WHERE id = ?');
+  for (const l of linhas) {
+    // Km inicial zerado: o km final e o total do dia, e fracao ali pode ser real.
+    if (!(Number(l.km_inicial) > 0)) continue;
+    const ki = odometroInteiro(l.km_inicial);
+    const kf = odometroInteiro(l.km_final);
+    if (ki === Number(l.km_inicial) && kf === Number(l.km_final)) continue;
+    l.km_inicial = ki;
+    l.km_final = kf;
+    gravar.run(ki, kf, l.id);
+    mudaram++;
+  }
+  return mudaram;
 }
 
 // O "Subtotal das Despesas" lido do texto do(s) PDF(s) de RDV, ou null.
