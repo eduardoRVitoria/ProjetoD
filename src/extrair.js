@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { chaveDaApi, lerConfig, PASTA_ANEXOS } from './banco.js';
 import { pensamentoDoModelo } from './util.js';
+import { lerRdvPorCodigo } from './leitura-rdv.js';
 
 const LIMITE_POR_ANEXO = 12 * 1024 * 1024;
 
@@ -337,21 +338,36 @@ const FERRAMENTA = {
   },
 };
 
+// O que a pessoa le quando nem o codigo nem a IA conseguiram.
+const SEM_LEITURA_AUTOMATICA =
+  'Nao consegui ler esse arquivo sozinho. O portal le o RDV em PDF salvo direto da planilha '
+  + '(Arquivo > Salvar como > PDF) - foto e PDF escaneado, nao. Anexe o PDF assim, '
+  + 'ou use "Preencher na mao" para nao travar o seu mes.';
+
 /**
  * Extrai a tabela do RDV a partir dos anexos marcados como o proprio relatorio.
  * @param {Array} anexosDoRdv linhas da tabela anexos com tipo 'rdv'
  * @param {string} mesEsperado 'AAAA-MM' - usado para desambiguar datas sem ano
  */
 export async function extrairDoRdv(anexosDoRdv, mesEsperado) {
-  const chave = chaveDaApi();
-  if (!chave) {
-    throw new Error(
-      'A leitura do RDV precisa da chave da API da Anthropic. Cadastre em Configuracoes ou defina ANTHROPIC_API_KEY.',
-    );
-  }
   if (!anexosDoRdv.length) {
     throw new Error('Nenhum arquivo de relatorio foi anexado.');
   }
+
+  // Primeiro por codigo: o formulario em PDF salvo do Excel tem texto, e a
+  // leitura sai na hora, de graca e sem depender de ninguem. Se a pessoa anexou
+  // mais de um (o original e o corrigido), vale o ultimo que der para ler.
+  for (const a of [...anexosDoRdv].reverse()) {
+    if (path.extname(a.nome_original).toLowerCase() !== '.pdf') continue;
+    const caminho = path.join(PASTA_ANEXOS, a.arquivo);
+    if (!fs.existsSync(caminho)) continue;
+    const dados = await lerRdvPorCodigo(caminho);
+    if (dados) return { extraido: normalizar(dados, mesEsperado), uso: null, por: 'codigo' };
+  }
+
+  // So chega aqui o que o codigo nao le: foto, PDF escaneado, planilha.
+  const chave = chaveDaApi();
+  if (!chave) throw new Error(SEM_LEITURA_AUTOMATICA);
 
   const cliente = new Anthropic({ apiKey: chave });
   const conteudo = [
@@ -455,7 +471,9 @@ export async function extrairDoRdv(anexosDoRdv, mesEsperado) {
     );
   } catch (e) {
     const estourou = e?.name === 'APIConnectionTimeoutError' || /timeout|aborted/i.test(String(e?.message));
-    if (!estourou) throw e;
+    // Erro cru da API ("400 credit balance...") nao diz nada ao vendedor. O
+    // motivo de verdade fica em `cause`, que o log imprime.
+    if (!estourou) throw new Error(SEM_LEITURA_AUTOMATICA, { cause: e });
     throw new Error(
       'A leitura do seu RDV passou de 4 minutos e foi cancelada. Tente de novo, '
         + 'ou use "Preencher na mao" para nao travar o seu mes.',

@@ -636,6 +636,9 @@ async function lerRdv(req, res, usuario) {
   try {
     const saida = await extrairDoRdv(arquivos, mes);
     extraido = saida.extraido;
+    log.info('rdv', saida.por === 'codigo' ? 'lido por codigo' : 'lido pela IA', {
+      quem: usuario.login, mes, linhas: extraido.linhas.length, levou: log.desde(comecouEm),
+    });
   } catch (e) {
     // O motivo ia so para a tela do vendedor. Quando cinco tentativas seguidas
     // falharam, o log tinha o 502 e nenhuma pista do porque - e a pessoa ja
@@ -1419,16 +1422,29 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
         avisoIa = `Anexos nao lidos pela IA: ${textoDosIgnorados(anexosIgnorados)}`;
       }
     } catch (e) {
-      // Devolve o relatorio ao estado anterior para nao deixar ninguem preso em
-      // "Conferindo" por causa de uma chamada que falhou.
-      db.prepare('UPDATE relatorios SET status = ? WHERE id = ?').run(rel.status, rel.id);
-      throw e;
+      // A IA fora do ar nao pode parar a conferencia: em 01/10 a conta ficou
+      // sem credito e o portal inteiro devolvia 502 com gente enviando o mes.
+      // Segue so com as regras; o que dependia de ler comprovante vira aviso.
+      log.aviso('ia', 'IA falhou - conferencia so pelas regras', { rel: rel.id });
+      avisoIa = 'A leitura dos comprovantes pela IA falhou - conferencia feita so pelas regras automaticas.';
     }
   } else if (usarIa && !iaDisponivel()) {
     avisoIa = 'Sem chave de API configurada - conferencia feita so pelas regras automaticas.';
   }
 
   const achados = [...porRegra.achados];
+  // Sem a leitura, ninguem somou os comprovantes. Fica dito, em amarelo, para
+  // quem confere olhar o valor na mao - senao o relatorio sairia CERTA calado.
+  if (!parecer && !demo && porRegra.totalDeclarado > 0
+      && !achados.some((a) => a.codigo === 'pedagio_sem_comprovante')) {
+    achados.push({
+      gravidade: 'aviso',
+      codigo: 'pedagio_nao_conferido',
+      mensagem: `Pedagio/estacionamento de ${porRegra.totalDeclarado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} `
+        + 'declarado: o valor dos comprovantes nao foi lido automaticamente. Confira na mao.',
+      data: null,
+    });
+  }
   if (parecer) {
     for (const a of parecer.achados || []) {
       // Passa pelo saneador: o texto vem de um modelo e vai direto para a tela.
