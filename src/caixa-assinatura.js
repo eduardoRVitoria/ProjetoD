@@ -1,0 +1,150 @@
+// O RDV esta assinado? O que o codigo consegue ver, sem IA.
+//
+// "Sem assinatura do gov.br ou a mao = erro." O selo do gov.br o arquivo
+// declara; assinatura a mao o codigo nao le - mas consegue ver se a CAIXA DE
+// ASSINATURA do formulario esta em branco. A caixa fica logo acima do rotulo
+// "ASSINATURA POR EXTENSO", ao lado da placa. A pagina e desenhada e conta-se
+// a tinta dentro da caixa, descontando as linhas da propria tabela.
+//
+// A primeira versao procurava "qualquer imagem, anotacao ou risco curvo no
+// arquivo" e deixava passar RDV em branco: a moldura da caixa tem canto
+// arredondado (um risco curvo), e a marca d'agua de aplicativo e uma imagem.
+
+const ESCALA = 3; // pixels por ponto do PDF
+const ESCURO = 150; // luminosidade abaixo disto e tinta
+const TINTA_MINIMA = 400; // pixels de tinta para dizer que ha algo na caixa
+
+/**
+ * Onde fica a caixa de assinatura na pagina, em pontos do PDF, ou null.
+ * `itens` sao os textos da pagina: { s, x, y, l, a } (texto, canto esquerdo,
+ * linha de base, largura, altura).
+ */
+export function regiaoDaCaixa(itens, larguraDaPagina) {
+  const rotulo = itens.find((i) => /^\s*assinatura/i.test(i.s));
+  if (!rotulo) return null;
+  // O rotulo pode vir picado ("ASSINATURA" "POR" "EXTENSO"): junta a linha.
+  const linha = itens.filter((i) => Math.abs(i.y - rotulo.y) <= 3 && i.x >= rotulo.x - 1 && i.x <= rotulo.x + 220);
+  const centro = (rotulo.x + Math.max(...linha.map((i) => i.x + i.l))) / 2;
+  const altura = rotulo.a || 7;
+
+  // A linha da placa fica logo acima da caixa e comeca na borda esquerda dela.
+  const placa = itens
+    .filter((i) => /placa/i.test(i.s) && i.y > rotulo.y && i.y - rotulo.y < 120)
+    .sort((a, b) => a.y - b.y)[0];
+  const esquerda = placa ? placa.x : centro - 150;
+  const direita = Math.min(larguraDaPagina - 4, centro + (centro - esquerda));
+  const topo = placa ? placa.y - 3 : rotulo.y + 55;
+  const base = rotulo.y + altura * 1.3;
+  if (direita - esquerda < 60 || topo - base < 15) return null;
+  // Um pouco para dentro, para a moldura ficar de fora.
+  return { x1: esquerda + 6, x2: direita - 6, y1: base + 3, y2: topo - 3 };
+}
+
+/**
+ * Quanta tinta ha num recorte { data, width, height } (RGBA), fora as linhas
+ * da tabela. Linha de tabela e fina: so conta o pixel escuro que tem outro
+ * escuro alguns pixels acima ou abaixo - letra, selo e caneta tem corpo. Coluna
+ * quase toda escura e divisoria vertical, e tambem sai.
+ */
+export function tintaNoRecorte({ data, width, height }) {
+  const escuro = new Uint8Array(width * height);
+  for (let i = 0; i < width * height; i++) {
+    const lum = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+    escuro[i] = data[i * 4 + 3] > 40 && lum < ESCURO ? 1 : 0;
+  }
+  const PASSO = 5;
+  let tinta = 0;
+  for (let x = 0; x < width; x++) {
+    let naColuna = 0;
+    let comCorpo = 0;
+    for (let y = 0; y < height; y++) {
+      if (!escuro[y * width + x]) continue;
+      naColuna++;
+      const acima = y >= PASSO && escuro[(y - PASSO) * width + x];
+      const abaixo = y + PASSO < height && escuro[(y + PASSO) * width + x];
+      if (acima || abaixo) comCorpo++;
+    }
+    if (naColuna > height * 0.6) continue; // divisoria vertical
+    tinta += comCorpo;
+  }
+  return tinta;
+}
+
+/**
+ * O que o codigo ve da assinatura num PDF de RDV:
+ *   selo  - tem campo de assinatura digital visivel (o selo do gov.br)
+ *   caixa - 'vazia' | 'com_tinta' | null (nao achou a caixa: escaneado, foto
+ *           salva como PDF, ou outro formulario)
+ *   tinta - quantos pixels de tinta ha na caixa, quando ela foi achada
+ */
+export async function assinaturaNoPdf(pdf) {
+  const saida = { selo: false, caixa: null, tinta: null };
+  try {
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const { createCanvas } = await import('@napi-rs/canvas');
+    const doc = await pdfjs.getDocument({
+      data: new Uint8Array(pdf),
+      isEvalSupported: false,
+      useSystemFonts: false,
+      verbosity: 0,
+    }).promise;
+
+    for (let p = 1; p <= Math.min(doc.numPages, 10); p++) {
+      const pagina = await doc.getPage(p);
+      const anotacoes = await pagina.getAnnotations();
+      if (anotacoes.some((a) => a.subtype === 'Widget' && a.fieldType === 'Sig'
+          && Array.isArray(a.rect) && a.rect[2] - a.rect[0] > 1 && a.rect[3] - a.rect[1] > 1)) {
+        saida.selo = true;
+      }
+      if (saida.caixa) continue;
+
+      const itens = (await pagina.getTextContent()).items
+        .filter((i) => i.str && i.str.trim())
+        .map((i) => ({ s: i.str, x: i.transform[4], y: i.transform[5], l: i.width || 0, a: i.height || 0 }));
+      const [vx, , vx2, vy2] = pagina.view;
+      const regiao = pagina.rotate === 0 ? regiaoDaCaixa(itens, vx2 - vx) : null;
+      if (!regiao) continue;
+
+      const viewport = pagina.getViewport({ scale: ESCALA });
+      const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await pagina.render({ canvasContext: ctx, viewport }).promise;
+
+      const x = Math.max(0, Math.floor((regiao.x1 - vx) * ESCALA));
+      const y = Math.max(0, Math.floor((vy2 - regiao.y2) * ESCALA));
+      const largura = Math.min(canvas.width - x, Math.ceil((regiao.x2 - regiao.x1) * ESCALA));
+      const alturaPx = Math.min(canvas.height - y, Math.ceil((regiao.y2 - regiao.y1) * ESCALA));
+      if (largura < 30 || alturaPx < 15) continue;
+      saida.tinta = tintaNoRecorte(ctx.getImageData(x, y, largura, alturaPx));
+      saida.caixa = saida.tinta >= TINTA_MINIMA ? 'com_tinta' : 'vazia';
+    }
+    await doc.destroy();
+  } catch {
+    // PDF que nao abre ou nao desenha: fica o que ja se sabia.
+  }
+  return saida;
+}
+
+/**
+ * O RDV esta assinado - no gov.br ou a mao?
+ *
+ * `arquivos` e o que o codigo viu em cada arquivo de RDV:
+ *   digital - assinatura digital no arquivo, ou o selo do gov.br na pagina
+ *   caixa   - 'vazia' | 'com_tinta' | null (ver assinaturaNoPdf)
+ * `daIa` e a resposta de quem olhou a imagem: 'sim', 'nao', ou nada.
+ *
+ * Devolve 'sim', 'nao', ou null quando ninguem conseguiu ver. Sem arquivo de
+ * RDV devolve 'sem_rdv' - a falta do arquivo e outra cobranca.
+ */
+export function rdvEstaAssinado(arquivos, daIa) {
+  if (!arquivos.length) return 'sem_rdv';
+  if (arquivos.some((a) => a.digital)) return 'sim';
+  // A conta ganha da IA: caixa em branco nao tem assinatura para ver.
+  if (arquivos.every((a) => a.caixa === 'vazia')) return 'nao';
+  if (daIa === 'sim' || daIa === 'nao') return daIa;
+  // Sem a IA: tinta dentro da caixa de assinatura e alguem ter assinado.
+  if (arquivos.some((a) => a.caixa === 'com_tinta')) return 'sim';
+  return null;
+}

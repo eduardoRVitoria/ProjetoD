@@ -37,9 +37,8 @@ import { resumoDoArmazenamento, enviarBloco, liberarBloco, devolverBloco } from 
 import { extrairDoRdv, motivoDeNaoConseguirLer } from './extrair.js';
 import { subtotalDoRdv } from './leitura-rdv.js';
 import * as log from './log.js';
-import {
-  verificarAssinatura, achadosDaAssinatura, pdfSemMarcaDeAssinatura, rdvEstaAssinado,
-} from './assinatura.js';
+import { verificarAssinatura, achadosDaAssinatura } from './assinatura.js';
+import { assinaturaNoPdf, rdvEstaAssinado } from './caixa-assinatura.js';
 import { assinaturaSobrePlaca } from './placa.js';
 import { galeriaDe, enviarPacote } from './galeria.js';
 import { comecarFila, estadoDaFila, pedirParada, naVezDaIa } from './fila.js';
@@ -1562,8 +1561,9 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
       });
     }
 
-    // RDV sem assinatura nenhuma - nem gov.br, nem a mao - reprova. Quando
-    // ninguem conseguiu ver (escaneado ou foto, sem a IA), fica o aviso.
+    // RDV sem assinatura nenhuma - nem gov.br, nem a mao - reprova. E quando
+    // ninguem conseguiu confirmar (escaneado ou foto, sem a IA) tambem: como
+    // aviso, relatorio sem assinatura saia aprovado.
     const assinado = rdvEstaAssinado(await assinaturaDosRdvs(anexos), parecer?.rdv_assinado);
     if (assinado === 'nao') {
       achados.push({
@@ -1574,9 +1574,9 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
       });
     } else if (assinado === null) {
       achados.push({
-        gravidade: 'aviso',
+        gravidade: 'erro',
         codigo: 'assinatura_nao_confirmada',
-        mensagem: 'Nao deu para confirmar a assinatura do RDV: nao tem assinatura digital e a imagem nao foi lida. Abra o documento e confira se esta assinado a mao.',
+        mensagem: 'Nao foi possivel confirmar a assinatura do RDV: nao tem assinatura do gov.br e a assinatura a mao nao foi reconhecida. Confira o documento; se estiver assinado, aprove na mao.',
         data: null,
       });
     }
@@ -2208,14 +2208,15 @@ async function placaCobertaNosRdvs(anexos) {
 }
 
 // O que o codigo consegue dizer da assinatura de cada arquivo de RDV: tem
-// assinatura digital, ou e um PDF limpo onde nao cabe assinatura nenhuma. Foto
-// e papel escaneado ficam sem as duas marcas - so olhando a imagem.
+// assinatura digital (ou o selo do gov.br), e se a caixa de assinatura do
+// formulario esta em branco. Foto e papel escaneado ficam sem resposta - so
+// olhando a imagem.
 async function assinaturaDosRdvs(anexos) {
   const saida = [];
   for (const a of anexos) {
     if (a.tipo !== 'rdv') continue;
     const caminho = path.join(PASTA_ANEXOS, a.arquivo);
-    const item = { digital: false, semMarca: false };
+    const item = { digital: false, caixa: null };
     if (/\.pdf$/i.test(a.nome_original || '') && fs.existsSync(caminho)) {
       const pdf = fs.readFileSync(caminho);
       try {
@@ -2223,7 +2224,13 @@ async function assinaturaDosRdvs(anexos) {
       } catch {
         item.digital = false;
       }
-      if (!item.digital) item.semMarca = await pdfSemMarcaDeAssinatura(pdf);
+      if (!item.digital) {
+        const visto = await assinaturaNoPdf(pdf);
+        // O selo do gov.br na pagina vale mesmo quando o arquivo foi salvo de
+        // novo depois de assinado e perdeu a assinatura digital.
+        item.digital = visto.selo;
+        item.caixa = visto.caixa;
+      }
     }
     saida.push(item);
   }

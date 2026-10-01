@@ -3,7 +3,8 @@
 //   node testes/pedagio-repetido.mjs
 import assert from 'node:assert/strict';
 import { achadoDaIaSobrePedagio, gravidadeDoAchadoDaIa } from '../src/conferencia.js';
-import { achadosDaAssinatura, rdvEstaAssinado } from '../src/assinatura.js';
+import { achadosDaAssinatura } from '../src/assinatura.js';
+import { rdvEstaAssinado } from '../src/caixa-assinatura.js';
 
 // O que a IA escreveu de verdade em 01/10 (supervisor da ALPHA, ida e volta em
 // Cajati e Juquia), como erro: e achado de pedagio, que a conferencia descarta
@@ -26,16 +27,19 @@ assert.equal(gravidadeDoAchadoDaIa({ gravidade: 'aviso', mensagem: 'Itinerario l
 assert.equal(achadosDaAssinatura({ assinado: false, assinaturas: [] }, 'FULANO DE TAL').length, 0);
 
 // Quem decide e o conjunto: sem gov.br E sem assinatura a mao reprova.
-const digital = { digital: true, semMarca: false };
-const limpo = { digital: false, semMarca: true }; // PDF direto do Excel, sem nada
-const escaneado = { digital: false, semMarca: false }; // foto ou papel escaneado
+const digital = { digital: true, caixa: 'com_tinta' };
+const limpo = { digital: false, caixa: 'vazia' }; // caixa de assinatura em branco
+const escaneado = { digital: false, caixa: null }; // foto ou papel escaneado
+const rabiscado = { digital: false, caixa: 'com_tinta' }; // algo desenhado na caixa
 assert.equal(rdvEstaAssinado([digital], 'nao'), 'sim', 'assinatura digital vale mais que a opiniao da IA');
-assert.equal(rdvEstaAssinado([limpo], undefined), 'nao', 'PDF limpo reprova mesmo sem IA');
+assert.equal(rdvEstaAssinado([limpo], undefined), 'nao', 'caixa em branco reprova mesmo sem IA');
+assert.equal(rdvEstaAssinado([rabiscado], undefined), 'sim', 'sem IA, tinta na caixa e assinatura');
+assert.equal(rdvEstaAssinado([rabiscado], 'nao'), 'nao', 'com IA, ela diz se a tinta e assinatura');
 assert.equal(rdvEstaAssinado([limpo], 'sim'), 'nao', 'a conta ganha da IA');
 assert.equal(rdvEstaAssinado([limpo, digital], undefined), 'sim', 'basta um arquivo assinado');
 assert.equal(rdvEstaAssinado([escaneado], 'sim'), 'sim', 'assinado a mao, visto pela IA');
 assert.equal(rdvEstaAssinado([escaneado], 'nao'), 'nao');
-assert.equal(rdvEstaAssinado([escaneado], undefined), null, 'ninguem viu: aviso, nao erro');
+assert.equal(rdvEstaAssinado([escaneado], undefined), null, 'ninguem conseguiu ver');
 assert.equal(rdvEstaAssinado([limpo, escaneado], undefined), null);
 assert.equal(rdvEstaAssinado([], 'nao'), 'sem_rdv');
 

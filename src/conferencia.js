@@ -77,10 +77,13 @@ const HORA_LIMITE = 18;
 //      bater com o "Subtotal das Despesas" que o RDV declara.
 //  16  dia com mais de 2.000 km rodados e erro: e numero lido ou digitado
 //      errado, e nao pode entrar calado no total a receber.
+//  17  assinatura: a caixa de assinatura do RDV em branco reprova (o codigo
+//      mede a tinta dentro dela), e assinatura que ninguem conseguiu
+//      confirmar reprova em vez de virar aviso.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 16;
+export const VERSAO_REGRAS = 17;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
