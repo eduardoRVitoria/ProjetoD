@@ -117,6 +117,13 @@ O que voce PRECISA verificar:
    da placa inteiro e legivel, e "nao": encostado nao e em cima.
    Nao escreva achado sobre isso - o sistema cria a pendencia.
 
+6. O RDV ESTA ASSINADO? Olhe a caixa de assinatura do RDV ("ASSINATURA POR
+   EXTENSO"). Responda em "rdv_assinado": "sim" se ha o selo do gov.br OU uma
+   assinatura feita a mao (caneta no papel escaneado/fotografado, ou desenhada
+   por cima do arquivo); "nao" se a caixa esta em branco; "sem_rdv" se nao
+   veio o RDV. Nome digitado em letra de computador nao e assinatura.
+   Nao escreva achado sobre isso - o sistema cria a pendencia.
+
 Regras de julgamento:
 - Falta da nota de abastecimento: NAO escreva achado. Quem decide se a falta
   reprova e o sistema (so reprova gerente). Apenas responda
@@ -190,6 +197,11 @@ const FERRAMENTA = {
         },
         required: ['situacao', 'anexo'],
         additionalProperties: false,
+      },
+      rdv_assinado: {
+        type: 'string',
+        description: 'O RDV tem assinatura - selo do gov.br ou a mao? "sem_rdv" se o RDV nao veio.',
+        enum: ['sim', 'nao', 'sem_rdv'],
       },
       itens_ignorados: {
         type: 'array',
@@ -275,6 +287,7 @@ const FERRAMENTA = {
     required: [
       'passagens',
       'assinatura_sobre_placa',
+      'rdv_assinado',
       'itens_ignorados',
       'tem_danfe_de_abastecimento',
       'odometro',

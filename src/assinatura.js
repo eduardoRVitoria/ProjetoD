@@ -196,18 +196,10 @@ function mascararCpf(cpf) {
 export function achadosDaAssinatura(r, nomeDoColaborador) {
   const achados = [];
 
-  // Sem assinatura digital nao reprova mais (versao 11): o RDV pode vir
-  // assinado a mao, e isso o codigo nao enxerga. Fica o aviso para quem confere
-  // olhar a assinatura no documento.
-  if (!r.assinado) {
-    achados.push({
-      gravidade: 'aviso',
-      codigo: 'sem_assinatura_digital',
-      mensagem: 'O RDV nao tem assinatura digital do gov.br. Vale se estiver assinado a mao - confira a assinatura no documento.',
-      data: null,
-    });
-    return achados;
-  }
+  // Sem assinatura digital nao e decidido aqui: o RDV pode vir assinado a mao.
+  // Quem diz se falta assinatura e a conferencia, olhando todos os arquivos do
+  // RDV e a leitura dos comprovantes (versao 14).
+  if (!r.assinado) return achados;
 
   // Assinatura que nao deu para ler ou verificar nao vira mais pendencia
   // (versao 5): so a alterada depois de assinar e a de outra pessoa reprovam.
@@ -264,4 +256,76 @@ function mesmaPessoa(a, b) {
   // Primeiro nome igual e pelo menos mais um nome em comum.
   const comuns = pa.filter((p) => pb.includes(p));
   return pa[0] === pb[0] && comuns.length >= 2;
+}
+
+/**
+ * O PDF do RDV saiu direto do computador e nao tem NADA que possa ser uma
+ * assinatura? Devolve true so com certeza; false e "pode ter" ou "nao sei".
+ *
+ * Assinatura a mao o codigo nao enxerga, mas ela so chega de tres jeitos: papel
+ * escaneado ou fotografado (o PDF vira imagem, sem texto), assinatura desenhada
+ * por cima num aplicativo (entra como anotacao, imagem ou risco curvo), ou o
+ * selo do gov.br. Um PDF com o texto do formulario, sem anotacao, sem imagem e
+ * sem nenhum traco curvo e a planilha exportada como veio do Excel: ninguem
+ * assinou.
+ */
+export async function pdfSemMarcaDeAssinatura(pdf) {
+  try {
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const doc = await pdfjs.getDocument({
+      data: new Uint8Array(pdf),
+      isEvalSupported: false,
+      useSystemFonts: false,
+      verbosity: 0,
+    }).promise;
+    const { OPS } = pdfjs;
+    const DE_IMAGEM = new Set([
+      OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject,
+      OPS.paintImageXObjectRepeat, OPS.paintImageMaskXObjectRepeat, OPS.paintImageMaskXObjectGroup,
+      OPS.paintInlineImageXObjectGroup, OPS.paintSolidColorImageMask,
+    ].filter((o) => o != null));
+    const CURVAS = new Set([OPS.curveTo, OPS.curveTo2, OPS.curveTo3]);
+
+    let letras = 0;
+    let limpo = true;
+    for (let p = 1; p <= doc.numPages && limpo; p++) {
+      // Documento comprido demais para afirmar qualquer coisa.
+      if (p > 10) limpo = false;
+      const pagina = await doc.getPage(p);
+      letras += (await pagina.getTextContent()).items.reduce((s, i) => s + (i.str || '').trim().length, 0);
+      if ((await pagina.getAnnotations()).length) limpo = false;
+      const ops = await pagina.getOperatorList();
+      for (let i = 0; i < ops.fnArray.length && limpo; i++) {
+        const f = ops.fnArray[i];
+        if (DE_IMAGEM.has(f) || CURVAS.has(f)) limpo = false;
+        // Os tracos chegam agrupados: o primeiro argumento lista as operacoes.
+        else if (f === OPS.constructPath && Array.from(ops.argsArray[i]?.[0] || []).some((o) => CURVAS.has(o))) limpo = false;
+      }
+    }
+    await doc.destroy();
+    // Sem texto e papel escaneado: a assinatura pode estar na imagem.
+    return limpo && letras > 200;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * O RDV esta assinado - no gov.br ou a mao? (regras versao 14)
+ *
+ * `arquivos` e o que o codigo viu em cada arquivo de RDV: `{ digital, semMarca }`
+ * (tem assinatura digital / e PDF limpo, sem nada que possa ser assinatura).
+ * `daIa` e a resposta de quem olhou a imagem: 'sim', 'nao', ou nada.
+ *
+ * Devolve 'sim', 'nao', ou null quando ninguem conseguiu ver (papel escaneado
+ * ou foto, sem a IA): ai nao da para acusar, fica aviso para quem confere.
+ * Sem arquivo de RDV devolve 'sem_rdv' - a falta do arquivo e outra cobranca.
+ */
+export function rdvEstaAssinado(arquivos, daIa) {
+  if (!arquivos.length) return 'sem_rdv';
+  if (arquivos.some((a) => a.digital)) return 'sim';
+  // A conta ganha da IA: PDF limpo nao tem onde esconder assinatura.
+  if (arquivos.every((a) => a.semMarca)) return 'nao';
+  if (daIa === 'sim' || daIa === 'nao') return daIa;
+  return null;
 }

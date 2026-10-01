@@ -67,10 +67,13 @@ const HORA_LIMITE = 18;
 //  13  assinatura em cima da placa e decidida pela posicao do selo e da placa
 //      no PDF (placa.js), nao pela IA: selo encostado na placa nao reprova
 //      mais. Onde o codigo nao enxerga, a opiniao da IA vira aviso.
+//  14  RDV sem assinatura nenhuma - nem gov.br, nem a mao - volta a reprovar.
+//      Assinado a mao continua valendo. So fica aviso quando ninguem consegue
+//      ver (papel escaneado ou foto, sem a IA).
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 13;
+export const VERSAO_REGRAS = 14;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;

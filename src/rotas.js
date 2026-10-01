@@ -36,7 +36,9 @@ import { montarImpressao } from './impressao.js';
 import { resumoDoArmazenamento, enviarBloco, liberarBloco, devolverBloco } from './arquivamento.js';
 import { extrairDoRdv, motivoDeNaoConseguirLer } from './extrair.js';
 import * as log from './log.js';
-import { verificarAssinatura, achadosDaAssinatura } from './assinatura.js';
+import {
+  verificarAssinatura, achadosDaAssinatura, pdfSemMarcaDeAssinatura, rdvEstaAssinado,
+} from './assinatura.js';
 import { assinaturaSobrePlaca } from './placa.js';
 import { galeriaDe, enviarPacote } from './galeria.js';
 import { comecarFila, estadoDaFila, pedirParada, naVezDaIa } from './fila.js';
@@ -1524,6 +1526,25 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
         ...anexoDoAchado(parecer.assinatura_sobre_placa.anexo, anexos, rel.id),
       });
     }
+
+    // RDV sem assinatura nenhuma - nem gov.br, nem a mao - reprova. Quando
+    // ninguem conseguiu ver (escaneado ou foto, sem a IA), fica o aviso.
+    const assinado = rdvEstaAssinado(await assinaturaDosRdvs(anexos), parecer?.rdv_assinado);
+    if (assinado === 'nao') {
+      achados.push({
+        gravidade: 'erro',
+        codigo: 'sem_assinatura',
+        mensagem: 'O RDV nao esta assinado. Assine no gov.br ou a mao e envie de novo.',
+        data: null,
+      });
+    } else if (assinado === null) {
+      achados.push({
+        gravidade: 'aviso',
+        codigo: 'assinatura_nao_confirmada',
+        mensagem: 'Nao deu para confirmar a assinatura do RDV: nao tem assinatura digital e a imagem nao foi lida. Abra o documento e confira se esta assinado a mao.',
+        data: null,
+      });
+    }
   }
 
   // Anexo que a conferencia nem conseguiu abrir vira pendencia com nome e
@@ -2088,6 +2109,29 @@ async function placaCobertaNosRdvs(anexos) {
     if (r?.situacao === 'nao') visivel = { situacao: 'nao', anexo: a };
   }
   return visivel;
+}
+
+// O que o codigo consegue dizer da assinatura de cada arquivo de RDV: tem
+// assinatura digital, ou e um PDF limpo onde nao cabe assinatura nenhuma. Foto
+// e papel escaneado ficam sem as duas marcas - so olhando a imagem.
+async function assinaturaDosRdvs(anexos) {
+  const saida = [];
+  for (const a of anexos) {
+    if (a.tipo !== 'rdv') continue;
+    const caminho = path.join(PASTA_ANEXOS, a.arquivo);
+    const item = { digital: false, semMarca: false };
+    if (/\.pdf$/i.test(a.nome_original || '') && fs.existsSync(caminho)) {
+      const pdf = fs.readFileSync(caminho);
+      try {
+        item.digital = verificarAssinatura(pdf).assinado;
+      } catch {
+        item.digital = false;
+      }
+      if (!item.digital) item.semMarca = await pdfSemMarcaDeAssinatura(pdf);
+    }
+    saida.push(item);
+  }
+  return saida;
 }
 
 // Verifica a assinatura digital do(s) arquivo(s) de RDV anexados.
