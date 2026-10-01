@@ -951,7 +951,7 @@ function blocoParecer(p) {
   if (!ia) return '';
   const ignorados = ia.itens_ignorados || [];
   return `
-    <h2 style="margin-top:20px">Leitura dos comprovantes pela IA</h2>
+    <h2 style="margin-top:20px">${ia.por === 'codigo' ? 'Leitura dos comprovantes por código (sem IA)' : 'Leitura dos comprovantes pela IA'}</h2>
     ${
       ia.simulado
         ? `<div class="aviso erro"><strong>PARECER SIMULADO — modo demonstração.</strong><br>
@@ -961,12 +961,12 @@ function blocoParecer(p) {
     }
     <div class="aviso info">${escapar(ia.resumo || '')}</div>
     <div class="numeros" style="margin-bottom:12px">
-      <div class="numero"><div class="rotulo">Pedágio comprovado</div>
-        <div class="valor">${brl(ia.pedagio_comprovado)}</div></div>
+      <div class="numero"><div class="rotulo">${ia.por === 'codigo' && ia.pedagio_comprovado == null ? 'Pedágio lido (não confirmado)' : 'Pedágio comprovado'}</div>
+        <div class="valor">${brl(ia.pedagio_comprovado ?? ia.pedagio_lido)}</div></div>
       <div class="numero"><div class="rotulo">Nota de abastecimento</div>
         <div class="valor" style="font-size:16px; color:${
           ia.tem_danfe_de_abastecimento ? 'var(--verde)' : 'var(--vermelho)'
-        }">${ia.tem_danfe_de_abastecimento ? 'Enviada' : 'Não enviada'}</div></div>
+        }">${ia.tem_danfe_de_abastecimento ? (ia.por === 'codigo' ? 'Confirmada' : 'Enviada') : (ia.por === 'codigo' ? 'Não confirmada' : 'Não enviada')}</div></div>
       <div class="numero"><div class="rotulo">Odômetro</div>
         <div class="valor" style="font-size:16px">${escapar(
           { sim: 'Confere', nao: 'Não confere', parcial: 'Confere em parte', sem_foto: 'Sem foto' }[

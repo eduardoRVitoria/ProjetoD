@@ -29,6 +29,7 @@ import {
 } from './conferencia.js';
 import { conferirComIa, iaDisponivel, textoDosIgnorados } from './ia.js';
 import { conferirEmDemo } from './ia-demo.js';
+import { conferirPorCodigo } from './leitura-comprovantes.js';
 import { gerarPlanilha, gerarHistorico } from './planilha.js';
 import { enviarBackup, restaurarBackup, resumoDosDados, bancoFechadoPelaRestauracao } from './backup.js';
 import { montarImpressao } from './impressao.js';
@@ -901,7 +902,9 @@ async function enviarRelatorio(req, res, usuario) {
   // Fora da resposta de proposito: a leitura leva uns 30 segundos e o vendedor
   // nao pode ficar com a tela presa esperando. Ele ja recebeu o "enviado"; o
   // parecer aparece no painel quando ficar pronto.
-  if (iaDisponivel()) {
+  //
+  // Roda com ou sem IA: sem ela, os comprovantes sao lidos por codigo.
+  {
     const atual = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id);
     conferirRelatorio(atual, { usarIa: true, decididoPor: null })
       .then((saida) => {
@@ -1429,10 +1432,31 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
       avisoIa = 'A leitura dos comprovantes pela IA falhou - conferencia feita so pelas regras automaticas.';
     }
   } else if (usarIa && !iaDisponivel()) {
-    avisoIa = 'Sem chave de API configurada - conferencia feita so pelas regras automaticas.';
+    avisoIa = 'Sem chave de API configurada - comprovantes lidos por codigo (sem IA).';
   }
 
-  const achados = [...porRegra.achados];
+  // Sem a IA, os comprovantes sao lidos por codigo: texto do PDF, OCR da foto,
+  // QR code da nota. Ele confirma ou avisa - nunca reprova.
+  let achadosDoCodigo = [];
+  if (!parecer && !demo) {
+    db.prepare('UPDATE relatorios SET status = ? WHERE id = ?').run('CONFERINDO', rel.id);
+    try {
+      const saida = await conferirPorCodigo({ rel, linhas, anexos, declarado: porRegra.totalDeclarado });
+      parecer = saida.parecer;
+      // Pedagio que uma conferencia anterior ja confirmou no centavo nao volta
+      // a ser duvida so porque o OCR de hoje nao leu o cupom.
+      const jaConfirmado = rel.pedagio_comprovado != null
+        && Math.round(rel.pedagio_comprovado * 100) === Math.round(porRegra.totalDeclarado * 100);
+      achadosDoCodigo = saida.achados.filter((a) => !(jaConfirmado && a.codigo === 'pedagio_nao_confirmado'));
+      avisoIa ??= 'Comprovantes lidos por codigo (sem IA).';
+    } catch (e) {
+      log.falha('leitura', 'conferencia por codigo falhou', e, { rel: rel.id });
+      db.prepare('UPDATE relatorios SET status = ? WHERE id = ?').run(rel.status, rel.id);
+    }
+  }
+  const porCodigo = parecer?.por === 'codigo';
+
+  const achados = [...porRegra.achados, ...achadosDoCodigo];
   // Sem a leitura, ninguem somou os comprovantes. Fica dito, em amarelo, para
   // quem confere olhar o valor na mao - senao o relatorio sairia CERTA calado.
   if (!parecer && !demo && porRegra.totalDeclarado > 0
@@ -1569,7 +1593,11 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
     JSON.stringify(achados),
     parecer ? JSON.stringify(parecer) : null,
     oQueFazer,
-    parecer ? Number(parecer.pedagio_comprovado ?? 0) : null,
+    // Leitura por codigo que nao confirmou nao apaga o que ja se sabia: fica o
+    // comprovado da conferencia anterior (ou nada).
+    porCodigo
+      ? (parecer.pedagio_comprovado ?? rel.pedagio_comprovado ?? null)
+      : parecer ? Number(parecer.pedagio_comprovado ?? 0) : null,
     agora(),
     decididoPor,
     porRegra.pedagioDeclarado,

@@ -61,10 +61,13 @@ const HORA_LIMITE = 18;
 //  11  RDV sem assinatura digital nao reprova mais: pode estar assinado a mao
 //      (vira aviso para quem confere olhar). Duas passagens na mesma praca no
 //      mesmo dia deixam de gerar aviso - ida e volta e o normal.
+//  12  sem IA, os comprovantes sao lidos por codigo (texto do PDF, OCR da foto,
+//      QR code da nota). A leitura por codigo confirma ou avisa em amarelo;
+//      nunca reprova.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 11;
+export const VERSAO_REGRAS = 12;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
