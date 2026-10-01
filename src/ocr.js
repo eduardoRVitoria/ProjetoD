@@ -18,6 +18,7 @@ const require = createRequire(import.meta.url);
 // Lado maior da foto antes do OCR. Foto de celular vem com 4000px; o Tesseract
 // nao le melhor com isso, so demora mais.
 const LADO = 2000;
+const TEMPO_POR_FOTO = 90_000;
 
 let worker = null;
 let fila = Promise.resolve();
@@ -84,12 +85,29 @@ export async function paginasDoPdfComoImagem(caminho, maxPaginas = 6) {
  */
 export function textoDaImagem(caminho) {
   const tarefa = fila.then(async () => {
+    let relogio;
     try {
-      const w = await pegarWorker();
-      const { data } = await w.recognize(await preparar(caminho));
-      return String(data.text || '');
-    } catch {
+      // Teto por foto. Sem ele, um OCR pendurado deixaria o relatorio preso em
+      // "Conferindo" para sempre e travaria a fila atras dele.
+      const estourou = new Promise((_, recusar) => {
+        relogio = setTimeout(() => recusar(new Error('ocr passou do tempo')), TEMPO_POR_FOTO);
+      });
+      const leitura = (async () => {
+        const w = await pegarWorker();
+        const { data } = await w.recognize(await preparar(caminho));
+        return String(data.text || '');
+      })();
+      return await Promise.race([leitura, estourou]);
+    } catch (e) {
+      if (/passou do tempo/.test(String(e?.message))) {
+        // O worker ficou num estado desconhecido: joga fora, o proximo cria outro.
+        const velho = worker;
+        worker = null;
+        velho?.terminate().catch(() => {});
+      }
       return '';
+    } finally {
+      clearTimeout(relogio);
     }
   });
   fila = tarefa.catch(() => {});
