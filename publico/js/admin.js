@@ -155,6 +155,15 @@ try {
 
 $('mes').value = mes;
 $('botao-sair').addEventListener('click', sair);
+// A aba "Não enviaram" tem o seu seletor de mes, que e o mesmo do painel.
+$('mes-faltam').value = mes;
+$('mes-faltam').addEventListener('change', () => {
+  if (!$('mes-faltam').value) return;
+  $('mes').value = $('mes-faltam').value;
+  $('mes').dispatchEvent(new Event('change'));
+});
+$('faltam-busca').addEventListener('input', () => desenharNaoEnviaram());
+
 $('mes').addEventListener('change', () => {
   mes = $('mes').value;
   try { localStorage.setItem('rdv-mes', mes); } catch {}
@@ -392,12 +401,99 @@ async function carregarPainel({ silencioso = false } = {}) {
   desenharTabela();
   marcarAtualizacao();
 
+  // No painel fica so o resumo; a lista inteira, por empresa, tem aba propria.
+  const porEmpresa = naoEnviaramPorEmpresa(painel.nao_enviaram);
   $('nao-enviaram').innerHTML = painel.nao_enviaram.length
-    ? painel.nao_enviaram
-        .map((u) => `<div class="anexo"><span class="nome">${escapar(u.nome)}</span>
-             <span class="peso">${escapar(u.login)}</span></div>`)
-        .join('')
+    ? `<p class="sub" style="margin:0 0 10px">${painel.nao_enviaram.length} pessoa(s): ${porEmpresa
+        .map(([e, lista]) => `${escapar(e)} ${lista.length}`)
+        .join(' · ')}.</p>
+       <button class="secundario pequeno" id="ver-nao-enviaram">Ver quem não enviou, por empresa</button>`
     : `<p class="sub" style="margin:0">Todo mundo já enviou.</p>`;
+  $('ver-nao-enviaram')?.addEventListener('click', () => {
+    document.querySelector('.abas button[data-aba="faltam"]')?.click();
+  });
+
+  if ($('mes-faltam')) $('mes-faltam').value = mes;
+  desenharNaoEnviaram();
+}
+
+// ------------------------------------------------------------ nao enviaram
+//
+// Quem ainda nao mandou o RDV do mes, separado por empresa - e a lista que se
+// usa para cobrar. "Começou e não enviou" e quem ja lancou dia ou anexou
+// arquivo: esta mais perto de mandar do que quem nem abriu o mes.
+
+const ORDEM_DAS_EMPRESAS = ['DISO', 'DSO', 'PROMOTORES', 'ALPHA'];
+
+function naoEnviaramPorEmpresa(lista) {
+  const grupos = new Map();
+  for (const u of lista) {
+    const e = u.empresa || 'DISO';
+    if (!grupos.has(e)) grupos.set(e, []);
+    grupos.get(e).push(u);
+  }
+  const posicao = (e) => (ORDEM_DAS_EMPRESAS.includes(e) ? ORDEM_DAS_EMPRESAS.indexOf(e) : 99);
+  return [...grupos.entries()].sort((a, b) => posicao(a[0]) - posicao(b[0]) || a[0].localeCompare(b[0]));
+}
+
+function desenharNaoEnviaram() {
+  if (!painel || !$('faltam-lista')) return;
+  const todos = painel.nao_enviaram;
+  const busca = chave(String($('faltam-busca').value || '').trim());
+  const lista = busca
+    ? todos.filter((u) => chave(u.nome).includes(busca) || chave(u.login).includes(busca))
+    : todos;
+  const grupos = naoEnviaramPorEmpresa(lista);
+
+  $('faltam-contagem').innerHTML = `
+    <div class="numero destaque"><div class="rotulo">Não enviaram em ${escapar(painel.mes_extenso)}</div>
+      <div class="valor">${todos.length}</div></div>
+    ${naoEnviaramPorEmpresa(todos).map(([e, l]) => `<div class="numero">
+      <div class="rotulo">${escapar(e)}</div><div class="valor">${l.length}</div></div>`).join('')}
+    <div class="numero"><div class="rotulo">Começaram e não enviaram</div>
+      <div class="valor" style="color:var(--amarelo)">${todos.filter((u) => u.comecou).length}</div></div>`;
+
+  if (!todos.length) {
+    $('faltam-lista').innerHTML = `<div class="cartao"><p class="sub" style="margin:0">Todo mundo já enviou o RDV de ${escapar(painel.mes_extenso)}.</p></div>`;
+    return;
+  }
+  if (!lista.length) {
+    $('faltam-lista').innerHTML = `<div class="cartao"><p class="sub" style="margin:0">Ninguém com esse nome na lista.</p></div>`;
+    return;
+  }
+
+  $('faltam-lista').innerHTML = grupos
+    .map(([empresa, pessoas]) => `<div class="cartao">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px">
+        <h2 style="margin:0; flex:1; border:0; padding:0">${escapar(empresa)} — ${pessoas.length} não enviaram</h2>
+        <button class="secundario pequeno" data-copiar-empresa="${escapar(empresa)}"
+                title="Copia os nomes, um por linha, para colar numa mensagem">Copiar nomes</button>
+      </div>
+      <div class="rolagem"><table>
+        <thead><tr><th>Colaborador</th><th>Crachá</th><th>Login</th><th>Situação</th></tr></thead>
+        <tbody>${pessoas.map((u) => `<tr class="de-${escapar(empresa)}">
+          <td>${escapar(u.nome)}</td>
+          <td><span class="emp ${escapar(empresa)}">${escapar(u.cracha || empresa)}</span></td>
+          <td>${escapar(u.login)}</td>
+          <td>${u.comecou
+            ? '<span style="color:var(--amarelo); font-weight:600">Começou e não enviou</span>'
+            : 'Nem começou'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`)
+    .join('');
+
+  for (const b of $('faltam-lista').querySelectorAll('[data-copiar-empresa]')) {
+    b.addEventListener('click', async () => {
+      const nomes = (grupos.find(([e]) => e === b.dataset.copiarEmpresa)?.[1] || []).map((u) => u.nome).join('\n');
+      try {
+        await navigator.clipboard.writeText(nomes);
+        avisar('Nomes copiados.', 'info', 3);
+      } catch {
+        avisar('Não consegui copiar. Selecione os nomes na tabela e copie na mão.', 'atencao');
+      }
+    });
+  }
 }
 
 function desenharTabela() {

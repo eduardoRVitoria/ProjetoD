@@ -1212,14 +1212,23 @@ function painel(res, url, quem) {
 
   const semEnviar = db
     .prepare(
-      `SELECT u.id, u.nome, u.login, u.empresa, u.funcao FROM usuarios u
+      `SELECT u.id, u.nome, u.login, u.empresa, u.funcao,
+              -- Comecou a preencher (tem dia lancado ou arquivo anexado) e nao enviou.
+              EXISTS (
+                SELECT 1 FROM relatorios r
+                 WHERE r.usuario_id = u.id AND r.mes_ref = ?
+                   AND (EXISTS (SELECT 1 FROM linhas l WHERE l.relatorio_id = r.id)
+                     OR EXISTS (SELECT 1 FROM anexos a WHERE a.relatorio_id = r.id))
+              ) AS comecou
+         FROM usuarios u
         WHERE u.ativo = 1 AND u.papel = 'colaborador' ${filtro}
           AND u.id NOT IN (
             SELECT usuario_id FROM relatorios WHERE mes_ref = ? AND status <> 'RASCUNHO'
           )
         ORDER BY u.nome`,
     )
-    .all(...argsEscopo, mes);
+    .all(mes, ...argsEscopo, mes)
+    .map((u) => ({ ...u, comecou: Boolean(u.comecou), cracha: cracha(u.empresa, u.funcao) }));
 
   const contagem = {};
   for (const l of linhas) contagem[l.status] = (contagem[l.status] || 0) + 1;

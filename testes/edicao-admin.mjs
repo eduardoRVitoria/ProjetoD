@@ -108,6 +108,21 @@ try {
   const doPainel = (await chamar('/api/admin/painel?mes=2026-09')).dados.relatorios.find((r) => r.id === rel);
   assert.equal(doPainel.total_a_receber, 469, 'km 99 + pedagio 20 + hotel 350');
   assert.equal(doPainel.subtotal_rdv, 469);
+
+  // A aba "Nao enviaram": quem nao mandou o mes, com a empresa e se ja comecou.
+  const semNada = novoUsuario('semnada', 'colaborador');
+  const comecou = novoUsuario('comecou', 'colaborador');
+  const rascunho = Number(db.prepare(
+    "INSERT INTO relatorios (usuario_id, mes_ref, status, criado_em) VALUES (?, '2026-09', 'RASCUNHO', ?)",
+  ).run(comecou, agora).lastInsertRowid);
+  db.prepare("INSERT INTO linhas (relatorio_id, data, km_inicial, km_final, ordem) VALUES (?, '2026-09-01', 10, 20, 0)").run(rascunho);
+  const faltam = (await chamar('/api/admin/painel?mes=2026-09')).dados.nao_enviaram;
+  assert.deepEqual(
+    faltam.map((u) => [u.login, u.empresa, u.cracha, u.comecou]),
+    [['comecou', 'DSO', 'DSO (V)', true], ['semnada', 'DSO', 'DSO (V)', false]],
+    'quem enviou (vendedor) fica de fora',
+  );
+  assert.ok(semNada > 0);
   assert.ok(!codigos.includes('subtotal_nao_bate'));
   const planilha = await fetch(`${base}/api/admin/exportar?mes=2026-09`, { headers: { cookie: `sid=${token}` } });
   assert.equal(planilha.status, 200, 'a planilha do mes continua sendo gerada');

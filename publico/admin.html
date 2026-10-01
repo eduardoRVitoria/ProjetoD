@@ -30,6 +30,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
       Painel do mês
     </button>
+    <button data-aba="faltam">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.5l3.5 2"/></svg>
+      Não enviaram
+    </button>
     <button data-aba="usuarios">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 5.2a3.2 3.2 0 0 1 0 5.6M18 19a5.4 5.4 0 0 0-2.2-4.3"/></svg>
       Colaboradores
@@ -136,6 +140,21 @@
       <h2>Ainda não enviaram</h2>
       <div id="nao-enviaram"></div>
     </div>
+  </section>
+
+  <!-- ------------------------------------------------------ nao enviaram -->
+  <section id="aba-faltam" class="esconde">
+    <div class="cartao">
+      <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap">
+        <div style="flex:0 1 240px; min-width:210px">
+          <label for="mes-faltam">Mês de referência</label>
+          <input type="month" id="mes-faltam" style="margin-bottom:0">
+        </div>
+        <input type="search" id="faltam-busca" placeholder="Buscar por nome ou login..." style="flex:1; min-width:200px; margin-bottom:0">
+      </div>
+      <div class="numeros" id="faltam-contagem" style="margin-top:14px"></div>
+    </div>
+    <div id="faltam-lista"></div>
   </section>
 
   <!-- --------------------------------------------------------- usuarios -->
