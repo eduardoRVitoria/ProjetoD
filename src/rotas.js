@@ -23,6 +23,7 @@ import {
   diferencaDePedagio as achadoDeDiferenca,
   passagensSemExplicacao,
   passagensRepetidas,
+  gravidadeDoAchadoDaIa,
   ehGerente,
   VERSAO_REGRAS,
 } from './conferencia.js';
@@ -1432,7 +1433,7 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
     for (const a of parecer.achados || []) {
       // Passa pelo saneador: o texto vem de um modelo e vai direto para a tela.
       achados.push({
-        gravidade: a.gravidade,
+        gravidade: gravidadeDoAchadoDaIa(a),
         codigo: 'ia',
         mensagem: textoDaIa(a.mensagem, 160),
         data: null,
@@ -1517,8 +1518,13 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
   const soDanfe = erros.length === 1 && erros[0].codigo === 'sem_danfe';
   const status = erros.length === 0 ? 'CERTA' : soDanfe ? 'SO_FALTA_DANFE' : 'ERRADA';
 
+  // Se a IA quis reprovar por pedagio, o "o que fazer" dela manda corrigir o
+  // que nao esta errado. Nesse caso vale o texto montado dos erros de verdade.
+  const iaErrouDePedagio = (parecer?.achados || []).some(
+    (a) => a.gravidade === 'erro' && gravidadeDoAchadoDaIa(a) === 'aviso',
+  );
   const oQueFazer =
-    textoDaIa(parecer?.o_que_fazer, 220)
+    (iaErrouDePedagio ? '' : textoDaIa(parecer?.o_que_fazer, 220))
     || (status === 'CERTA'
       ? ''
       : erros.map((e) => e.mensagem).join(' ') || 'Corrija os pontos apontados e reenvie.');

@@ -138,6 +138,20 @@ export function passagensSemExplicacao(passagens, linhas, empresa = null) {
 }
 
 /**
+ * O que a IA escreve sobre pedagio nunca reprova: sai sempre como aviso.
+ *
+ * Pedagio e conta do sistema - ele soma a transcricao e compara com o
+ * declarado. A instrucao manda a IA nao opinar sobre isso, mas ela continuou
+ * marcando ida e volta como erro (o colaborador vai ao cliente e volta para
+ * casa: duas passagens no dia e o normal). Instrucao nao segura modelo; isto
+ * segura.
+ */
+export function gravidadeDoAchadoDaIa(a) {
+  const sobrePedagio = /ped[aá]gio|passage|estacionamento/i.test(String(a?.mensagem || ''));
+  return sobrePedagio || a?.gravidade !== 'erro' ? 'aviso' : 'erro';
+}
+
+/**
  * Mesma praca, mesmo valor, mais de uma vez no mesmo dia.
  *
  * Quase sempre e ida e volta, entao e AVISO: aparece em amarelo para quem

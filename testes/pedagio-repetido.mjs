@@ -1,7 +1,7 @@
 // Duas passagens na mesma praca no mesmo dia: aviso (amarelo), nao erro.
 //   node testes/pedagio-repetido.mjs
 import assert from 'node:assert/strict';
-import { passagensRepetidas } from '../src/conferencia.js';
+import { passagensRepetidas, gravidadeDoAchadoDaIa } from '../src/conferencia.js';
 
 // O caso real de 01/10: supervisor da ALPHA, ida e volta em Cajati e Juquia.
 const passagens = [
@@ -23,5 +23,17 @@ assert.equal(passagensRepetidas([passagens[0]]).length, 0);
 assert.equal(passagensRepetidas([passagens[0], passagens[2]]).length, 0);
 assert.equal(passagensRepetidas([passagens[0], { ...passagens[1], valor: 8.6 }]).length, 0);
 assert.equal(passagensRepetidas(undefined).length, 0);
+
+// O que a IA escreveu de verdade em 01/10, como erro: tem que sair aviso.
+const daIa = [
+  'Pedagio dia 16: declarado R$ 8,60, comprovantes mostram R$ 4,30 (08:03) + R$ 4,30 (14:28) = R$ 8,60 (correto, mas com 2 passagens).',
+  'Pedágio dia 15/09: R$ 8,60 declarado, R$ 8,60 comprovado (2x R$ 4,30). Confira se houve duas passagens no mesmo dia.',
+];
+for (const mensagem of daIa) {
+  assert.equal(gravidadeDoAchadoDaIa({ gravidade: 'erro', mensagem }), 'aviso');
+}
+// Erro da IA sobre outro assunto continua erro; aviso continua aviso.
+assert.equal(gravidadeDoAchadoDaIa({ gravidade: 'erro', mensagem: 'Foto do odometro ilegivel. Reenvie.' }), 'erro');
+assert.equal(gravidadeDoAchadoDaIa({ gravidade: 'aviso', mensagem: 'Itinerario longo para 20 km.' }), 'aviso');
 
 console.log('OK - passagem repetida no mesmo dia vira aviso, nao erro');

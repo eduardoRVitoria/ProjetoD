@@ -73,8 +73,10 @@ O que voce PRECISA verificar:
    multa.
    Nao escreva achado sobre diferenca entre declarado e comprovado - o sistema
    faz essa conta com a sua transcricao.
-   Duas passagens na mesma praca no mesmo dia sao ida e volta, nao duplicidade:
-   transcreva as duas e NAO escreva achado sobre isso - o sistema avisa sozinho.
+   Duas passagens na mesma praca no mesmo dia sao o NORMAL: o colaborador vai ao
+   cliente e volta para casa. Transcreva as duas, cada uma com o valor da SUA
+   linha (nao o total do dia), e NAO escreva achado sobre isso.
+   Nenhum achado sobre pedagio pode ter gravidade "erro".
 
 1.1 HORA DAS PASSAGENS. Preencha "hora" com a hora que esta ESCRITA no extrato
    para aquela passagem. Nao estime pela ordem das linhas e nao deduza do
