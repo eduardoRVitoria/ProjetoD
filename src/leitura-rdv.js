@@ -20,6 +20,10 @@
 
 import fs from 'node:fs';
 
+// Nenhum painel passa de sete digitos, e ninguem roda isto num dia.
+const KM_MAXIMO = 9_999_999;
+const KM_NUM_DIA = 2000;
+
 const DATA = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{2}|\d{4}))?$/;
 const INTEIRO = /^\d{1,3}(?:\.\d{3})+$|^\d+$/;
 const DINHEIRO = /^-?\d{1,3}(?:\.\d{3})*,\d{2}$|^-?\d+,\d{2}$/;
@@ -361,5 +365,11 @@ export async function lerRdvPorCodigo(caminho) {
   const temCombustivel = linhas.some((l) => /COMBUST/i.test(semAcento(l.tokens.map((t) => t.s).join(' '))));
   if (temCombustivel) return null;
   const dados = interpretarRdv(linhas);
-  return dados.linhas.length ? dados : null;
+  // Leitura que da um dia impossivel - odometro com mais de sete digitos, ou
+  // milhares de km num dia - e texto grudado ou coluna trocada. Melhor dizer
+  // "nao consegui" e deixar para quem le a imagem do que gravar o absurdo.
+  const absurda = dados.linhas.some(
+    (l) => l.km_inicial > KM_MAXIMO || l.km_final > KM_MAXIMO || l.km_final - l.km_inicial > KM_NUM_DIA,
+  );
+  return dados.linhas.length && !absurda ? dados : null;
 }

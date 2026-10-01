@@ -15,6 +15,8 @@ const SALTO_DIA_UTIL = 600;
 // USO_PARTICULAR_ESPERADO). Acima disto nem o fim de semana explica: e digito
 // trocado, outro carro, ou dia de outro mes. Continua erro.
 const SALTO_IMPOSSIVEL = 2000;
+// Distancia que nao cabe num dia de trabalho, de carro.
+export const KM_IMPOSSIVEL_NUM_DIA = 2000;
 
 // Quanto o carro pode rodar fora do trabalho entre dois lancamentos sem que
 // isso chame atencao. Fim de semana com viagem particular cabe aqui.
@@ -73,10 +75,12 @@ const HORA_LIMITE = 18;
 //      ver (papel escaneado ou foto, sem a IA).
 //  15  o total a receber (km + pedagio/estacionamento + hotel + outros) tem que
 //      bater com o "Subtotal das Despesas" que o RDV declara.
+//  16  dia com mais de 2.000 km rodados e erro: e numero lido ou digitado
+//      errado, e nao pode entrar calado no total a receber.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 15;
+export const VERSAO_REGRAS = 16;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -382,6 +386,22 @@ export function conferir(
           'erro',
           'km_invertido',
           `${dataBr(l.data)}: KM final (${kf}) menor que o inicial (${ki}).`,
+          l.data,
+        ),
+      );
+    }
+
+    // Ninguem roda isso num dia. E numero lido ou digitado errado - dois
+    // campos grudados, um digito a mais, km inicial em branco - e sem esta
+    // trava o dia entrava na soma: um RDV chegou a mostrar mais de um bilhao de
+    // reais a receber.
+    if (kf - ki > KM_IMPOSSIVEL_NUM_DIA) {
+      achados.push(
+        achado(
+          'erro',
+          'km_do_dia_impossivel',
+          `${dataBr(l.data)}: ${(kf - ki).toLocaleString('pt-BR')} km num dia so (KM inicial ${ki.toLocaleString('pt-BR')}, `
+            + `final ${kf.toLocaleString('pt-BR')}). O numero foi lido ou digitado errado - corrija o KM desse dia.`,
           l.data,
         ),
       );

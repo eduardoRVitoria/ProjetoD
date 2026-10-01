@@ -23,8 +23,9 @@ assert.equal(totalDeKmDeclarado(4.547, 0), 4.547, 'sem dias nao ha como saber');
 
 // O caso do RDV: o documento declara 4.547 km e a leitura guardou 4.547.
 const linhas = [
-  { data: '2026-09-01', km_inicial: 61350, km_final: 63350, itinerario: 'A - B' },
-  { data: '2026-09-02', km_inicial: 63350, km_final: 65897, itinerario: 'B - C' },
+  { data: '2026-09-01', km_inicial: 61350, km_final: 62350, itinerario: 'A - B' },
+  { data: '2026-09-02', km_inicial: 62350, km_final: 63897, itinerario: 'B - C' },
+  { data: '2026-09-03', km_inicial: 63897, km_final: 65897, itinerario: 'C - D' },
 ];
 const rel = {
   mes_ref: '2026-09',
@@ -35,4 +36,22 @@ assert.equal(r.totalKm, 4547);
 assert.ok(!r.achados.some((a) => a.codigo === 'soma_km'), 'quatro mil, nao quatro: a soma bate');
 assert.ok(!r.achados.some((a) => a.codigo === 'valor_km'));
 
-console.log('OK - ponto de milhar lido como decimal volta a ser milhar no odometro e no total de km');
+// Dia com distancia impossivel reprova, dizendo o dia e os numeros - em vez de
+// entrar calado no total (um RDV chegou a mostrar mais de R$ 1 bilhao).
+const absurdo = conferir(
+  { mes_ref: '2026-09' },
+  [
+    { data: '2026-09-01', km_inicial: 61350, km_final: 61528, itinerario: 'A - B' },
+    { data: '2026-09-02', km_inicial: 61528, km_final: 1261528670, itinerario: 'B - C' },
+  ],
+  [{ tipo: 'rdv' }], 0.9, null, 'DSO', 'Vendedor',
+);
+const doDia = absurdo.achados.filter((a) => a.codigo === 'km_do_dia_impossivel');
+assert.equal(doDia.length, 1);
+assert.equal(doDia[0].gravidade, 'erro');
+assert.equal(doDia[0].data, '2026-09-02');
+assert.match(doDia[0].mensagem, /02\/09\/2026.*km num dia so.*61\.528.*1\.261\.528\.670/);
+// Dia longo de verdade (ate 2.000 km) nao e acusado.
+assert.ok(!r.achados.some((a) => a.codigo === 'km_do_dia_impossivel'));
+
+console.log('OK - ponto de milhar volta a ser milhar; dia com km impossivel reprova em vez de entrar no total');
