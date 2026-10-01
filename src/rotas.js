@@ -22,6 +22,7 @@ import {
   conferir,
   diferencaDePedagio as achadoDeDiferenca,
   passagensSemExplicacao,
+  passagensRepetidas,
   ehGerente,
   VERSAO_REGRAS,
 } from './conferencia.js';
@@ -1508,6 +1509,8 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
   // disso, por isso a empresa do dono do relatorio vai junto.
   if (parecer) {
     achados.push(...passagensSemExplicacao(parecer.passagens_apos_18h, linhas, usuario.empresa));
+    // Ida e volta na mesma praca: aviso em amarelo, nunca erro.
+    achados.push(...passagensRepetidas(parecer.passagens_contadas));
   }
 
   const erros = achados.filter((a) => a.gravidade === 'erro');

@@ -138,6 +138,39 @@ export function passagensSemExplicacao(passagens, linhas, empresa = null) {
 }
 
 /**
+ * Mesma praca, mesmo valor, mais de uma vez no mesmo dia.
+ *
+ * Quase sempre e ida e volta, entao e AVISO: aparece em amarelo para quem
+ * confere, mas nao reprova. Quem apontava isso era a IA, e como erro - o RDV
+ * do supervisor da ALPHA saiu ERRADA em 01/10 com o pedagio batendo centavo a
+ * centavo (2x R$ 4,30 em Cajati, 08:35 e 14:17). A cor e decisao do sistema.
+ */
+export function passagensRepetidas(passagens) {
+  const grupos = new Map();
+  for (const p of passagens || []) {
+    const valor = Number(p?.valor);
+    if (!Number.isFinite(valor) || valor <= 0) continue;
+    const chave = `${p.data}|${String(p.local || '').trim().toLowerCase()}|${Math.round(valor * 100)}`;
+    if (!grupos.has(chave)) grupos.set(chave, []);
+    grupos.get(chave).push(p);
+  }
+
+  return [...grupos.values()]
+    .filter((g) => g.length > 1)
+    .map((g) => {
+      const horas = g.map((p) => String(p.hora || '').trim()).filter(Boolean).sort();
+      return achado(
+        'aviso',
+        'pedagio_repetido',
+        `${dataBr(g[0].data)}: ${g.length} passagens de ${brl(Number(g[0].valor))} em `
+          + `${String(g[0].local || 'pedagio/estacionamento').slice(0, 40)}`
+          + `${horas.length ? ` (${horas.join(' e ')})` : ''}. Confira se foi ida e volta.`,
+        g[0].data,
+      );
+    });
+}
+
+/**
  * Declarado bate com o comprovado? Devolve o achado, ou null quando bate.
  *
  * Fica fora do `conferir` porque precisa ser chamada DEPOIS da IA. A regra

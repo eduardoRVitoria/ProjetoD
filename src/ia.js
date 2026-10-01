@@ -73,6 +73,8 @@ O que voce PRECISA verificar:
    multa.
    Nao escreva achado sobre diferenca entre declarado e comprovado - o sistema
    faz essa conta com a sua transcricao.
+   Duas passagens na mesma praca no mesmo dia sao ida e volta, nao duplicidade:
+   transcreva as duas e NAO escreva achado sobre isso - o sistema avisa sozinho.
 
 1.1 HORA DAS PASSAGENS. Preencha "hora" com a hora que esta ESCRITA no extrato
    para aquela passagem. Nao estime pela ordem das linhas e nao deduza do
@@ -490,6 +492,7 @@ export async function conferirComIa({ usuario, rel, linhas, anexos, resultadoReg
   const soma = somarExtrato(parecer.passagens, linhas, rel.mes_ref);
   parecer.pedagio_comprovado = soma.total;
   parecer.passagens_fora = soma.fora;
+  parecer.passagens_contadas = soma.contadas;
   parecer.passagens_apos_18h = soma.contadas.filter((p) => {
     const hora = String(p.hora || '').trim();
     return /^\d{1,2}:\d{2}$/.test(hora) && Number(hora.split(':')[0]) >= 18;
