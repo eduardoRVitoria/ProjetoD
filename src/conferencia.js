@@ -80,10 +80,13 @@ const HORA_LIMITE = 18;
 //  17  assinatura: a caixa de assinatura do RDV em branco reprova (o codigo
 //      mede a tinta dentro dela), e assinatura que ninguem conseguiu
 //      confirmar reprova em vez de virar aviso.
+//  18  sabado e domingo com lancamento reprovam em todas as empresas - a DSO
+//      perdeu a excecao da versao 5. Combustivel de gerente no fim de semana
+//      tambem conta.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 17;
+export const VERSAO_REGRAS = 18;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -349,17 +352,18 @@ export function conferir(
     const fds = fimDeSemana(l.data);
     const feriado = nomeDoFeriado(l.data);
 
-    // Na DSO fim de semana e aviso (pode ter trabalho de verdade); nas outras
-    // empresas continua reprovando.
-    if (fds && (rodou > 0 || Number(l.pedagio) > 0 || Number(l.estacionamento) > 0)) {
-      const soAviso = empresa === 'DSO';
+    // Sabado e domingo nao entram no RDV, em nenhuma empresa (versao 18). A
+    // DSO tinha ficado so com aviso na versao 5, e o resultado foi relatorio
+    // somando fim de semana e saindo aprovado. O combustivel do gerente conta
+    // como lancamento tambem - antes passava sem ninguem olhar.
+    const despesaDoDia = num(l.pedagio) + num(l.estacionamento) + num(l.combustivel);
+    if (fds && (rodou > 0 || despesaDoDia > 0)) {
       achados.push(
         achado(
-          soAviso ? 'aviso' : 'erro',
+          'erro',
           'data_fim_de_semana',
-          `${dataBr(l.data)} caiu num ${fds} e tem lancamento (${rodou} km, ${brl(
-            Number(l.pedagio) + Number(l.estacionamento),
-          )}). ${soAviso ? 'Confirme se foi trabalho.' : 'Despesa de fim de semana nao entra no RDV.'}`,
+          `${dataBr(l.data)} caiu num ${fds} e tem lancamento (${rodou} km, ${brl(despesaDoDia)}). `
+            + 'Fim de semana nao entra no RDV: tire esse dia do relatorio.',
           l.data,
         ),
       );
