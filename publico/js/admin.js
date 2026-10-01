@@ -841,13 +841,14 @@ async function abrirDetalhe(id) {
       <h2 style="margin-top:20px">Comprovantes (${d.anexos.length})</h2>
       ${
         d.anexos.length
-          ? d.anexos
+          ? anexosEmOrdem(d.anexos)
               .map(
                 (a) => `<div class="anexo">
                   <span class="peso">${escapar(ROTULO_ANEXO[a.tipo] || a.tipo)}</span>
                   <span class="nome"><a href="/api/anexo/${a.id}" target="_blank" rel="noopener">${escapar(
                     a.nome_original,
                   )}</a></span>
+                  ${a.tipo === 'odometro' ? `<span class="selo" title="Dia e KM que a pessoa informou ao anexar a foto">${escapar(diaDaFoto(a))}</span>` : ''}
                   ${a.valor ? `<span class="selo CERTA">${brl(a.valor)}</span>` : ''}
                   ${a.arquivado_em ? `<span class="selo" title="Tirado do servidor. Devolva o bloco para abrir aqui.">Arquivado · bloco ${a.arquivado_bloco}</span>` : ''}
                   <span class="peso">${tamanhoBr(a.tamanho)}</span>
@@ -984,6 +985,29 @@ async function abrirDetalhe(id) {
       }
     });
   }
+}
+
+// A foto do odometro com o dia dela na frente: "seg 01/09/2026 · 61.350 km".
+function diaDaFoto(a) {
+  const km = Number(a.km) > 0 ? `${numeroBr(a.km)} km` : 'sem KM';
+  if (!a.data_leitura) return `sem data · ${km}`;
+  const semana = new Date(`${a.data_leitura}T12:00:00`)
+    .toLocaleDateString('pt-BR', { weekday: 'short' })
+    .replace('.', '');
+  return `${semana} ${dataBr(a.data_leitura)} · ${km}`;
+}
+
+// As fotos do odometro saem na ordem dos dias; o resto fica como veio.
+function anexosEmOrdem(anexos) {
+  return anexos
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => {
+      if (x.a.tipo === 'odometro' && y.a.tipo === 'odometro') {
+        return String(x.a.data_leitura || '9999').localeCompare(String(y.a.data_leitura || '9999')) || x.i - y.i;
+      }
+      return x.i - y.i;
+    })
+    .map((x) => x.a);
 }
 
 function blocoAssinatura(r) {
@@ -1147,12 +1171,15 @@ function formDeEdicao(d) {
 
     <h2 style="margin-top:20px">Comprovantes (${d.anexos.length})</h2>
     ${d.anexos.length ? `<div class="rolagem"><table class="tabela-edicao">
-      <thead><tr><th>Tipo</th><th>Arquivo</th><th class="num">Valor (R$)</th><th class="num">KM da foto</th></tr></thead>
-      <tbody>${d.anexos.map((a) => `<tr data-anexo="${a.id}">
+      <thead><tr><th>Tipo</th><th>Arquivo</th><th class="num">Valor (R$)</th><th class="num">KM da foto</th><th>Dia da foto</th></tr></thead>
+      <tbody>${anexosEmOrdem(d.anexos).map((a) => `<tr data-anexo="${a.id}">
         <td>${escapar(ROTULO_ANEXO[a.tipo] || a.tipo)}</td>
         <td><a href="/api/anexo/${a.id}" target="_blank" rel="noopener">${escapar(a.nome_original)}</a></td>
         <td class="num">${a.tipo === 'rdv' || a.tipo === 'odometro' ? '—' : campoDeEdicao('data-campo="valor" inputmode="decimal"', valorNoCampo(a.valor))}</td>
         <td class="num">${a.tipo === 'odometro' ? campoDeEdicao('data-campo="km" inputmode="decimal"', noCampo(a.km || '')) : '—'}</td>
+        <td>${a.tipo === 'odometro'
+          ? `<input type="date" data-campo="data_leitura" value="${escapar(a.data_leitura || '')}" data-original="${escapar(a.data_leitura || '')}">`
+          : '—'}</td>
       </tr>`).join('')}</tbody></table></div>` : '<p class="sub">Nenhum comprovante anexado.</p>'}
 
     <h2 style="margin-top:20px">Lançamentos (${d.linhas.length} dias)</h2>
@@ -1238,7 +1265,10 @@ function ligarEdicao(alvo, d, { aoSalvar, aoCancelar }) {
       .map((l) => {
         const item = { id: Number(l.dataset.anexo) };
         for (const el of l.querySelectorAll('input')) {
-          if (mudou(el)) item[el.dataset.campo] = el.value.trim() ? lerNumeroBr(el.value) : '';
+          if (!mudou(el)) continue;
+          // O dia da foto vai como data; os outros campos sao numero.
+          item[el.dataset.campo] = el.dataset.campo === 'data_leitura' ? el.value
+            : el.value.trim() ? lerNumeroBr(el.value) : '';
         }
         return item;
       })

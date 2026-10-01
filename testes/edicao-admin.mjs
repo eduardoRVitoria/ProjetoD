@@ -127,6 +127,22 @@ try {
   const planilha = await fetch(`${base}/api/admin/exportar?mes=2026-09`, { headers: { cookie: `sid=${token}` } });
   assert.equal(planilha.status, 200, 'a planilha do mes continua sendo gerada');
 
+  // A foto do odometro chega na janela com o dia e o KM, e o admin corrige os dois.
+  const foto = Number(db.prepare(
+    `INSERT INTO anexos (relatorio_id, tipo, nome_original, arquivo, mime, tamanho, enviado_em, km, data_leitura)
+     VALUES (?, 'odometro', 'painel.jpg', 'nao-existe.jpg', 'image/jpeg', 10, ?, 1000, '2026-09-01')`,
+  ).run(rel, agora).lastInsertRowid);
+  d = await ver();
+  assert.deepEqual(
+    d.anexos.filter((a) => a.tipo === 'odometro').map((a) => [a.km, a.data_leitura]),
+    [[1000, '2026-09-01']],
+  );
+  assert.equal((await editar({ anexos: [{ id: foto, km: 1110, data_leitura: '2026-09-02' }] })).status, 200);
+  d = await ver();
+  assert.deepEqual(d.anexos.find((a) => a.id === foto).data_leitura, '2026-09-02');
+  assert.equal(d.anexos.find((a) => a.id === foto).km, 1110);
+  assert.equal((await editar({ anexos: [{ id: foto, data_leitura: '2026-13-45' }] })).status, 400, 'dia que nao existe');
+
   // Comprovado em branco apaga a correcao do admin.
   assert.equal((await editar({ valores: { pedagio_comprovado: '' } })).status, 200);
   d = await ver();

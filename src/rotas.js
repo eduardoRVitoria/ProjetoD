@@ -25,6 +25,7 @@ import {
   achadoDaIaSobrePedagio,
   gravidadeDoAchadoDaIa,
   ehGerente,
+  dataValida,
   VERSAO_REGRAS,
 } from './conferencia.js';
 import { conferirComIa, iaDisponivel, textoDosIgnorados } from './ia.js';
@@ -1989,6 +1990,11 @@ async function editarRelatorio(req, res, admin) {
     if (a.km !== undefined && atual.tipo === 'odometro') {
       novo.km = vazio(a.km) ? null : valorDe(a.km, `KM da foto ${atual.nome_original}`, 9_999_999);
     }
+    if (a.data_leitura !== undefined && atual.tipo === 'odometro') {
+      if (vazio(a.data_leitura)) novo.data_leitura = null;
+      else if (dataValida(String(a.data_leitura))) novo.data_leitura = String(a.data_leitura);
+      else ruins.push(`dia da foto ${atual.nome_original}`);
+    }
     anexosNovos.push({ ...novo, antes: atual });
   }
 
@@ -2018,6 +2024,10 @@ async function editarRelatorio(req, res, admin) {
       if ('km' in a) {
         db.prepare('UPDATE anexos SET km = ? WHERE id = ?').run(a.km, a.id);
         mudou.push(`km de ${a.nome}: ${a.antes.km} -> ${a.km}`);
+      }
+      if ('data_leitura' in a) {
+        db.prepare('UPDATE anexos SET data_leitura = ? WHERE id = ?').run(a.data_leitura, a.id);
+        mudou.push(`dia de ${a.nome}: ${a.antes.data_leitura} -> ${a.data_leitura}`);
       }
     }
 
