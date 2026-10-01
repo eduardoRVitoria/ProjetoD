@@ -22,7 +22,7 @@ import {
   conferir,
   diferencaDePedagio as achadoDeDiferenca,
   passagensSemExplicacao,
-  passagensRepetidas,
+  achadoDaIaSobrePedagio,
   gravidadeDoAchadoDaIa,
   ehGerente,
   VERSAO_REGRAS,
@@ -1526,8 +1526,14 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
   // disso, por isso a empresa do dono do relatorio vai junto.
   if (parecer) {
     achados.push(...passagensSemExplicacao(parecer.passagens_apos_18h, linhas, usuario.empresa));
-    // Ida e volta na mesma praca: aviso em amarelo, nunca erro.
-    achados.push(...passagensRepetidas(parecer.passagens_contadas));
+  }
+
+  // Pedagio batendo centavo a centavo: o que a IA escreveu sobre ele e ida e
+  // volta na mesma praca, que e o normal e nao precisa nem de aviso.
+  if (parecer?.pedagio_comprovado != null && !achados.some((a) => a.codigo === 'pedagio_diferenca')) {
+    for (let i = achados.length - 1; i >= 0; i--) {
+      if (achados[i].codigo === 'ia' && achadoDaIaSobrePedagio(achados[i])) achados.splice(i, 1);
+    }
   }
 
   const erros = achados.filter((a) => a.gravidade === 'erro');

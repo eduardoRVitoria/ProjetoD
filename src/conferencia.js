@@ -58,10 +58,13 @@ const HORA_LIMITE = 18;
 //      e obrigatoria.
 //  10  excecao da 9: gerente da ALPHA manda a foto do odometro mesmo com
 //      carro da empresa.
+//  11  RDV sem assinatura digital nao reprova mais: pode estar assinado a mao
+//      (vira aviso para quem confere olhar). Duas passagens na mesma praca no
+//      mesmo dia deixam de gerar aviso - ida e volta e o normal.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 10;
+export const VERSAO_REGRAS = 11;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -147,41 +150,20 @@ export function passagensSemExplicacao(passagens, linhas, empresa = null) {
  * segura.
  */
 export function gravidadeDoAchadoDaIa(a) {
-  const sobrePedagio = /ped[aá]gio|passage|estacionamento/i.test(String(a?.mensagem || ''));
-  return sobrePedagio || a?.gravidade !== 'erro' ? 'aviso' : 'erro';
+  return achadoDaIaSobrePedagio(a) || a?.gravidade !== 'erro' ? 'aviso' : 'erro';
 }
 
 /**
- * Mesma praca, mesmo valor, mais de uma vez no mesmo dia.
+ * O achado da IA fala de pedagio/estacionamento?
  *
- * Quase sempre e ida e volta, entao e AVISO: aparece em amarelo para quem
- * confere, mas nao reprova. Quem apontava isso era a IA, e como erro - o RDV
- * do supervisor da ALPHA saiu ERRADA em 01/10 com o pedagio batendo centavo a
- * centavo (2x R$ 4,30 em Cajati, 08:35 e 14:17). A cor e decisao do sistema.
+ * Duas passagens na mesma praca no mesmo dia nao sao nem aviso (versao 11): e
+ * ida e volta, o normal. Com o pedagio batendo centavo a centavo, o que a IA
+ * escreve sobre ele e so isso - "correto, mas com 2 passagens" - e a
+ * conferencia joga fora. Foi o que deixou o RDV do supervisor da ALPHA com
+ * "comprovante errado" em 01/10 (2x R$ 4,30 em Cajati, 08:35 e 14:17).
  */
-export function passagensRepetidas(passagens) {
-  const grupos = new Map();
-  for (const p of passagens || []) {
-    const valor = Number(p?.valor);
-    if (!Number.isFinite(valor) || valor <= 0) continue;
-    const chave = `${p.data}|${String(p.local || '').trim().toLowerCase()}|${Math.round(valor * 100)}`;
-    if (!grupos.has(chave)) grupos.set(chave, []);
-    grupos.get(chave).push(p);
-  }
-
-  return [...grupos.values()]
-    .filter((g) => g.length > 1)
-    .map((g) => {
-      const horas = g.map((p) => String(p.hora || '').trim()).filter(Boolean).sort();
-      return achado(
-        'aviso',
-        'pedagio_repetido',
-        `${dataBr(g[0].data)}: ${g.length} passagens de ${brl(Number(g[0].valor))} em `
-          + `${String(g[0].local || 'pedagio/estacionamento').slice(0, 40)}`
-          + `${horas.length ? ` (${horas.join(' e ')})` : ''}. Confira se foi ida e volta.`,
-        g[0].data,
-      );
-    });
+export function achadoDaIaSobrePedagio(a) {
+  return /ped[aá]gio|passage|estacionamento/i.test(String(a?.mensagem || ''));
 }
 
 /**

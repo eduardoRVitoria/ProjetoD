@@ -196,12 +196,14 @@ function mascararCpf(cpf) {
 export function achadosDaAssinatura(r, nomeDoColaborador) {
   const achados = [];
 
-  // Sem assinatura reprova desde a versao 5 das regras.
+  // Sem assinatura digital nao reprova mais (versao 11): o RDV pode vir
+  // assinado a mao, e isso o codigo nao enxerga. Fica o aviso para quem confere
+  // olhar a assinatura no documento.
   if (!r.assinado) {
     achados.push({
-      gravidade: 'erro',
-      codigo: 'sem_assinatura',
-      mensagem: 'O RDV nao esta assinado digitalmente. Assine no gov.br e envie de novo.',
+      gravidade: 'aviso',
+      codigo: 'sem_assinatura_digital',
+      mensagem: 'O RDV nao tem assinatura digital do gov.br. Vale se estiver assinado a mao - confira a assinatura no documento.',
       data: null,
     });
     return achados;
