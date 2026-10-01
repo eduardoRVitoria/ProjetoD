@@ -307,10 +307,23 @@ export function montarParecer({ lidos, linhas, mesRef, declarado }) {
   // com "Pedagios R$ 242,80"). Bater no centavo por acaso e improvavel.
   const totalEscrito = dePedagio.some((l) => (l.leitura.todos || []).some((v) => centavos(v) === centavos(declarado)));
 
+  // Leitura FECHADA: todo comprovante e extrato, e a soma das passagens lidas
+  // de cada um e o total que o proprio documento imprime. Ai o numero lido e
+  // tao bom quanto o do extrato, e vale como comprovado mesmo quando NAO bate
+  // com o declarado - a diferenca e de verdade e reprova, como na leitura da IA.
+  // Caso da Cristine (set/26): declarou R$ 272,80, o extrato fecha em R$ 227,80,
+  // e a tela mostrava em vermelho um R$ 251,80 velho, de uma leitura anterior.
+  const fechada = dePedagio.length > 0 && dePedagio.every((l) => {
+    const doArquivo = (l.leitura.passagens || []).reduce((s, p) => s + centavos(p.valor), 0);
+    return doArquivo > 0 && (l.leitura.todos || []).some((v) => centavos(v) === doArquivo);
+  });
+
   let comprovado = null;
   if (declarado > 0 && dePedagio.length) {
     if (centavos(lido) === centavos(declarado) || totalEscrito) {
       comprovado = declarado;
+    } else if (fechada) {
+      comprovado = lido;
     } else {
       aviso(
         'pedagio_nao_confirmado',
@@ -348,6 +361,7 @@ export function montarParecer({ lidos, linhas, mesRef, declarado }) {
       itens_ignorados: dePedagio.flatMap((l) => l.leitura.ignorados || []),
       valores_das_fotos: dasFotos,
       pedagio_lido: lido,
+      leitura_fechada: fechada,
       pedagio_comprovado: comprovado,
       tem_danfe_de_abastecimento: notaConfirmada,
       odometro: {

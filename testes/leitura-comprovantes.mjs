@@ -79,6 +79,20 @@ assert.equal(r.achados[0].gravidade, 'aviso');
 assert.equal(r.achados[0].codigo, 'pedagio_nao_confirmado');
 assert.match(r.achados[0].mensagem, /30,80.*22,20/);
 
+// Leitura fechada: a soma das passagens e o total impresso no extrato. O lido
+// vale como comprovado mesmo sem bater com o declarado (caso da Cristine:
+// declarou 272,80, o extrato fecha em 227,80) - quem reprova e a regra da
+// diferenca, com o numero certo.
+const fechado = { anexo: anexo(8, 'pedagio'), leitura: { ...doExtrato.leitura, todos: [11.1, 22.2] } };
+r = montarParecer({ lidos: [fechado], linhas, mesRef: '2026-08', declarado: 30.8 });
+assert.equal(r.parecer.pedagio_comprovado, 22.2);
+assert.equal(r.parecer.leitura_fechada, true);
+assert.equal(r.achados.length, 0, 'sem o amarelo: a diferenca sai em vermelho pela regra');
+// Com uma foto junto, a leitura nao fecha: continua so aviso.
+r = montarParecer({ lidos: [fechado, { anexo: anexo(9, 'pedagio'), leitura: { valores: [4.3], todos: [4.3] } }], linhas, mesRef: '2026-08', declarado: 30.8 });
+assert.equal(r.parecer.pedagio_comprovado, null);
+assert.equal(r.achados[0].codigo, 'pedagio_nao_confirmado');
+
 // O documento traz o total declarado escrito: confirmado mesmo sem a soma fechar.
 r = montarParecer({
   lidos: [{ anexo: anexo(3, 'pedagio'), leitura: { valores: [278.8, 36], todos: [278.8, 36, 242.8] } }],

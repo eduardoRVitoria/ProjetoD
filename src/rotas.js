@@ -1498,7 +1498,12 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
       // a ser duvida so porque o OCR de hoje nao leu o cupom.
       const jaConfirmado = rel.pedagio_comprovado_admin != null || (rel.pedagio_comprovado != null
         && Math.round(rel.pedagio_comprovado * 100) === Math.round(porRegra.totalDeclarado * 100));
-      achadosDoCodigo = saida.achados.filter((a) => !(jaConfirmado && a.codigo === 'pedagio_nao_confirmado'));
+      // E se a conferencia anterior ja acusa diferenca em vermelho, o amarelo
+      // com OUTRO numero so confunde: fica o vermelho, que ja manda conferir.
+      const jaAcusado = porRegra.achados.some((a) => a.codigo === 'pedagio_diferenca');
+      achadosDoCodigo = saida.achados.filter(
+        (a) => !((jaConfirmado || jaAcusado) && a.codigo === 'pedagio_nao_confirmado'),
+      );
       avisoIa ??= 'Comprovantes lidos por codigo (sem IA).';
     } catch (e) {
       log.falha('leitura', 'conferencia por codigo falhou', e, { rel: rel.id });
