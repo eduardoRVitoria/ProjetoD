@@ -348,6 +348,43 @@ export async function conferirComIa({ usuario, rel, linhas, anexos, resultadoReg
       ignorar(a, `chegou vazio, 0 KB`);
       continue;
     }
+    // PDF que nao vai inteiro - grande demais, ou com mais paginas do que cabe -
+    // vai pagina a pagina, cada uma como foto encolhida. E o PDF de aplicativo
+    // de escanear: dezenas de fotos de cupom ou de painel num arquivo de 15 MB.
+    // Antes ele era descartado inteiro ("grande demais") e ninguem lia nada.
+    if (path.extname(a.nome_original).toLowerCase() === '.pdf') {
+      const paginasDoArquivo = await paginasDoPdf(caminho);
+      const naoVaiInteiro = tamanho > LIMITE_POR_ANEXO
+        || acumulado + tamanho > LIMITE_TOTAL
+        || imagens + paginasDoArquivo > MAX_IMAGENS;
+      if (naoVaiInteiro && !(await pdfProtegido(caminho))) {
+        const vagas = MAX_IMAGENS - imagens;
+        const fotos = vagas > 0 ? await pdfEmFotos(caminho, Math.min(paginasDoArquivo, vagas)) : [];
+        const cabem = [];
+        for (const f of fotos) {
+          if (acumulado + f.bytes > LIMITE_TOTAL) break;
+          acumulado += f.bytes;
+          cabem.push(f);
+        }
+        if (cabem.length) {
+          conteudo.push({
+            type: 'text',
+            text: `\n--- Anexo: ${a.nome_original} (marcado pelo colaborador como "${rotulo(a.tipo)}"; `
+              + `PDF enviado pagina a pagina, ${cabem.length} de ${paginasDoArquivo}) ---`,
+          });
+          for (const f of cabem) {
+            conteudo.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: f.base64 } });
+          }
+          imagens += cabem.length;
+          if (cabem.length < paginasDoArquivo) {
+            ignorar(a, `so as ${cabem.length} primeiras paginas de ${paginasDoArquivo} couberam na conferencia`);
+          }
+          continue;
+        }
+        // Nao deu para desenhar as paginas: segue pelas regras de sempre.
+      }
+    }
+
     if (tamanho > LIMITE_POR_ANEXO) {
       ignorar(a, `${(tamanho / 1048576).toFixed(1)} MB, grande demais`);
       continue;
@@ -664,6 +701,26 @@ async function encolher(caminho) {
   } catch (e) {
     log.aviso('ia', 'nao consegui encolher a imagem', { arquivo: path.basename(caminho), erro: e.message });
     return null;
+  }
+}
+
+// As paginas de um PDF como fotos em jpeg, ja dentro do lado maximo da API.
+async function pdfEmFotos(caminho, maxPaginas) {
+  try {
+    const { paginasDoPdfComoImagem } = await import('./ocr.js');
+    const { default: sharp } = await import('sharp');
+    const fotos = [];
+    for (const png of await paginasDoPdfComoImagem(caminho, maxPaginas)) {
+      const jpg = await sharp(png)
+        .resize({ width: LADO_MAXIMO, height: LADO_MAXIMO, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 78 })
+        .toBuffer();
+      fotos.push({ base64: jpg.toString('base64'), bytes: jpg.length });
+    }
+    return fotos;
+  } catch (e) {
+    log.aviso('ia', 'nao consegui abrir o PDF pagina a pagina', { arquivo: path.basename(caminho), erro: e.message });
+    return [];
   }
 }
 

@@ -25,7 +25,11 @@ import { somarExtrato } from './conferencia.js';
 import * as log from './log.js';
 
 // Mudou o jeito de ler? Sobe a versao e as leituras guardadas sao refeitas.
-const VERSAO_LEITURA = 1;
+const VERSAO_LEITURA = 2;
+
+// Quantas paginas de um PDF escaneado passam pelo OCR. Eram 6, e o PDF de
+// aplicativo de escanear com os cupons do mes inteiro ficava lido pela metade.
+const PAGINAS_DE_OCR = 15;
 
 const IMAGEM = new Set(['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.gif']);
 const PLANILHA = new Set(['.xlsx', '.xlsm', '.xls']);
@@ -186,9 +190,10 @@ async function textoDoAnexo(caminho, ext) {
     // Quase sem texto: e escaneado (CamScanner, foto salva como PDF). Desenha
     // as paginas e passa o OCR em cada uma.
     const partes = [];
-    for (const imagem of await paginasDoPdfComoImagem(caminho)) partes.push(await textoDaImagem(imagem));
+    const imagens = await paginasDoPdfComoImagem(caminho, PAGINAS_DE_OCR);
+    for (const imagem of imagens) partes.push(await textoDaImagem(imagem));
     const texto = partes.join('\n');
-    return { metodo: 'pdf-ocr', linhas: texto.split(/\r?\n/).map((l) => l.trim().split(/\s+/).filter(Boolean)), texto };
+    return { metodo: 'pdf-ocr', linhas: texto.split(/\r?\n/).map((l) => l.trim().split(/\s+/).filter(Boolean)), texto, imagens };
   }
   if (PLANILHA.has(ext)) {
     const texto = await planilhaEmTexto(caminho, ext);
@@ -248,6 +253,11 @@ async function lerAnexo(a) {
     } else if (a.tipo === 'danfe') {
       let chave = chaveDeAcesso(corrido);
       if (!chave && t.metodo === 'ocr') chave = chaveDeAcesso(await qrDaImagem(caminho));
+      // Nota escaneada em PDF: o QR code esta na imagem de alguma pagina.
+      for (const imagem of (!chave && t.imagens) || []) {
+        chave = chaveDeAcesso(await qrDaImagem(imagem));
+        if (chave) break;
+      }
       leitura.chave = chave ? `${chave.slice(0, 4)}...${chave.slice(-4)}` : null;
       leitura.combustivel = falaDeCombustivel(corrido);
     } else if (a.tipo === 'odometro') {
