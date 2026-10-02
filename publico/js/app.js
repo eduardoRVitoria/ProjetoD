@@ -54,15 +54,11 @@ const DO_ODOMETRO_ACEITOS = ['.pdf', 'application/pdf', '.pptx', 'application/vn
 // O resto do vermelho aparece na aba Conferencia para ele corrigir, mas nao
 // tranca o botao: mandar sem a nota de abastecimento e um caminho previsto,
 // e o status "So falta DANFE" existe exatamente para isso.
-const TRAVAM_O_ENVIO = new Set([
-  'km_invertido',
-  'sem_linhas',
-  'leitura_incerta',
-  'pedagio_sem_comprovante',
-  'hotel_sem_comprovante',
-  'outros_sem_comprovante',
-  'aumento_sem_justificativa',
-]);
+//
+// Desde 02/10/2026 a lista e VAZIA, de proposito: erro nao impede o envio. A
+// pessoa manda como esta, a conferencia aponta, e ela corrige depois. O que
+// estiver vermelho aparece na confirmacao antes de enviar.
+const TRAVAM_O_ENVIO = new Set([]);
 
 // Achado que a pessoa resolve ESCREVENDO - o unico tipo que ganha o botao de
 // justificar na aba Conferencia. O resto (falta a nota, km invertido) se
@@ -1235,8 +1231,9 @@ async function enviarDeVerdade() {
   }
 
   if (avisam.length && !confirm(
-    `Antes de enviar, ainda falta:\n\n${avisam.map((a) => `• ${a.mensagem}`).join('\n')}\n\n`
-      + 'Isso costuma reprovar o relatório. Enviar assim mesmo?',
+    `O portal apontou ${avisam.length} pendência(s):\n\n${avisam.slice(0, 8).map((a) => `• ${a.mensagem}`).join('\n')}`
+      + `${avisam.length > 8 ? `\n• ... e mais ${avisam.length - 8}` : ''}\n\n`
+      + 'Você pode enviar assim mesmo e corrigir depois. Enviar agora?',
   )) {
     trocarAba('comprovantes');
     return;

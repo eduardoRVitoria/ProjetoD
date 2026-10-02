@@ -220,6 +220,18 @@ try {
   d = await ver();
   assert.equal(d.relatorio.valor_km, 99, 'pedido recusado nao grava nada');
 
+  // Erro nao impede o envio: rascunho com km invertido e dia sem itinerario
+  // (o que antes travava) e enviado, e a conferencia aponta depois.
+  db.prepare("INSERT INTO linhas (relatorio_id, data, km_inicial, km_final, ordem) VALUES (?, '2026-09-02', 500, 400, 1)").run(rascunho);
+  entrarComo(comecou);
+  const envio = await chamar('/api/relatorio/enviar', { mes: '2026-09' });
+  assert.equal(envio.status, 200, JSON.stringify(envio.dados));
+  assert.notEqual(db.prepare('SELECT status FROM relatorios WHERE id = ?').get(rascunho).status, 'RASCUNHO');
+  // So nao envia quem nao tem nada: nem dia lancado, nem o arquivo do RDV.
+  entrarComo(semNada);
+  await chamar('/api/relatorio?mes=2026-09');
+  assert.equal((await chamar('/api/relatorio/enviar', { mes: '2026-09' })).status, 400);
+
   // Colaborador nao chega na rota.
   entrarComo(vendedor);
   assert.equal((await editar({ valores: { valor_km: 1 } })).status, 403);

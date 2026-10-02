@@ -836,7 +836,13 @@ async function enviarRelatorio(req, res, usuario) {
   if (!EDITAVEL.has(rel.status)) return erro(res, 'Esse relatorio ja foi enviado.');
 
   const linhas = linhasDo(rel.id);
-  if (linhas.length === 0) {
+  // O envio so e recusado quando nao ha NADA para mandar: nem um dia lancado,
+  // nem o arquivo do RDV. Com o arquivo anexado e a leitura falhando, vai assim
+  // mesmo - quem confere abre o documento.
+  const temArquivoDoRdv = Boolean(
+    db.prepare("SELECT 1 FROM anexos WHERE relatorio_id = ? AND tipo = 'rdv' LIMIT 1").get(rel.id),
+  );
+  if (linhas.length === 0 && !temArquivoDoRdv) {
     log.aviso('relatorio', 'envio recusado', {
       quem: usuario.login,
       mes: rel.mes_ref,
@@ -851,52 +857,17 @@ async function enviarRelatorio(req, res, usuario) {
   const anexos = anexosDo(rel.id);
   const r = conferirRel(rel, linhas, anexos);
 
-  // Bloqueios duros: coisas que a pessoa consegue resolver sozinha antes de enviar.
-  // A soma de km e o valor NAO entram aqui: com o RDV vindo de PDF, a divergencia
-  // e do documento dela, e quem decide o que fazer com isso e a conferencia.
-  // RDV escaneado, lido por OCR: digito trocado ou dia que nao saiu e erro da
-  // LEITURA do portal, nao da pessoa. Travar o envio por isso deixava preso um
-  // relatorio que estava certo no papel. Vai adiante, e quem confere acerta os
-  // numeros no "Editar valores" olhando o documento.
-  let lidoPorOcr = false;
-  try {
-    lidoPorOcr = JSON.parse(rel.extraido || '{}')?.lido_por === 'ocr';
-  } catch {
-    lidoPorOcr = false;
-  }
-  const DA_LEITURA = ['km_invertido', 'leitura_incerta'];
-
-  const bloqueios = r.achados.filter(
-    (a) =>
-      a.gravidade === 'erro' &&
-      !(lidoPorOcr && DA_LEITURA.includes(a.codigo)) &&
-      [
-        'km_invertido',
-        'sem_linhas',
-        'leitura_incerta',
-        'pedagio_sem_comprovante',
-        'hotel_sem_comprovante',
-        'outros_sem_comprovante',
-        'aumento_sem_justificativa',
-      ].includes(a.codigo),
-  );
-  if (bloqueios.length > 0) {
-    // O motivo ia so para a tela do vendedor. Quando ele liga dizendo "nao
-    // consigo enviar", o log mostrava um 400 seco e nao dava para responder
-    // sem ir ate a pessoa. Agora o codigo do bloqueio fica registrado.
-    log.aviso('relatorio', 'envio recusado', {
-      quem: usuario.login,
-      mes: rel.mes_ref,
-      bloqueios: bloqueios.map((b) => b.codigo).join(','),
+  // Erro NAO impede o envio (ordem do Eduardo em 02/10/2026): a pessoa manda
+  // o relatorio como esta, a conferencia aponta o que achou e ela corrige
+  // depois. Ja houve uma lista de "bloqueios duros" aqui - km invertido,
+  // leitura incerta, falta de comprovante, aumento sem justificativa - e o
+  // efeito era relatorio certo no papel preso porque o portal leu errado.
+  // Fica so o registro do que estava vermelho na hora do envio.
+  const errosNoEnvio = r.achados.filter((a) => a.gravidade === 'erro').map((a) => a.codigo);
+  if (errosNoEnvio.length) {
+    log.info('relatorio', 'enviado com pendencias', {
+      quem: usuario.login, mes: rel.mes_ref, erros: errosNoEnvio.join(','),
     });
-    return responderJson(
-      res,
-      {
-        erro: 'O relatorio tem pendencias que precisam ser corrigidas antes do envio.',
-        bloqueios,
-      },
-      400,
-    );
   }
 
   const codigos = new Set(r.achados.map((a) => a.codigo));
