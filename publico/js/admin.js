@@ -170,7 +170,7 @@ $('mes').addEventListener('change', () => {
   carregarPainel();
 });
 $('botao-conferir-todos').addEventListener('click', () => conferirPendentes(false));
-$('botao-demo').addEventListener('click', () => conferirPendentes(true));
+$('botao-demo')?.addEventListener('click', () => conferirPendentes(true));
 aoClicar(
   $('botao-reconferir-antigos'),
   reconferirAntigos,
@@ -370,11 +370,8 @@ async function carregarPainel({ silencioso = false } = {}) {
     return mostrarRecado('recado', e.message, 'erro');
   }
 
-  $('status-ia').innerHTML = painel.ia_disponivel
-    ? ''
-    : `<div class="aviso atencao">Sem chave de API configurada. A conferência roda só com as
-       regras automáticas (datas, km, somas, × valor do km). Os comprovantes não são lidos.
-       Configure em <strong>Configurações</strong>.</div>`;
+  // A conferencia e toda por codigo: nao ha estado de IA para avisar.
+  $('status-ia').innerHTML = '';
 
   const c = painel.contagem;
   const total = Object.values(c).reduce((s, n) => s + n, 0);
@@ -728,10 +725,7 @@ async function conferirPendentes(demo = false) {
     ? `MODO DEMONSTRAÇÃO — ${pendentes.length} relatório(s).\n\n` +
       'Nenhum comprovante será lido e nenhum crédito será gasto. ' +
       'O parecer é simulado e serve só para testar a tela.\n\nContinuar?'
-    : `Conferir ${pendentes.length} relatório(s) com IA agora?` +
-      (painel.ia_disponivel
-        ? ' Isso consome créditos da API.'
-        : ' (Sem chave: só as regras automáticas.)');
+    : `Conferir ${pendentes.length} relatório(s) agora?`;
 
   if (!confirm(pergunta)) return;
 
@@ -862,7 +856,7 @@ async function abrirDetalhe(id) {
 
       ${blocoAssinatura(r)}
       ${blocoPendenciasAgora(d.pendencias_agora, d)}
-      ${r.regras_antigas ? `<div class="aviso atencao">Este parecer foi dado com <strong>regras anteriores</strong> as de hoje. Use \"Conferir de novo com IA\" para aplicar as regras atuais.</div>` : ''}
+      ${r.regras_antigas ? `<div class="aviso atencao">Este parecer foi dado com <strong>regras anteriores</strong> as de hoje. Use \"Conferir de novo\" para aplicar as regras atuais.</div>` : ''}
       ${blocoAchados(r)}
       ${blocoParecer(r)}
 
@@ -929,7 +923,7 @@ async function abrirDetalhe(id) {
           r.status === 'RASCUNHO'
             ? ''
             : `<button class="secundario" id="conferir-daqui">${
-                r.conferido_em ? 'Conferir de novo com IA' : 'Conferir com IA'
+                r.conferido_em ? 'Conferir de novo' : 'Conferir'
               }</button>`
         }
         <button class="secundario" id="imprimir-daqui"

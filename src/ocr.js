@@ -114,6 +114,116 @@ export function textoDaImagem(caminho) {
   return tarefa;
 }
 
+// Lado maior da pagina de formulario antes do OCR: a tabela do RDV tem letra
+// pequena, e com 2000 px os numeros saem trocados.
+const LADO_DA_TABELA = 2600;
+// Abaixo disto o pixel e traco preto (linha de tabela, letra). O azul do
+// cabecalho do formulario fica acima, de proposito: e fundo, nao linha.
+const TRACO = 100;
+
+/**
+ * Apaga as linhas de tabela de uma imagem em tons de cinza (um byte por pixel).
+ *
+ * E o que faz o OCR ler formulario: com as linhas, o Tesseract junta numero com
+ * borda e devolve lixo ("gg ag" no lugar de "248.695 248.779"); sem elas, le a
+ * tabela do RDV escaneado linha por linha. Linha e um traco escuro comprido -
+ * letra nenhuma tem 3% da largura da folha.
+ */
+export function tirarLinhasDeTabela(data, largura, altura) {
+  const minHorizontal = Math.round(largura * 0.03);
+  const minVertical = Math.round(altura * 0.03);
+  const apagar = new Uint8Array(largura * altura);
+  for (let y = 0; y < altura; y++) {
+    let inicio = -1;
+    for (let x = 0; x <= largura; x++) {
+      const escuro = x < largura && data[y * largura + x] < TRACO;
+      if (escuro && inicio < 0) inicio = x;
+      if (!escuro && inicio >= 0) {
+        if (x - inicio >= minHorizontal) for (let k = inicio; k < x; k++) apagar[y * largura + k] = 1;
+        inicio = -1;
+      }
+    }
+  }
+  for (let x = 0; x < largura; x++) {
+    let inicio = -1;
+    for (let y = 0; y <= altura; y++) {
+      const escuro = y < altura && data[y * largura + x] < TRACO;
+      if (escuro && inicio < 0) inicio = y;
+      if (!escuro && inicio >= 0) {
+        if (y - inicio >= minVertical) for (let k = inicio; k < y; k++) apagar[k * largura + x] = 1;
+        inicio = -1;
+      }
+    }
+  }
+  for (let i = 0; i < largura * altura; i++) if (apagar[i]) data[i] = 255;
+}
+
+/**
+ * Le uma pagina de FORMULARIO (o RDV escaneado ou fotografado): tira as linhas
+ * da tabela e le a pagina como uma coluna de linhas, guardando a posicao de
+ * cada palavra.
+ *
+ * giro vira a imagem antes de ler: escaneado deitado sai ilegivel de primeira.
+ * Devolve { texto, linhas: [{ y, palavras: [{ s, x0, y0, x1, y1 }] }], cinza:
+ * { data, largura, altura } } - a imagem ja sem as linhas, para quem quiser
+ * medir tinta nela - ou null quando nao leu.
+ */
+export function lerFormulario(origem, giro = 0) {
+  const tarefa = fila.then(async () => {
+    let relogio;
+    let w = null;
+    try {
+      const estourou = new Promise((_, recusar) => {
+        relogio = setTimeout(() => recusar(new Error('ocr passou do tempo')), TEMPO_POR_FOTO);
+      });
+      const leitura = (async () => {
+        const { default: sharp } = await import('sharp');
+        // Primeiro respeita a orientacao gravada pelo celular; so depois gira.
+        const emPe = await sharp(origem, { failOn: 'none' }).rotate().toBuffer();
+        const { data, info } = await sharp(emPe)
+          .rotate(giro)
+          .resize({ width: LADO_DA_TABELA, height: LADO_DA_TABELA, fit: 'inside', withoutEnlargement: false })
+          .grayscale()
+          .normalize()
+          .raw()
+          .toBuffer({ resolveWithObject: true });
+        tirarLinhasDeTabela(data, info.width, info.height);
+        const png = await sharp(data, { raw: { width: info.width, height: info.height, channels: 1 } }).png().toBuffer();
+
+        w = await pegarWorker();
+        // 4 = "uma coluna de texto de tamanhos variados": le linha a linha, que
+        // e o formato da tabela. O padrao (bloco unico) embaralha as colunas.
+        await w.setParameters({ tessedit_pageseg_mode: '4' });
+        const { data: lido } = await w.recognize(png);
+        const linhas = (lido.lines || [])
+          .map((l) => ({
+            y: l.bbox.y0,
+            palavras: (l.words || [])
+              .filter((p) => String(p.text || '').trim())
+              .map((p) => ({ s: p.text.trim(), x0: p.bbox.x0, y0: p.bbox.y0, x1: p.bbox.x1, y1: p.bbox.y1 })),
+          }))
+          .filter((l) => l.palavras.length);
+        return { texto: String(lido.text || ''), linhas, cinza: { data, largura: info.width, altura: info.height } };
+      })();
+      return await Promise.race([leitura, estourou]);
+    } catch (e) {
+      if (/passou do tempo/.test(String(e?.message))) {
+        const velho = worker;
+        worker = null;
+        w = null;
+        velho?.terminate().catch(() => {});
+      }
+      return null;
+    } finally {
+      clearTimeout(relogio);
+      // As fotos de comprovante continuam sendo lidas no modo de sempre.
+      if (w && worker === w) await w.setParameters({ tessedit_pageseg_mode: '6' }).catch(() => {});
+    }
+  });
+  fila = tarefa.catch(() => {});
+  return tarefa;
+}
+
 /** O conteudo do QR code da imagem, ou '' se nao houver (ou nao der para ler). */
 export async function qrDaImagem(caminho) {
   try {

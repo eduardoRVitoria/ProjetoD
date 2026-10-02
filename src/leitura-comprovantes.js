@@ -357,7 +357,8 @@ export function montarParecer({ lidos, linhas, mesRef, declarado }) {
       por: 'codigo',
       passagens,
       passagens_fora: soma.fora,
-      passagens_apos_18h: [],
+      // A hora vem escrita no extrato; quem decide se cobra explicacao e a regra.
+      passagens_apos_18h: soma.contadas.filter((p) => /^\d{1,2}:\d{2}$/.test(p.hora || '') && Number(p.hora.split(':')[0]) >= 18),
       itens_ignorados: dePedagio.flatMap((l) => l.leitura.ignorados || []),
       valores_das_fotos: dasFotos,
       pedagio_lido: lido,

@@ -11,9 +11,9 @@ import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx';
 import fs from 'node:fs';
 import path from 'node:path';
-import { chaveDaApi, lerConfig, PASTA_ANEXOS } from './banco.js';
+import { chaveDaApi, iaLigada, lerConfig, PASTA_ANEXOS } from './banco.js';
 import { pensamentoDoModelo, odometroInteiro, totalDeKmDeclarado } from './util.js';
-import { lerRdvPorCodigo } from './leitura-rdv.js';
+import { lerRdvPorCodigo, lerRdvEscaneado } from './leitura-rdv.js';
 
 const LIMITE_POR_ANEXO = 12 * 1024 * 1024;
 
@@ -345,11 +345,12 @@ const FERRAMENTA = {
   },
 };
 
-// O que a pessoa le quando nem o codigo nem a IA conseguiram.
+// O que a pessoa le quando o portal nao conseguiu.
 const SEM_LEITURA_AUTOMATICA =
-  'Nao consegui ler esse arquivo sozinho. O portal le o RDV em PDF salvo direto da planilha '
-  + '(Arquivo > Salvar como > PDF) - foto e PDF escaneado, nao. Anexe o PDF assim, '
-  + 'ou use "Preencher na mao" para nao travar o seu mes.';
+  'Nao consegui ler esse arquivo sozinho. O que o portal le melhor e o RDV em PDF salvo direto '
+  + 'da planilha (Arquivo > Salvar como > PDF). Escaneado ou foto ele tambem le, mas precisa '
+  + 'estar inteiro, reto e nitido. Anexe de novo assim, ou use "Preencher na mao" para nao '
+  + 'travar o seu mes.';
 
 /**
  * Extrai a tabela do RDV a partir dos anexos marcados como o proprio relatorio.
@@ -372,8 +373,26 @@ export async function extrairDoRdv(anexosDoRdv, mesEsperado) {
     if (dados) return { extraido: normalizar(dados, mesEsperado), uso: null, por: 'codigo' };
   }
 
-  // So chega aqui o que o codigo nao le: foto, PDF escaneado, planilha.
-  const chave = chaveDaApi();
+  // Sem texto: RDV escaneado (PDF que e so imagem) ou fotografado. As paginas
+  // passam pelo OCR e pelo mesmo interprete do PDF com texto.
+  for (const a of [...anexosDoRdv].reverse()) {
+    const ext = path.extname(a.nome_original).toLowerCase();
+    const caminho = path.join(PASTA_ANEXOS, a.arquivo);
+    if (!fs.existsSync(caminho)) continue;
+    let imagens = [];
+    if (ext === '.pdf') {
+      const { paginasDoPdfComoImagem } = await import('./ocr.js');
+      imagens = await paginasDoPdfComoImagem(caminho, 3);
+    } else if (IMAGENS[ext]) {
+      imagens = [caminho];
+    }
+    if (!imagens.length) continue;
+    const dados = await lerRdvEscaneado(imagens);
+    if (dados) return { extraido: normalizar(dados, mesEsperado), uso: null, por: 'ocr' };
+  }
+
+  // A IA esta desligada: o que o codigo nao leu fica para a pessoa preencher.
+  const chave = iaLigada() ? chaveDaApi() : '';
   if (!chave) throw new Error(SEM_LEITURA_AUTOMATICA);
 
   const cliente = new Anthropic({ apiKey: chave });

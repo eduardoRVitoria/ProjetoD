@@ -75,10 +75,9 @@
           <label for="mes">Mês de referência</label>
           <input type="month" id="mes" style="margin-bottom:0">
         </div>
-        <button id="botao-conferir-todos">Conferir os pendentes com IA</button>
+        <button id="botao-conferir-todos">Conferir os pendentes</button>
         <button class="secundario" id="botao-reconferir-antigos"
                 title="Roda a conferência de novo nos relatórios deste mês que foram julgados por regras anteriores às de hoje">Reconferir os com regras antigas</button>
-        <button class="secundario" id="botao-demo">Testar em modo demonstração</button>
         <button class="secundario" id="botao-exportar">Baixar planilha</button>
         <button class="secundario" id="botao-imprimir-mes"
                 title="PDF único com o RDV, a nota de abastecimento e o comprovante de pedágio de todo mundo neste mês">Imprimir comprovantes do mês</button>
@@ -319,12 +318,12 @@
     </div>
 
     <div class="cartao">
-      <h2>Conferência com IA</h2>
-      <p class="sub">
-        A IA lê os comprovantes anexados: soma o extrato de pedágio, confirma se a nota de
-        abastecimento é real e compara as fotos de odômetro com o km declarado.
-        Precisa de uma chave de API da Anthropic.
-      </p>
+      <h2>Conferência com IA — desligada</h2>
+      <div class="aviso info">
+        <strong>A IA está desligada neste portal.</strong> O RDV, os comprovantes e a assinatura são
+        lidos por código (texto do PDF, OCR e QR code), sem custo por uso e sem depender de crédito.
+        A chave abaixo não é usada.
+      </div>
       <div id="estado-chave"></div>
       <label for="c-chave">Chave da API</label>
       <input type="password" id="c-chave" placeholder="sk-ant-..." autocomplete="off">

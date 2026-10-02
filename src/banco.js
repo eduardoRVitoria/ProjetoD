@@ -366,6 +366,15 @@ export function valorDoKm() {
 }
 
 // A chave da API pode vir da variavel de ambiente ou da tela de configuracao.
+/**
+ * A IA esta DESLIGADA no portal inteiro desde 02/10/2026: nenhuma chamada sai
+ * para a API, mesmo com chave gravada. Tudo e lido por codigo - texto do PDF,
+ * OCR, QR code. So volta a ligar com USAR_IA=1 no ambiente, de proposito.
+ */
+export function iaLigada() {
+  return process.env.USAR_IA === '1' && Boolean(chaveDaApi());
+}
+
 export function chaveDaApi() {
   return process.env.ANTHROPIC_API_KEY || lerConfig('chave_api') || '';
 }

@@ -6,7 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import fs from 'node:fs';
 import path from 'node:path';
-import { chaveDaApi, lerConfig, PASTA_ANEXOS } from './banco.js';
+import { chaveDaApi, iaLigada, lerConfig, PASTA_ANEXOS } from './banco.js';
 import * as log from './log.js';
 import { dataBr, somarExtrato } from './conferencia.js';
 import { pensamentoDoModelo } from './util.js';
@@ -301,7 +301,7 @@ const FERRAMENTA = {
 };
 
 export function iaDisponivel() {
-  return Boolean(chaveDaApi());
+  return iaLigada();
 }
 
 /**
@@ -309,10 +309,10 @@ export function iaDisponivel() {
  * Lanca Error com mensagem em portugues se algo impedir a chamada.
  */
 export async function conferirComIa({ usuario, rel, linhas, anexos, resultadoRegra, vlrKm }) {
-  const chave = chaveDaApi();
+  const chave = iaLigada() ? chaveDaApi() : '';
   if (!chave) {
     throw new Error(
-      'Nenhuma chave da API da Anthropic configurada. Cadastre em Configuracoes ou defina ANTHROPIC_API_KEY.',
+      'A IA esta desligada neste portal. Nenhuma chave da API da Anthropic configurada. Cadastre em Configuracoes ou defina ANTHROPIC_API_KEY.',
     );
   }
 

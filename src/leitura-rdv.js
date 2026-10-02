@@ -308,6 +308,21 @@ export function interpretarRdv(linhasDoDocumento) {
     }
   }
 
+  // ---- formulario de carro da empresa com o cabecalho ilegivel (escaneado): a
+  // soma dos valores dos dias da o "KM R$", mas os valores nao sao km x taxa -
+  // sao abastecimentos. No formulario comum, cada dia e exatamente km x taxa.
+  if (!temCombustivel && totais.valor_total_km > 0) {
+    const somaDosValores = dias.reduce((s, d) => s + (d.valor || 0), 0);
+    const somaDosKm = dias.reduce((s, d) => s + Math.max(0, d.km_final - d.km_inicial), 0);
+    if (somaDosKm > 0 && Math.round(somaDosValores * 100) === Math.round(totais.valor_total_km * 100)) {
+      const taxa = totais.valor_total_km / somaDosKm;
+      const foraDaTaxa = dias.filter(
+        (d) => d.valor > 0 && Math.abs(d.valor - Math.max(0, d.km_final - d.km_inicial) * taxa) > 0.05,
+      ).length;
+      if (foraDaTaxa >= 2) temCombustivel = true;
+    }
+  }
+
   // ---- dia/mes ou mes/dia? O relatorio e de um mes so: a parte que quase nao
   // muda e o mes. Empate (um dia so, ou dia = mes) cai no jeito do documento.
   const distintos = (campo) => new Set(dias.map((d) => d[campo])).size;
@@ -399,4 +414,93 @@ export async function lerRdvPorCodigo(caminho) {
     (l) => l.km_inicial > KM_MAXIMO || l.km_final > KM_MAXIMO || l.km_final - l.km_inicial > KM_NUM_DIA,
   );
   return dados.linhas.length && !absurda ? dados : null;
+}
+
+// ------------------------------------------------- RDV escaneado ou em foto
+//
+// Sem texto no arquivo, a pagina e lida por OCR (ocr.js tira as linhas da
+// tabela antes, que e o que faz o Tesseract acertar os numeros) e passa pelo
+// mesmo interprete do PDF com texto. OCR erra digito, entao a leitura so sai
+// com confianca alta quando a conta do proprio documento fecha: a soma dos km
+// dos dias vezes a taxa da o "KM R$" declarado (ou a soma do combustivel, no
+// formulario de carro da empresa). Quando nao fecha, a leitura sai assim mesmo
+// - e melhor um rascunho para corrigir do que nada - marcada como incerta.
+
+// Palavra que e so risco e pontuacao ("|", "[|", "—") e resto de borda.
+const TEM_LETRA_OU_NUMERO = /[\p{L}\p{N}$]/u;
+
+/** As linhas de uma pagina lida por OCR, no formato do `linhasDoPdf`. */
+function linhasDoOcr(lido, pagina) {
+  return lido.linhas
+    .map((l) => ({
+      pagina,
+      // No PDF o y cresce para cima; aqui a ordem ja e de cima para baixo.
+      y: -l.y,
+      tokens: l.palavras
+        // "o" sozinho numa celula de numero e o zero que o OCR leu como letra.
+        .map((p) => ({ s: /^[oO]$/.test(p.s) ? '0' : p.s, x: p.x0 }))
+        .filter((t) => TEM_LETRA_OU_NUMERO.test(t.s)),
+    }))
+    .filter((l) => l.tokens.length);
+}
+
+const diasNoTexto = (texto) => (String(texto).match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g) || []).length;
+
+/**
+ * Le um RDV escaneado ou fotografado. `imagens` sao as paginas (bytes ou
+ * caminho da foto). Devolve o mesmo que `lerRdvPorCodigo`, ou null quando nao
+ * e o formulario ou nao deu para ler.
+ */
+export async function lerRdvEscaneado(imagens) {
+  const { lerFormulario } = await import('./ocr.js');
+  const linhas = [];
+  let pagina = 0;
+  for (const imagem of imagens.slice(0, 3)) {
+    pagina++;
+    // Escaneado deitado e comum: fica o giro em que aparecem mais dias.
+    let melhor = null;
+    for (const giro of [0, 90, 270]) {
+      const lido = await lerFormulario(imagem, giro);
+      if (!lido) break;
+      const dias = diasNoTexto(lido.texto);
+      if (!melhor || dias > melhor.dias) melhor = { lido, dias };
+      if (dias >= 5) break;
+    }
+    if (melhor) linhas.push(...linhasDoOcr(melhor.lido, pagina));
+  }
+
+  const dados = interpretarRdv(linhas);
+  if (dados.linhas.length < 3) return null;
+  const absurda = dados.linhas.some(
+    (l) => l.km_inicial > KM_MAXIMO || l.km_final > KM_MAXIMO || l.km_final - l.km_inicial > KM_NUM_DIA,
+  );
+  if (absurda) return null;
+
+  // A conta do documento fecha?
+  const t = dados.totais_declarados;
+  const km = dados.linhas.reduce((s, l) => s + Math.max(0, l.km_final - l.km_inicial), 0);
+  const combustivel = dados.linhas.reduce((s, l) => s + l.combustivel, 0);
+  const centavos = (v) => Math.round(v * 100);
+  let fecha = false;
+  if (t.valor_total_km > 0 && combustivel > 0) {
+    fecha = centavos(combustivel) === centavos(t.valor_total_km);
+  } else if (t.valor_total_km > 0 && km > 0) {
+    // A taxa por km tem duas casas (0,90): se valor / km da um numero redondo
+    // assim, os dias e o total foram lidos certo.
+    const taxa = t.taxa_por_km || t.valor_total_km / km;
+    fecha = taxa > 0.2 && taxa < 5 && Math.abs(taxa * 100 - Math.round(taxa * 100)) < 0.005
+      && centavos(km * (Math.round(taxa * 100) / 100)) === centavos(t.valor_total_km);
+    if (fecha && t.taxa_por_km == null) t.taxa_por_km = Math.round(taxa * 100) / 100;
+  }
+  // O total de km do rodape o OCR costuma perder ou pegar pela metade; com a
+  // conta fechando, o que vale e a soma dos dias.
+  if (fecha && (t.total_km == null || t.total_km !== km)) t.total_km = km;
+
+  return {
+    ...dados,
+    confianca: fecha ? 'alta' : 'baixa',
+    problemas_de_leitura: fecha
+      ? []
+      : ['O RDV veio escaneado ou em foto e a leitura automatica nao fechou com o total do documento. Confira os km de cada dia.'],
+  };
 }

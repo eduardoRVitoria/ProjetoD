@@ -40,7 +40,8 @@ import { extrairDoRdv, motivoDeNaoConseguirLer } from './extrair.js';
 import { subtotalDoRdv } from './leitura-rdv.js';
 import * as log from './log.js';
 import { verificarAssinatura, achadosDaAssinatura } from './assinatura.js';
-import { assinaturaNoPdf, rdvEstaAssinado } from './caixa-assinatura.js';
+import { assinaturaNoPdf, assinaturaNoEscaneado, rdvEstaAssinado } from './caixa-assinatura.js';
+import { paginasDoPdfComoImagem } from './ocr.js';
 import { assinaturaSobrePlaca } from './placa.js';
 import { galeriaDe, enviarPacote } from './galeria.js';
 import { comecarFila, estadoDaFila, pedirParada, naVezDaIa } from './fila.js';
@@ -644,7 +645,7 @@ async function lerRdv(req, res, usuario) {
   try {
     const saida = await extrairDoRdv(arquivos, mes);
     extraido = saida.extraido;
-    log.info('rdv', saida.por === 'codigo' ? 'lido por codigo' : 'lido pela IA', {
+    log.info('rdv', { codigo: 'lido por codigo', ocr: 'lido por OCR (escaneado)' }[saida.por] || 'lido pela IA', {
       quem: usuario.login, mes, linhas: extraido.linhas.length, levou: log.desde(comecouEm),
     });
   } catch (e) {
@@ -1501,7 +1502,7 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
       avisoIa = 'A leitura dos comprovantes pela IA falhou - conferencia feita so pelas regras automaticas.';
     }
   } else if (usarIa && !iaDisponivel()) {
-    avisoIa = 'Sem chave de API configurada - comprovantes lidos por codigo (sem IA).';
+    avisoIa = 'Comprovantes lidos por codigo (sem IA).';
   }
 
   // Sem a IA, os comprovantes sao lidos por codigo: texto do PDF, OCR da foto,
@@ -2274,6 +2275,9 @@ async function placaCobertaNosRdvs(anexos) {
   return visivel;
 }
 
+// Mudou o jeito de olhar a assinatura? Sobe o numero e os anexos sao vistos de novo.
+const VERSAO_DA_ASSINATURA = 1;
+
 // O que o codigo consegue dizer da assinatura de cada arquivo de RDV: tem
 // assinatura digital (ou o selo do gov.br), e se a caixa de assinatura do
 // formulario esta em branco. Foto e papel escaneado ficam sem resposta - so
@@ -2284,7 +2288,31 @@ async function assinaturaDosRdvs(anexos) {
     if (a.tipo !== 'rdv') continue;
     const caminho = path.join(PASTA_ANEXOS, a.arquivo);
     const item = { digital: false, caixa: null };
-    if (/\.pdf$/i.test(a.nome_original || '') && fs.existsSync(caminho)) {
+    const ehPdf = /\.pdf$/i.test(a.nome_original || '');
+    const ehFoto = /\.(jpe?g|jfif|png|webp|gif)$/i.test(a.nome_original || '');
+
+    // O arquivo de um anexo nao muda, e olhar a assinatura de um escaneado
+    // custa um OCR: o que ja foi visto fica guardado.
+    const guardada = db.prepare('SELECT leitura FROM leituras_codigo WHERE anexo_id = ?').get(a.id);
+    if (guardada) {
+      try {
+        const visto = JSON.parse(guardada.leitura);
+        if (visto.tipo === 'rdv-assinatura' && visto.versao === VERSAO_DA_ASSINATURA) {
+          saida.push({ digital: visto.digital, caixa: visto.caixa });
+          continue;
+        }
+      } catch {
+        // leitura guardada corrompida: olha de novo
+      }
+    }
+
+    if (ehFoto && fs.existsSync(caminho)) {
+      // RDV fotografado: carimbo do gov.br ou tinta na caixa, vistos por OCR.
+      const visto = await assinaturaNoEscaneado([caminho]);
+      item.digital = visto.selo;
+      item.caixa = visto.caixa;
+    }
+    if (ehPdf && fs.existsSync(caminho)) {
       const pdf = fs.readFileSync(caminho);
       try {
         item.digital = verificarAssinatura(pdf).assinado;
@@ -2297,7 +2325,18 @@ async function assinaturaDosRdvs(anexos) {
         // novo depois de assinado e perdeu a assinatura digital.
         item.digital = visto.selo;
         item.caixa = visto.caixa;
+        // PDF sem texto e papel escaneado: a assinatura esta na imagem.
+        if (!item.digital && item.caixa == null) {
+          const naImagem = await assinaturaNoEscaneado(await paginasDoPdfComoImagem(caminho, 2));
+          item.digital = naImagem.selo;
+          item.caixa = naImagem.caixa;
+        }
       }
+    }
+    if (ehPdf || ehFoto) {
+      db.prepare(
+        'INSERT OR REPLACE INTO leituras_codigo (anexo_id, versao, feito_em, leitura) VALUES (?, ?, ?, ?)',
+      ).run(a.id, VERSAO_DA_ASSINATURA, agora(), JSON.stringify({ tipo: 'rdv-assinatura', versao: VERSAO_DA_ASSINATURA, ...item }));
     }
     saida.push(item);
   }

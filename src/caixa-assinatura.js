@@ -148,3 +148,92 @@ export function rdvEstaAssinado(arquivos, daIa) {
   if (arquivos.some((a) => a.caixa === 'com_tinta')) return 'sim';
   return null;
 }
+
+// ------------------------------------------------- RDV escaneado ou em foto
+//
+// Sem texto no arquivo, a pagina e lida por OCR so para achar duas coisas: o
+// carimbo impresso do gov.br ("Documento assinado digitalmente") e o rotulo
+// "ASSINATURA POR EXTENSO". Achado o rotulo, mede-se a tinta na caixa acima
+// dele, na propria imagem. A tabela de km o OCR nao le direito - mas rotulo e
+// carimbo sao texto grande e limpo, e isso ele acerta.
+
+const TINTA_MINIMA_NA_FOTO = 260; // a foto e lida a ~2,4 px por ponto, nao 3
+const CARIMBO_DO_GOV = /ASSINADO\s+DIGITALMENTE|VALIDAR\.?\s*ITI\.?\s*GOV|ITI\.GOV\.BR/;
+const semAcentos = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+
+/**
+ * Onde fica a caixa de assinatura numa pagina lida por OCR, em pixels (y para
+ * baixo), ou null. `palavras` sao `{ s, x0, y0, x1, y1 }`.
+ */
+export function regiaoDaCaixaNaFoto(palavras, largura, altura) {
+  const rotulo = palavras.find((p) => /^ASSINATURA/.test(semAcentos(p.s)));
+  if (!rotulo) return null;
+  const h = Math.max(8, rotulo.y1 - rotulo.y0);
+  // "ASSINATURA POR EXTENSO": o que vem na mesma linha, logo a direita.
+  const daLinha = palavras.filter((p) => Math.abs(p.y0 - rotulo.y0) < h * 0.8 && p.x0 >= rotulo.x0 - 2 && p.x0 <= rotulo.x1 + h * 9);
+  const direitaDoRotulo = Math.max(...daLinha.map((p) => p.x1));
+  const larguraDoRotulo = Math.max(direitaDoRotulo - rotulo.x0, h * 6);
+  const centro = rotulo.x0 + larguraDoRotulo / 2;
+
+  // A linha da placa fica logo acima da caixa.
+  const placa = palavras
+    .filter((p) => /PLACA|VEICULO/.test(semAcentos(p.s)) && p.y1 < rotulo.y0 && rotulo.y0 - p.y1 < h * 12)
+    .sort((a, b) => b.y1 - a.y1)[0];
+
+  const regiao = {
+    x1: Math.max(0, Math.round(centro - larguraDoRotulo * 1.25)),
+    x2: Math.min(largura, Math.round(centro + larguraDoRotulo * 1.25)),
+    y1: Math.max(0, Math.round(placa ? placa.y1 + h * 0.5 : rotulo.y0 - h * 6.5)),
+    y2: Math.round(rotulo.y0 - h * 0.5),
+  };
+  if (regiao.x2 - regiao.x1 < 60 || regiao.y2 - regiao.y1 < 20 || regiao.y2 > altura) return null;
+  return regiao;
+}
+
+/**
+ * O que o codigo ve da assinatura num RDV sem texto: `imagens` sao as paginas
+ * (bytes ou caminho da foto). Devolve `{ selo, caixa, tinta }` como
+ * `assinaturaNoPdf`: selo quando ha o carimbo impresso do gov.br; caixa
+ * 'vazia' | 'com_tinta' quando achou o rotulo; null quando nao achou nada.
+ */
+export async function assinaturaNoEscaneado(imagens) {
+  const { lerFormulario } = await import('./ocr.js');
+  const saida = { selo: false, caixa: null, tinta: null };
+
+  for (const imagem of imagens.slice(0, 3)) {
+    // Escaneado deitado e comum: tenta em pe e virado para os dois lados.
+    for (const giro of [0, 90, 270]) {
+      const lido = await lerFormulario(imagem, giro);
+      if (!lido) break;
+      const texto = semAcentos(lido.texto);
+      if (CARIMBO_DO_GOV.test(texto)) {
+        saida.selo = true;
+        return saida;
+      }
+      const { data, largura, altura } = lido.cinza;
+      const regiao = regiaoDaCaixaNaFoto(lido.linhas.flatMap((l) => l.palavras), largura, altura);
+      if (regiao) {
+        // A imagem vem em tons de cinza e ja sem as linhas da tabela: o que
+        // sobra dentro da caixa e so o que alguem escreveu ou carimbou.
+        const l = regiao.x2 - regiao.x1;
+        const a = regiao.y2 - regiao.y1;
+        const recorte = new Uint8ClampedArray(l * a * 4).fill(255);
+        for (let y = 0; y < a; y++) {
+          for (let x = 0; x < l; x++) {
+            const v = data[(regiao.y1 + y) * largura + regiao.x1 + x];
+            const i = (y * l + x) * 4;
+            recorte[i] = v;
+            recorte[i + 1] = v;
+            recorte[i + 2] = v;
+          }
+        }
+        saida.tinta = tintaNoRecorte({ data: recorte, width: l, height: a });
+        saida.caixa = saida.tinta >= TINTA_MINIMA_NA_FOTO ? 'com_tinta' : 'vazia';
+        return saida;
+      }
+      // Leu o formulario em pe e nao ha rotulo: girar nao vai ajudar.
+      if (/INICIAL|ITINERARIO|DESPESAS/.test(texto)) break;
+    }
+  }
+  return saida;
+}
