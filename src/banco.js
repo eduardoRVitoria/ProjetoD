@@ -259,6 +259,36 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     `);
   }
 
+  // Uma vez so: devolve a aprovacao feita na mao a quem a perdeu.
+  //
+  // Entre 01/10 e 02/10/2026 a conferencia rodou de novo por cima de relatorios
+  // que um conferente tinha aprovado na mao (o botao "Reconferir os com regras
+  // antigas"), e eles voltaram a "reprovado". A lista saiu do registro do
+  // servidor: o relatorio e a hora em que foi aprovado na mao pela ultima vez.
+  // So mexe em quem nao foi reenviado depois dessa aprovacao e nao recebeu
+  // outra decisao na mao desde entao.
+  const jaDevolveu = db.prepare("SELECT 1 FROM config WHERE chave = 'migracao_aprovacoes_0210'").get();
+  if (!jaDevolveu) {
+    const APROVADOS_NA_MAO = [
+      [189, '2026-10-01T16:54:10Z'], [163, '2026-10-01T18:14:28Z'], [162, '2026-10-01T17:05:39Z'],
+      [14, '2026-10-02T11:51:12Z'], [36, '2026-10-02T12:09:16Z'], [4, '2026-10-01T17:41:32Z'],
+      [52, '2026-10-01T17:43:18Z'], [231, '2026-10-01T18:41:05Z'], [112, '2026-10-01T18:47:44Z'],
+      [178, '2026-10-02T11:53:25Z'], [430, '2026-10-02T11:59:52Z'], [398, '2026-10-02T13:18:45Z'],
+      [86, '2026-10-02T12:17:52Z'], [9, '2026-10-02T13:18:40Z'], [20, '2026-10-02T13:18:59Z'],
+      [187, '2026-10-02T13:40:35Z'],
+    ];
+    const devolver = db.prepare(
+      `UPDATE relatorios SET status = 'CERTA', decisao_manual = 'CERTA'
+        WHERE id = ? AND decisao_manual IS NULL
+          AND status IN ('ERRADA', 'SO_FALTA_DANFE', 'CERTA')
+          AND (enviado_em IS NULL OR enviado_em < ?)`,
+    );
+    let devolvidos = 0;
+    for (const [id, aprovadoEm] of APROVADOS_NA_MAO) devolvidos += Number(devolver.run(id, aprovadoEm).changes);
+    db.prepare("INSERT INTO config (chave, valor) VALUES ('migracao_aprovacoes_0210', ?)").run(String(devolvidos));
+    if (devolvidos) console.log(`[banco] ${devolvidos} aprovacao(oes) feita(s) na mao devolvida(s)`);
+  }
+
   // Eduardo Ramos e Victor Sarmento sao os unicos que veem e fazem tudo.
   // Fica aqui, e nao num script solto, para valer sozinho a cada publicacao -
   // inclusive se alguem for recadastrado depois.
