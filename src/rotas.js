@@ -206,6 +206,7 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/fila-parar' && metodo === 'POST') return responderJson(res, pedirParada());
     if (rota === '/api/admin/decidir' && metodo === 'POST') return decidir(req, res, usuario);
     if (rota === '/api/admin/relatorio-editar' && metodo === 'POST') return editarRelatorio(req, res, usuario);
+    if (rota === '/api/admin/impresso' && metodo === 'POST') return marcarImpresso(req, res, usuario);
     if (rota === '/api/admin/galeria' && metodo === 'GET') return verGaleria(res, url, usuario);
     if (rota === '/api/admin/pacote' && metodo === 'GET') return baixarPacote(res, url, usuario);
     if (rota === '/api/admin/impressao' && metodo === 'GET') return baixarImpressao(res, url, usuario);
@@ -881,7 +882,9 @@ async function enviarRelatorio(req, res, usuario) {
   db.prepare(
     `UPDATE relatorios SET status = 'ENVIADO', enviado_em = ?, achados = NULL, parecer_ia = NULL,
             o_que_fazer = NULL, conferido_em = NULL, pedagio_comprovado = NULL,
-            pedagio_comprovado_admin = NULL
+            pedagio_comprovado_admin = NULL,
+            -- Reenviou: o que estava impresso era a versao antiga.
+            impresso_em = NULL, impresso_por = NULL
       WHERE id = ?`,
   ).run(agora(), rel.id);
 
@@ -1262,6 +1265,8 @@ function painel(res, url, quem) {
           + (r.hotel_declarado || 0) + (r.outros_declarado || 0)).toFixed(2),
       ),
       subtotal_rdv: subtotalGravado(r.extraido),
+      // Quem confere marca na mao o que ja foi para o papel.
+      impresso_em: r.impresso_em || null,
       comprovado: r.pedagio_comprovado,
       // Diferenca so existe quando ha DOIS numeros para comparar.
       //
@@ -1886,6 +1891,32 @@ async function decidir(req, res, admin) {
   });
 
   responderJson(res, { ok: true, status, rotulo_status: ROTULO_STATUS[status] });
+}
+
+/**
+ * Marca (ou desmarca) o relatorio como impresso.
+ *
+ * E so um lembrete de quem confere - "este eu ja mandei para a impressora" -
+ * e nao muda status nem parecer. Cada relatorio e de uma pessoa num mes, entao
+ * a marca de setembro nao vale para outubro.
+ */
+async function marcarImpresso(req, res, admin) {
+  const { relatorio_id, impresso } = await lerJson(req);
+  const rel = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(Number(relatorio_id));
+  if (!rel) return erro(res, 'Relatorio nao encontrado.', 404);
+
+  const dono = db.prepare('SELECT nome, empresa, funcao FROM usuarios WHERE id = ?').get(rel.usuario_id);
+  if (!podeVerUsuario(admin, dono)) {
+    return erro(res, 'Esse relatorio e de outra empresa.', 403);
+  }
+
+  const quando = impresso ? agora() : null;
+  db.prepare('UPDATE relatorios SET impresso_em = ?, impresso_por = ? WHERE id = ?')
+    .run(quando, impresso ? admin.id : null, rel.id);
+  log.info('impressao', impresso ? 'marcado como impresso' : 'marca de impresso tirada', {
+    rel: rel.id, mes: rel.mes_ref, de: dono.nome, por: admin.login,
+  });
+  responderJson(res, { ok: true, impresso_em: quando });
 }
 
 /**

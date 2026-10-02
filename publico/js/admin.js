@@ -185,12 +185,12 @@ $('botao-imprimir-mes').addEventListener('click', () => {
 $('botao-criar-usuario').addEventListener('click', criarUsuario);
 
 // --- filtros do painel do mes ---
-for (const id of ['f-busca', 'f-status', 'f-empresa', 'f-funcao', 'f-agrupar']) {
+for (const id of ['f-busca', 'f-status', 'f-impresso', 'f-empresa', 'f-funcao', 'f-agrupar']) {
   ligar(id, 'input', () => desenharTabela());
 }
 ligar('f-limpar', 'click', () => {
   if ($('f-busca')) $('f-busca').value = '';
-  for (const id of ['f-status', 'f-empresa', 'f-funcao']) if ($(id)) $(id).value = '';
+  for (const id of ['f-status', 'f-impresso', 'f-empresa', 'f-funcao']) if ($(id)) $(id).value = '';
   if ($('f-agrupar')) $('f-agrupar').checked = true;
   marcarAbaEmpresa('');
   desenharTabela();
@@ -511,10 +511,12 @@ function desenharTabela() {
   const status = filtro('f-status');
   const empresa = filtro('f-empresa');
   const funcao = filtro('f-funcao');
+  const impresso = filtro('f-impresso');
   const agrupar = filtro('f-agrupar', true);
 
   const lista = todos.filter((r) => {
     if (status && r.status !== status) return false;
+    if (impresso && (impresso === 'sim') !== Boolean(r.impresso_em)) return false;
     if (empresa && r.empresa !== empresa) return false;
     if (funcao && r.funcao !== funcao) return false;
     if (busca && !chave(`${r.nome} ${r.login}`).includes(busca)) return false;
@@ -540,8 +542,9 @@ function desenharTabela() {
         const km = doGrupo.reduce((s, r) => s + Number(r.total_km || 0), 0);
         const valor = doGrupo.reduce((s, r) => s + Number(r.total_a_receber || 0), 0);
         return (
-          `<tr class="grupo-empresa"><td colspan="9">
+          `<tr class="grupo-empresa"><td colspan="10">
              ${escapar(e)} — ${doGrupo.length} relatório(s) · ${numeroBr(km)} km · ${brl(valor)} a receber
+             · ${doGrupo.filter((r) => r.impresso_em).length} impresso(s)
            </td></tr>` + doGrupo.map(linhaTabela).join('')
         );
       })
@@ -556,6 +559,7 @@ function desenharTabela() {
         <th>Status</th><th>Colaborador</th><th class="num">Km</th><th class="num">Valor km</th>
         <th class="num" title="Pedágio + estacionamento declarados">Ped.+estac.</th><th class="num">Comprovado</th><th class="num">Diferença</th>
         <th class="num" title="Valor do km + pedágio + estacionamento + hotel + outras despesas">Total a receber</th>
+        <th title="Marque quando já tiver imprimido os comprovantes desta pessoa neste mês">Impresso</th>
         <th></th>
       </tr></thead>
       <tbody>${corpo}</tbody>
@@ -563,6 +567,23 @@ function desenharTabela() {
 
   for (const b of $('tabela').querySelectorAll('[data-ver]')) {
     aoClicar(b, () => abrirDetalhe(Number(b.dataset.ver)), 'abrir este relatório');
+  }
+  // Marcar como impresso grava na hora; se o servidor recusar, a caixa volta.
+  for (const c of $('tabela').querySelectorAll('[data-impresso]')) {
+    c.addEventListener('change', async () => {
+      const r = painel.relatorios.find((x) => x.id === Number(c.dataset.impresso));
+      c.disabled = true;
+      try {
+        const resposta = await api('/api/admin/impresso', {
+          metodo: 'POST',
+          corpo: { relatorio_id: Number(c.dataset.impresso), impresso: c.checked },
+        });
+        if (r) r.impresso_em = resposta.impresso_em;
+      } catch (e) {
+        avisar(e.message);
+      }
+      desenharTabela();
+    });
   }
   for (const b of $('tabela').querySelectorAll('[data-conferir]')) {
     b.addEventListener('click', () => conferirUm(Number(b.dataset.conferir), b));
@@ -604,6 +625,13 @@ function linhaTabela(r) {
     <td class="num">${r.comprovado == null ? '—' : brl(r.comprovado)}</td>
     <td class="num">${dif}</td>
     <td class="num"><strong>${brl(r.total_a_receber)}</strong>${subtotalDiferente(r.total_a_receber, r.subtotal_rdv)}</td>
+    <td style="white-space:nowrap">
+      <label style="display:inline-flex; align-items:center; gap:6px; margin:0; font-weight:500; cursor:pointer"
+             title="${r.impresso_em ? `Marcado em ${escapar(dataHoraBr(r.impresso_em))}` : 'Marcar como impresso'}">
+        <input type="checkbox" data-impresso="${r.id}" style="width:auto; margin:0" ${r.impresso_em ? 'checked' : ''}>
+        ${r.impresso_em ? '<span style="color:var(--verde); font-weight:600">Impresso</span>' : '<span class="sub" style="margin:0">Não</span>'}
+      </label>
+    </td>
     <td style="white-space:nowrap">
       <button class="secundario pequeno" data-ver="${r.id}">Abrir</button>
       ${pendente ? `<button class="pequeno" data-conferir="${r.id}">Conferir</button>` : ''}

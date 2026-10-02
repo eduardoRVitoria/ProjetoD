@@ -152,6 +152,12 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     // controle existir, ou seja, antigo - que e a verdade.
     db.exec('ALTER TABLE relatorios ADD COLUMN versao_regras INTEGER');
   }
+  if (!colunas.has('impresso_em')) {
+    // Marca de "ja imprimi os comprovantes desta pessoa neste mes", posta na
+    // mao por quem confere. Guarda quando e quem marcou.
+    db.exec('ALTER TABLE relatorios ADD COLUMN impresso_em TEXT');
+    db.exec('ALTER TABLE relatorios ADD COLUMN impresso_por INTEGER');
+  }
   if (!colunas.has('pedagio_comprovado_admin')) {
     // Pedagio comprovado que o admin digitou na mao. Enquanto existir, vale
     // mais que a leitura do comprovante - senao "Conferir de novo" apagava a

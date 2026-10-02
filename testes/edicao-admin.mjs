@@ -157,6 +157,17 @@ try {
     assert.ok((await caderno.arrayBuffer()).byteLength > 500);
   }
 
+  // Marcar como impresso: e por relatorio, aparece no painel e pode ser desfeito.
+  const marca = await chamar('/api/admin/impresso', { relatorio_id: rel, impresso: true });
+  assert.equal(marca.status, 200, JSON.stringify(marca.dados));
+  assert.ok(marca.dados.impresso_em);
+  const noPainel = async () => (await chamar('/api/admin/painel?mes=2026-09')).dados.relatorios.find((r) => r.id === rel);
+  assert.ok((await noPainel()).impresso_em, 'o painel mostra a marca');
+  assert.equal((await ver()).relatorio.status, 'ERRADA', 'marcar nao muda o status');
+  assert.equal((await chamar('/api/admin/impresso', { relatorio_id: rel, impresso: false })).status, 200);
+  assert.equal((await noPainel()).impresso_em, null);
+  assert.equal((await chamar('/api/admin/impresso', { relatorio_id: 999999, impresso: true })).status, 404);
+
   // Comprovado em branco apaga a correcao do admin.
   assert.equal((await editar({ valores: { pedagio_comprovado: '' } })).status, 200);
   d = await ver();
