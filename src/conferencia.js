@@ -77,10 +77,12 @@ const HORA_LIMITE = 18;
 //      tambem conta.
 //  19  saiu a regra do salto impossivel do odometro (KM inicial muito acima
 //      do KM final do dia anterior): nao reprova mais.
+//  20  quem tem carro da empresa e entrega o RDV de combustivel por dia e
+//      conferido como o gerente: recebe o combustivel, nao km x taxa.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 19;
+export const VERSAO_REGRAS = 20;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -291,7 +293,10 @@ export function conferir(
   rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, empresa = null, funcao = null, carro = 'pessoal',
 ) {
   const achados = [];
-  const gerente = ehGerente(funcao);
+  // Pago pelo combustivel: gerente e coordenador sempre; e quem tem carro da
+  // empresa e entregou o formulario de combustivel por dia (supervisor com
+  // carro da empresa usa o mesmo RDV "Carro da Empresa" do gerente).
+  const gerente = pagoPorCombustivel(funcao, carro, linhas);
 
   // Dia com data que nao existe ("2026-13-45", campo em branco) vira pendencia
   // e sai da conta. Antes ele chegava nas contas de calendario e derrubava a
@@ -1144,6 +1149,15 @@ export function fotosQueFaltam(esperadas, fotos) {
 
 /** Quem e pago pelo combustivel em vez do km. Coordenador segue a regra do gerente. */
 export const ehGerente = (funcao) => funcao === 'Gerente' || funcao === 'Coordenador';
+
+/**
+ * Esta pessoa recebe pelo combustivel abastecido, e nao por km rodado?
+ * Gerente e coordenador, sempre. Quem tem carro da empresa, quando o RDV dele
+ * traz combustivel por dia - e o formulario "Carro da Empresa".
+ */
+export const pagoPorCombustivel = (funcao, carro, linhas = []) =>
+  ehGerente(funcao)
+  || (carro === 'empresa' && (linhas || []).some((l) => Number(l?.combustivel) > 0));
 
 /**
  * Se a foto do odometro e obrigatoria. Carro da empresa dispensa, menos para

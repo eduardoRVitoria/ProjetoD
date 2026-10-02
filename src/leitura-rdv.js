@@ -103,6 +103,12 @@ function valorDaLinha(palavras) {
   return null;
 }
 
+/** O valor em reais do dia ("R$ 178,21"); "R$ -" e em branco sao zero. */
+function valorDoDia(palavras) {
+  const i = palavras[0] === 'R$' ? 1 : 0;
+  return palavras.length > i && DINHEIRO.test(palavras[i]) ? numeroBr(palavras[i]) : 0;
+}
+
 /** Tira "R$", o valor do dia e o que sobrar e o itinerario. */
 function itinerarioDe(palavras) {
   const resto = [...palavras];
@@ -153,6 +159,9 @@ export function interpretarRdv(linhasDoDocumento) {
   let placas = '';
   let ehFormulario = false;
   let colunas = null; // x de "Km Inicial", "Km Final" e "Total" no cabecalho
+  // Formulario de carro da empresa: no lugar do "R$ 0,90" a coluna e
+  // "R$ COMBUSTIVEL", com o que foi abastecido em cada dia.
+  let temCombustivel = false;
   const dias = [];
   const soltas = []; // linhas "R$ 83,70 Tatui" da metade direita, em outra pagina
   const candidatosATotal = [];
@@ -197,6 +206,7 @@ export function interpretarRdv(linhasDoDocumento) {
     // ---- cabecalho da tabela: "Data | Km Inicial | Km Final | Total KM | R$ 0,90 | Itinerario"
     if (/KM\s+INICIAL/.test(chapado)) {
       ehFormulario = true;
+      if (/COMBUST/.test(chapado)) temCombustivel = true;
       const t = linha.tokens;
       const iInicial = t.findIndex((k) => /^inicial$/i.test(k.s));
       const iFinal = t.findIndex((k) => /^final$/i.test(k.s));
@@ -240,6 +250,13 @@ export function interpretarRdv(linhasDoDocumento) {
         kf = numeroBr(inteiros[1].s);
       }
 
+      // O que vem depois dos km comeca no "R$" do valor do dia. Texto solto
+      // antes dele e celula de km com palavra dentro ("Feriado", "#VALUE!"),
+      // nao itinerario.
+      const palavrasDoResto = resto.map((t) => t.s);
+      const iValor = palavrasDoResto.indexOf('R$');
+      const depoisDoKm = iValor >= 0 ? palavrasDoResto.slice(iValor) : palavrasDoResto;
+
       dias.push({
         a: Number(mData[1]),
         b: Number(mData[2]),
@@ -248,7 +265,8 @@ export function interpretarRdv(linhasDoDocumento) {
         y: linha.y,
         km_inicial: ki,
         km_final: kf,
-        itinerario: itinerarioDe(resto.map((t) => t.s)),
+        valor: valorDoDia(depoisDoKm),
+        itinerario: itinerarioDe(depoisDoKm),
       });
       continue;
     }
@@ -283,7 +301,10 @@ export function interpretarRdv(linhasDoDocumento) {
     for (const d of dias) {
       const par = paginasSoltas[paginasDeDias.indexOf(d.pagina)];
       const s = soltas.find((k) => k.pagina === par && Math.abs(k.y - d.y) <= 3);
-      if (s) d.itinerario = itinerarioDe(s.palavras);
+      if (s) {
+        d.itinerario = itinerarioDe(s.palavras);
+        d.valor = valorDoDia(s.palavras);
+      }
     }
   }
 
@@ -311,7 +332,9 @@ export function interpretarRdv(linhasDoDocumento) {
       itinerario: d.itinerario,
       pedagio: 0,
       estacionamento: 0,
-      combustivel: 0,
+      // No formulario de carro da empresa o valor do dia e o abastecimento; no
+      // comum e so km x taxa, que o portal recalcula.
+      combustivel: temCombustivel ? d.valor || 0 : 0,
     });
   }
 
@@ -326,7 +349,13 @@ export function interpretarRdv(linhasDoDocumento) {
     placas,
     linhas,
     totais_declarados: totais,
-    confianca: totais.valor_total_km != null && totais.total_km != null ? 'alta' : 'media',
+    // No formulario de carro da empresa o total de km costuma sair "#VALUE!"
+    // (um "Feriado" escrito na coluna de km quebra a soma da planilha); ali o
+    // que confirma a leitura e a soma do combustivel bater com o "KM R$".
+    confianca: totais.valor_total_km != null && (totais.total_km != null
+      || (temCombustivel && Math.round(linhas.reduce((s, l) => s + l.combustivel, 0) * 100)
+        === Math.round(totais.valor_total_km * 100)))
+      ? 'alta' : 'media',
     problemas_de_leitura: [],
   };
 }
@@ -357,13 +386,11 @@ export async function subtotalDoRdv(caminho) {
 
 /**
  * Le um RDV em PDF por codigo. Devolve null quando nao da - PDF sem texto, ou
- * que nao e o formulario, ou o de gerente (tem coluna de combustivel por dia,
- * que este leitor ainda nao conhece) - e ai quem chamou decide o que fazer.
+ * que nao e o formulario - e ai quem chamou decide o que fazer. Le o formulario
+ * comum (km x taxa) e o de carro da empresa (combustivel por dia).
  */
 export async function lerRdvPorCodigo(caminho) {
   const linhas = await linhasDoPdf(caminho);
-  const temCombustivel = linhas.some((l) => /COMBUST/i.test(semAcento(l.tokens.map((t) => t.s).join(' '))));
-  if (temCombustivel) return null;
   const dados = interpretarRdv(linhas);
   // Leitura que da um dia impossivel - odometro com mais de sete digitos, ou
   // milhares de km num dia - e texto grudado ou coluna trocada. Melhor dizer

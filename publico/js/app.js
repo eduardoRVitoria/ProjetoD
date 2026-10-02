@@ -121,7 +121,10 @@ let sujo = false;
 let salvando = false;
 
 // Gerente (e coordenador, mesma regra) e reembolsado pelo combustivel abastecido, nao pelo km.
-const ehGerente = () => eu?.funcao === 'Gerente' || eu?.funcao === 'Coordenador';
+// Pago pelo combustivel: gerente e coordenador, e quem tem carro da empresa e
+// lancou combustivel por dia (o RDV "Carro da Empresa"). Mesma regra do servidor.
+const ehGerente = () => eu?.funcao === 'Gerente' || eu?.funcao === 'Coordenador'
+  || (eu?.carro === 'empresa' && (estado?.grade || []).some((d) => Number(d.combustivel) > 0));
 // Carro da empresa nao precisa de foto do odometro.
 const carroDaEmpresa = () => eu?.carro === 'empresa';
 
@@ -684,7 +687,7 @@ async function enviarArquivos(arquivos) {
   // combustivel dos dias e conferido.
   // Hotel e outras despesas tambem: a soma dos comprovantes e conferida contra
   // o que o RDV declara.
-  if ((tipoEmUso === 'danfe' && ehGerente()) || tipoEmUso === 'hotel' || tipoEmUso === 'outras_despesas') {
+  if ((tipoEmUso === 'danfe' && (ehGerente() || eu?.carro === 'empresa')) || tipoEmUso === 'hotel' || tipoEmUso === 'outras_despesas') {
     for (const arquivo of arquivos) {
       const valor = await pedirValorDaNota(arquivo, tipoEmUso);
       if (valor === null) {

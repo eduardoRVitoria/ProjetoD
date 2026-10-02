@@ -25,6 +25,7 @@ import {
   achadoDaIaSobrePedagio,
   gravidadeDoAchadoDaIa,
   ehGerente,
+  pagoPorCombustivel,
   dataValida,
   VERSAO_REGRAS,
 } from './conferencia.js';
@@ -996,7 +997,8 @@ async function subirAnexo(req, res, url, usuario) {
     if (!Number.isFinite(valorNota) || valorNota <= 0) return erro(res, 'Valor da nota invalido.');
     if (valorNota > 100_000) return erro(res, 'Esse valor de nota parece alto demais. Confira.');
   }
-  if (tipo === 'danfe' && ehGerente(usuario.funcao) && valorNota == null) {
+  // Carro da empresa tambem: e com a soma das notas que o combustivel e conferido.
+  if (tipo === 'danfe' && (ehGerente(usuario.funcao) || usuario.carro === 'empresa') && valorNota == null) {
     return erro(res, 'Digite o valor total da nota de abastecimento.');
   }
   // Hotel e outras despesas: a soma dos comprovantes e conferida contra o RDV.
@@ -1301,7 +1303,7 @@ function relatorioDetalhe(res, url, quem) {
   const id = Number(url.searchParams.get('id'));
   const rel = db
     .prepare(
-      `SELECT r.*, u.nome, u.login, u.placas, u.empresa, u.funcao FROM relatorios r
+      `SELECT r.*, u.nome, u.login, u.placas, u.empresa, u.funcao, u.carro FROM relatorios r
          JOIN usuarios u ON u.id = r.usuario_id WHERE r.id = ?`,
     )
     .get(id);
@@ -1343,7 +1345,7 @@ function relatorioDetalhe(res, url, quem) {
     pendencias_agora: pendenciasAgora,
     // Para a tela de edicao refazer as contas enquanto o admin digita.
     valor_do_km: valorDoKm(),
-    gerente: ehGerente(rel.funcao),
+    gerente: pagoPorCombustivel(rel.funcao, rel.carro, linhas),
   });
 }
 
