@@ -1205,8 +1205,13 @@ async function enviarDeVerdade() {
   // sem a nota de abastecimento - e esse fluxo existe de proposito, e o status
   // "So falta DANFE". Entao a tela so trava no que o servidor tambem recusa; o
   // resto vira um aviso com confirmacao.
-  const travam = erros.filter((e) => TRAVAM_O_ENVIO.has(e.codigo));
-  const avisam = erros.filter((e) => !TRAVAM_O_ENVIO.has(e.codigo));
+  // RDV escaneado lido por OCR: digito trocado e leitura incerta sao erro da
+  // leitura do portal, nao da pessoa - nao travam o envio (igual ao servidor).
+  const lidoPorOcr = estado.relatorio?.extraido?.lido_por === 'ocr';
+  const trava = (e) => TRAVAM_O_ENVIO.has(e.codigo)
+    && !(lidoPorOcr && ['km_invertido', 'leitura_incerta'].includes(e.codigo));
+  const travam = erros.filter(trava);
+  const avisam = erros.filter((e) => !trava(e));
 
   if (travam.some((e) => e.codigo === 'aumento_sem_justificativa')) {
     // Nao basta mandar para a Conferencia: a caixa ja abre escrita e focada,

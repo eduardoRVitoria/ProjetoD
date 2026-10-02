@@ -168,6 +168,43 @@ try {
   assert.equal((await noPainel()).impresso_em, null);
   assert.equal((await chamar('/api/admin/impresso', { relatorio_id: 999999, impresso: true })).status, 404);
 
+  // ---- Totais do admin e decisao na mao (o caso do RDV escaneado lido com
+  // 0 km por dia: o admin acerta o total, aprova, e a conferencia nao desfaz).
+  db.prepare('UPDATE linhas SET km_inicial = 1000, km_final = 1000 WHERE relatorio_id = ?').run(rel);
+  assert.equal((await editar({ valores: { total_km: 110, valor_km: 99 } })).status, 200);
+  d = await ver();
+  assert.equal(d.relatorio.totais_do_admin, 1);
+  const agoraCodigos = d.pendencias_agora.achados.map((a) => a.codigo);
+  assert.ok(!agoraCodigos.includes('soma_km') && !agoraCodigos.includes('valor_km'), agoraCodigos.join(','));
+  assert.ok(agoraCodigos.includes('totais_do_admin'));
+  assert.equal(d.pendencias_agora.totalKm, 110);
+  assert.equal(d.pendencias_agora.valorKm, 99);
+
+  // Aprovado na mao; conferir de novo acha erro (um sabado lancado) e mesmo
+  // assim o relatorio continua aprovado.
+  db.prepare(
+    "INSERT INTO linhas (relatorio_id, data, km_inicial, km_final, itinerario, ordem) VALUES (?, '2026-09-05', 1110, 1160, 'SABADO', 9)",
+  ).run(rel);
+  assert.equal((await chamar('/api/admin/decidir', { relatorio_id: rel, status: 'CERTA', o_que_fazer: '' })).status, 200);
+  const reconferido = await chamar('/api/admin/conferir', { relatorio_id: rel });
+  assert.equal(reconferido.status, 200, JSON.stringify(reconferido.dados));
+  assert.equal(reconferido.dados.status, 'CERTA', 'a decisao do conferente se mantem');
+  d = await ver();
+  assert.equal(d.relatorio.status, 'CERTA');
+  assert.equal(d.relatorio.decisao_manual, 'CERTA');
+  assert.ok(d.relatorio.achados.some((a) => a.gravidade === 'erro'), 'os achados continuam aparecendo');
+  assert.equal(d.relatorio.achados[0].codigo, 'decisao_manual');
+
+  // KM de foto digitado com virgula de milhar volta a ser inteiro.
+  assert.equal((await editar({ anexos: [{ id: foto, km: 113.436 }] })).status, 200);
+  assert.equal((await ver()).anexos.find((a) => a.id === foto).km, 113436);
+
+  // Reprovar na mao tambem se mantem; e a edicao so dos dias devolve a conta
+  // para a soma deles.
+  assert.equal((await chamar('/api/admin/decidir', { relatorio_id: rel, status: 'ERRADA', o_que_fazer: 'x' })).status, 200);
+  assert.equal((await editar({ linhas: [{ id: linha, km_inicial: 1000, km_final: 1110, itinerario: 'A - B', pedagio: 0, estacionamento: 0, combustivel: 0 }] })).status, 200);
+  assert.equal((await ver()).relatorio.totais_do_admin, 0);
+
   // Comprovado em branco apaga a correcao do admin.
   assert.equal((await editar({ valores: { pedagio_comprovado: '' } })).status, 200);
   d = await ver();
@@ -191,9 +228,16 @@ try {
   console.log('OK - admin edita totais, dias e comprovantes; o declarado acompanha e o resto e recusado');
 } catch (e) {
   console.error(saida.slice(-2000));
-  throw e;
+  console.error(e);
+  process.exitCode = 1;
 } finally {
   srv.kill();
   await new Promise((r) => srv.once('exit', r));
-  fs.rmSync(dados, { recursive: true, force: true });
+  // Com o teste falhando o banco fica aberto, e o Windows nao deixa apagar: a
+  // limpeza nao pode esconder o erro de verdade.
+  try {
+    fs.rmSync(dados, { recursive: true, force: true });
+  } catch {
+    // pasta temporaria - o sistema limpa
+  }
 }

@@ -645,6 +645,9 @@ async function lerRdv(req, res, usuario) {
   try {
     const saida = await extrairDoRdv(arquivos, mes);
     extraido = saida.extraido;
+    // Por texto, por OCR ou pela IA: quem confere e quem deixa enviar precisam
+    // saber o quanto confiar nos dias lidos.
+    extraido.lido_por = saida.por || 'ia';
     log.info('rdv', { codigo: 'lido por codigo', ocr: 'lido por OCR (escaneado)' }[saida.por] || 'lido pela IA', {
       quem: usuario.login, mes, linhas: extraido.linhas.length, levou: log.desde(comecouEm),
     });
@@ -714,7 +717,7 @@ async function lerRdv(req, res, usuario) {
 
     // Guarda tambem o que o documento declarava, para a conferencia comparar.
     db.prepare(
-      `UPDATE relatorios SET extraido = ?, extraido_em = ? WHERE id = ?`,
+      `UPDATE relatorios SET extraido = ?, extraido_em = ?, totais_do_admin = 0 WHERE id = ?`,
     ).run(JSON.stringify(extraido), agora(), rel.id);
 
     const linhas = linhasDo(rel.id);
@@ -851,9 +854,22 @@ async function enviarRelatorio(req, res, usuario) {
   // Bloqueios duros: coisas que a pessoa consegue resolver sozinha antes de enviar.
   // A soma de km e o valor NAO entram aqui: com o RDV vindo de PDF, a divergencia
   // e do documento dela, e quem decide o que fazer com isso e a conferencia.
+  // RDV escaneado, lido por OCR: digito trocado ou dia que nao saiu e erro da
+  // LEITURA do portal, nao da pessoa. Travar o envio por isso deixava preso um
+  // relatorio que estava certo no papel. Vai adiante, e quem confere acerta os
+  // numeros no "Editar valores" olhando o documento.
+  let lidoPorOcr = false;
+  try {
+    lidoPorOcr = JSON.parse(rel.extraido || '{}')?.lido_por === 'ocr';
+  } catch {
+    lidoPorOcr = false;
+  }
+  const DA_LEITURA = ['km_invertido', 'leitura_incerta'];
+
   const bloqueios = r.achados.filter(
     (a) =>
       a.gravidade === 'erro' &&
+      !(lidoPorOcr && DA_LEITURA.includes(a.codigo)) &&
       [
         'km_invertido',
         'sem_linhas',
@@ -895,8 +911,9 @@ async function enviarRelatorio(req, res, usuario) {
     `UPDATE relatorios SET status = 'ENVIADO', enviado_em = ?, achados = NULL, parecer_ia = NULL,
             o_que_fazer = NULL, conferido_em = NULL, pedagio_comprovado = NULL,
             pedagio_comprovado_admin = NULL,
-            -- Reenviou: o que estava impresso era a versao antiga.
-            impresso_em = NULL, impresso_por = NULL
+            -- Reenviou: o que estava impresso era a versao antiga, e a decisao
+            -- do conferente era sobre ela.
+            impresso_em = NULL, impresso_por = NULL, decisao_manual = NULL
       WHERE id = ?`,
   ).run(agora(), rel.id);
 
@@ -1466,6 +1483,16 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
 
   await garantirSubtotal(rel, anexos);
   const kmConsertado = consertarKmComPonto(linhas);
+  // KM de foto gravado com fracao ("113,436"): e 113.436 digitado com a
+  // virgula no lugar do ponto. Volta a ser inteiro, na lista e no banco.
+  for (const a of anexos) {
+    if (a.tipo !== 'odometro' || a.km == null) continue;
+    const inteiro = odometroInteiro(a.km);
+    if (inteiro !== Number(a.km)) {
+      a.km = inteiro;
+      db.prepare('UPDATE anexos SET km = ? WHERE id = ?').run(inteiro, a.id);
+    }
+  }
   const porRegra = conferirRel(rel, linhas, anexos);
   // Os dias mudaram: o total de km e o valor gravados eram a soma errada.
   if (kmConsertado) {
@@ -1680,14 +1707,41 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
 
   const erros = achados.filter((a) => a.gravidade === 'erro');
   const soDanfe = erros.length === 1 && erros[0].codigo === 'sem_danfe';
-  const status = erros.length === 0 ? 'CERTA' : soDanfe ? 'SO_FALTA_DANFE' : 'ERRADA';
+  const statusDaConferencia = erros.length === 0 ? 'CERTA' : soDanfe ? 'SO_FALTA_DANFE' : 'ERRADA';
+
+  // A decisao que o conferente tomou na mao se mantem. Conferir de novo
+  // atualiza os achados - para ele ver o que a conferencia aponta hoje -, mas
+  // quem aprovou ou reprovou foi uma pessoa olhando o documento, e uma regra
+  // nova nao desfaz isso calada. So o reenvio pelo colaborador zera.
+  const manual = ['CERTA', 'SO_FALTA_DANFE', 'ERRADA'].includes(rel.decisao_manual) ? rel.decisao_manual : null;
+  const status = manual || statusDaConferencia;
+  if (manual && manual !== statusDaConferencia) {
+    const quem = db.prepare('SELECT nome FROM usuarios WHERE id = ?').get(rel.decidido_por)?.nome;
+    achados.unshift({
+      gravidade: 'aviso',
+      codigo: 'decisao_manual',
+      mensagem: `${manual === 'CERTA' ? 'Aprovado' : manual === 'ERRADA' ? 'Reprovado' : 'Marcado como so falta DANFE'} na mao`
+        + `${quem ? ` por ${quem}` : ''}. A conferencia automatica daria "${ROTULO_STATUS[statusDaConferencia]}"; `
+        + 'a decisao do conferente foi mantida.',
+      data: null,
+    });
+  }
+  // Fica no registro do servidor o que cada conferencia concluiu: e o que
+  // permite responder "por que o relatorio de fulano saiu reprovado".
+  log.info('conferencia', `${rel.status} -> ${status}`, {
+    rel: rel.id,
+    de: usuario.nome,
+    automatica: statusDaConferencia,
+    manual: manual || undefined,
+    erros: erros.map((e) => e.codigo).join(',') || 'nenhum',
+  });
 
   // Se a IA quis reprovar por pedagio, o "o que fazer" dela manda corrigir o
   // que nao esta errado. Nesse caso vale o texto montado dos erros de verdade.
   const iaErrouDePedagio = (parecer?.achados || []).some(
     (a) => a.gravidade === 'erro' && gravidadeDoAchadoDaIa(a) === 'aviso',
   );
-  const oQueFazer =
+  const oQueFazer = manual ? (rel.o_que_fazer || '') :
     (iaErrouDePedagio ? '' : textoDaIa(parecer?.o_que_fazer, 220))
     || (status === 'CERTA'
       ? ''
@@ -1717,7 +1771,8 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
       ? (parecer.pedagio_comprovado ?? rel.pedagio_comprovado ?? null)
       : parecer ? Number(parecer.pedagio_comprovado ?? 0) : comprovadoDoAdmin,
     agora(),
-    decididoPor,
+    // Com decisao na mao, quem decidiu continua sendo quem decidiu.
+    manual ? rel.decidido_por : decididoPor,
     porRegra.pedagioDeclarado,
     porRegra.estacDeclarado,
     // Em que versao das regras este parecer foi julgado. E o que permite o
@@ -1889,8 +1944,9 @@ async function decidir(req, res, admin) {
   }
 
   db.prepare(
-    'UPDATE relatorios SET status = ?, o_que_fazer = ?, conferido_em = ?, decidido_por = ? WHERE id = ?',
-  ).run(status, String(o_que_fazer || '').slice(0, 2000), agora(), admin.id, rel.id);
+    `UPDATE relatorios SET status = ?, o_que_fazer = ?, conferido_em = ?, decidido_por = ?,
+            decisao_manual = ? WHERE id = ?`,
+  ).run(status, String(o_que_fazer || '').slice(0, 2000), agora(), admin.id, status, rel.id);
 
   // A decisao que libera ou trava o reembolso. O banco guarda so o estado
   // final; o log guarda a sequencia - quem decidiu o que, e quando mudou de
@@ -1982,12 +2038,14 @@ async function editarRelatorio(req, res, admin) {
     outros_declarado: 'outras despesas',
   };
   const novos = {};
+  let totaisEditados = false;
   for (const [campo, nome] of Object.entries(NOMES)) {
     if (valores[campo] === undefined) continue;
     const n = campo === 'total_km'
       ? valorDe(valores[campo], nome, 9_999_999)
       : Number(valorDe(valores[campo], nome).toFixed(2));
     novos[campo] = n;
+    if (campo === 'total_km' || campo === 'valor_km') totaisEditados = true;
     sets.push(`${campo} = ?`);
     args.push(n);
     mudou.push(`${campo}: ${rel[campo]} -> ${n}`);
@@ -2011,8 +2069,10 @@ async function editarRelatorio(req, res, admin) {
     linhasNovas.push({
       id: atual.id,
       data: atual.data,
-      km_inicial: valorDe(l.km_inicial, `KM inicial de ${dia}`, 9_999_999),
-      km_final: valorDe(l.km_final, `KM final de ${dia}`, 9_999_999),
+      // "111,961" digitado com virgula de milhar viraria 111,961 km: painel nao
+      // marca fracao.
+      km_inicial: odometroInteiro(valorDe(l.km_inicial, `KM inicial de ${dia}`, 9_999_999)),
+      km_final: odometroInteiro(valorDe(l.km_final, `KM final de ${dia}`, 9_999_999)),
       itinerario: String(l.itinerario || '').trim().slice(0, 500),
       pedagio: Number(valorDe(l.pedagio, `pedagio de ${dia}`).toFixed(2)),
       estacionamento: Number(valorDe(l.estacionamento, `estacionamento de ${dia}`).toFixed(2)),
@@ -2032,7 +2092,7 @@ async function editarRelatorio(req, res, admin) {
       novo.valor = vazio(a.valor) ? null : Number(valorDe(a.valor, `valor de ${atual.nome_original}`, 100_000).toFixed(2));
     }
     if (a.km !== undefined && atual.tipo === 'odometro') {
-      novo.km = vazio(a.km) ? null : valorDe(a.km, `KM da foto ${atual.nome_original}`, 9_999_999);
+      novo.km = vazio(a.km) ? null : odometroInteiro(valorDe(a.km, `KM da foto ${atual.nome_original}`, 9_999_999));
     }
     if (a.data_leitura !== undefined && atual.tipo === 'odometro') {
       if (vazio(a.data_leitura)) novo.data_leitura = null;
@@ -2108,6 +2168,11 @@ async function editarRelatorio(req, res, admin) {
         args.push(JSON.stringify(doPdf));
       }
     }
+
+    // Total de km ou valor digitado na mao: a conferencia passa a usar esses
+    // totais. Mexer so nos dias devolve a conta para a soma deles.
+    if (totaisEditados) sets.push('totais_do_admin = 1');
+    else if (linhasNovas.length) sets.push('totais_do_admin = 0');
 
     if (sets.length) {
       db.prepare(`UPDATE relatorios SET ${sets.join(', ')} WHERE id = ?`).run(...args, rel.id);

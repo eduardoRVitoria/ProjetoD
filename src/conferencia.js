@@ -82,10 +82,13 @@ const HORA_LIMITE = 18;
 //  21  o RDV de combustivel por dia ("Carro da Empresa") vale como carro da
 //      empresa mesmo com o cadastro dizendo carro pessoal: nao cobra foto do
 //      odometro e paga pelo combustivel.
+//  22  totais digitados pelo admin valem na conferencia (nao se cobra mais a
+//      soma dos dias nem a leitura incerta), e a decisao tomada na mao pelo
+//      conferente se mantem ao conferir de novo.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 21;
+export const VERSAO_REGRAS = 22;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -489,7 +492,7 @@ export function conferir(
   }
 
   // -------------------------------------------------------------- 4. totais
-  const totalKm = linhas.reduce(
+  let totalKm = linhas.reduce(
     (s, l) => s + Math.max(0, num(l.km_final) - num(l.km_inicial)),
     0,
   );
@@ -498,7 +501,17 @@ export function conferir(
   const totalCombustivel = Number(
     linhas.reduce((s, l) => s + num(l.combustivel), 0).toFixed(2),
   );
-  const valorKm = gerente ? totalCombustivel : Number((totalKm * num(vlrKm)).toFixed(2));
+  let valorKm = gerente ? totalCombustivel : Number((totalKm * num(vlrKm)).toFixed(2));
+
+  // Totais digitados pelo admin ("Editar valores"): ele abriu o documento e
+  // corrigiu o total de km e o valor na mao. Valem esses numeros - cobrar a
+  // soma dos dias de volta desfazia a correcao dele e reprovava um relatorio
+  // que ele tinha acabado de acertar (o RDV escaneado lido com 0 km por dia).
+  const totaisDoAdmin = Boolean(rel.totais_do_admin);
+  if (totaisDoAdmin) {
+    totalKm = num(rel.total_km);
+    valorKm = Number(num(rel.valor_km).toFixed(2));
+  }
 
   // Quando o RDV veio de PDF, o total que vale para a comparacao e o que a
   // PESSOA escreveu no documento, nao o que o sistema gravou. E aqui que o erro
@@ -522,7 +535,7 @@ export function conferir(
   const declaradoKm = declaradoKmLido == null ? null : totalDeKmDeclarado(declaradoKmLido, totalKm);
   const declaradoValor = declaradoOuNulo(doPdf?.totais_declarados?.valor_total_km ?? rel.valor_km);
 
-  if (declaradoKm != null && !perto(totalKm, declaradoKm, 0.5)) {
+  if (!totaisDoAdmin && declaradoKm != null && !perto(totalKm, declaradoKm, 0.5)) {
     const dif = totalKm - declaradoKm;
     achados.push(
       achado(
@@ -535,7 +548,16 @@ export function conferir(
   }
 
   // Sem tolerancia: o valor tem que ser a conta exata, em centavos.
-  if (gerente) {
+  if (totaisDoAdmin) {
+    achados.push(
+      achado(
+        'aviso',
+        'totais_do_admin',
+        `Total de km (${totalKm.toLocaleString('pt-BR')}) e valor (${brl(valorKm)}) digitados pelo administrador: `
+          + 'valem esses numeros, nao a soma dos dias lidos do arquivo.',
+      ),
+    );
+  } else if (gerente) {
     if (declaradoValor != null && Math.round(valorKm * 100) !== Math.round(declaradoValor * 100)) {
       achados.push(
         achado(
@@ -562,12 +584,17 @@ export function conferir(
   // A leitura do documento pode ter falhado - isso precisa aparecer, senao a
   // conferencia julga em cima de dado que ninguem conferiu.
   if (doPdf) {
-    if (doPdf.confianca === 'baixa') {
+    if (totaisDoAdmin) {
+      // O admin ja conferiu o documento e acertou os numeros: a leitura
+      // incerta deixou de ser pendencia.
+    } else if (doPdf.confianca === 'baixa') {
       achados.push(
         achado(
           'erro',
           'leitura_incerta',
-          'A leitura do arquivo do RDV ficou incerta. Confira os dias extraidos antes de aprovar, ou peca o relatorio em PDF legivel.',
+          doPdf.lido_por === 'ocr'
+            ? 'O RDV veio escaneado e a leitura automatica nao fechou com o total do documento. Confira os km de cada dia com o arquivo e acerte no "Editar valores".'
+            : 'A leitura do arquivo do RDV ficou incerta. Confira os dias extraidos antes de aprovar, ou peca o relatorio em PDF legivel.',
         ),
       );
     } else if (doPdf.confianca === 'media') {

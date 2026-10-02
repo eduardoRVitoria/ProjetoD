@@ -152,6 +152,24 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     // controle existir, ou seja, antigo - que e a verdade.
     db.exec('ALTER TABLE relatorios ADD COLUMN versao_regras INTEGER');
   }
+  if (!colunas.has('decisao_manual')) {
+    // A decisao que o conferente tomou NA MAO (aprovar, reprovar). Enquanto
+    // existir, conferir de novo atualiza os achados mas nao troca o status: sem
+    // isto, um relatorio aprovado pelo admin voltava a "reprovado" a cada
+    // reconferencia. O reenvio pelo colaborador zera.
+    db.exec('ALTER TABLE relatorios ADD COLUMN decisao_manual TEXT');
+    // 1 = o total de km e o valor do km foram digitados pelo admin. A
+    // conferencia passa a usar esses totais, em vez de cobrar a soma dos dias.
+    db.exec('ALTER TABLE relatorios ADD COLUMN totais_do_admin INTEGER NOT NULL DEFAULT 0');
+    // Quem ja estava aprovado na mao antes de a coluna existir: aprovado, com
+    // erro no parecer, so pode ter sido uma pessoa passando por cima da
+    // conferencia. Esses ganham a marca, para a proxima mudanca de regra nao
+    // reprovar de volta.
+    db.exec(`
+      UPDATE relatorios SET decisao_manual = 'CERTA'
+       WHERE status = 'CERTA' AND decidido_por IS NOT NULL
+         AND achados LIKE '%"gravidade":"erro"%'`);
+  }
   if (!colunas.has('impresso_em')) {
     // Marca de "ja imprimi os comprovantes desta pessoa neste mes", posta na
     // mao por quem confere. Guarda quando e quem marcou.
