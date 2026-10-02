@@ -143,6 +143,20 @@ try {
   assert.equal(d.anexos.find((a) => a.id === foto).km, 1110);
   assert.equal((await editar({ anexos: [{ id: foto, data_leitura: '2026-13-45' }] })).status, 400, 'dia que nao existe');
 
+  // O caderno de impressao sai mesmo com nome de arquivo que a fonte do PDF nao
+  // escreve: acento separado da letra (iPhone), marca invisivel e emoji do
+  // WhatsApp. Um nome assim derrubava a impressao do mes inteiro.
+  db.prepare(
+    `INSERT INTO anexos (relatorio_id, tipo, nome_original, arquivo, mime, tamanho, enviado_em)
+     VALUES (?, 'pedagio', ?, 'nao-existe-2.pdf', 'application/pdf', 10, ?)`,
+  ).run(rel, 'Pedágio à vista ‎\u{1F697}.pdf', agora);
+  for (const rota of ['/api/admin/impressao?mes=2026-09', `/api/admin/impressao?mes=2026-09&usuario_id=${vendedor}`]) {
+    const caderno = await fetch(base + rota, { headers: { cookie: `sid=${token}` } });
+    assert.equal(caderno.status, 200, `${rota}: ${caderno.status}`);
+    assert.equal(caderno.headers.get('content-type'), 'application/pdf');
+    assert.ok((await caderno.arrayBuffer()).byteLength > 500);
+  }
+
   // Comprovado em branco apaga a correcao do admin.
   assert.equal((await editar({ valores: { pedagio_comprovado: '' } })).status, 200);
   d = await ver();

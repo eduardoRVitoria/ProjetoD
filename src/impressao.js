@@ -78,8 +78,27 @@ function anexosParaImprimir(mes, usuarioId = null, escopo = null) {
     .all(...args);
 }
 
+/**
+ * O texto do jeito que a fonte do caderno consegue escrever.
+ *
+ * A fonte padrao do PDF so tem as letras do alfabeto ocidental. Nome de arquivo
+ * vindo de iPhone traz o acento separado da letra ("a" + "`" em vez de "à"), e
+ * o do WhatsApp traz marcas invisiveis e emoji. Um caractere desses derrubava
+ * o caderno INTEIRO com erro - a Adm DSO nao conseguia imprimir nada do mes
+ * por causa do nome de um arquivo. Aqui o acento volta a ser uma letra so, e o
+ * que a fonte nao tem vira "?".
+ */
+export function noPapel(texto, fonte) {
+  const tem = new Set(fonte.getCharacterSet());
+  return String(texto ?? '')
+    .normalize('NFC')
+    .replace(/\t/g, '    ')
+    .replace(/[^\r\n]/gu, (c) => (tem.has(c.codePointAt(0)) ? c : /\p{M}|\p{Cf}|\p{Cc}/u.test(c) ? '' : '?'));
+}
+
 /** Quebra o texto para caber na largura da folha, sem cortar palavra no meio. */
-function quebrarLinhas(texto, fonte, tamanho, larguraMax) {
+function quebrarLinhas(textoBruto, fonte, tamanho, larguraMax) {
+  const texto = noPapel(textoBruto, fonte);
   const saida = [];
   for (const linha of String(texto).split(/\r?\n/)) {
     if (!linha.trim()) {
@@ -128,7 +147,7 @@ function paginasDeTexto(pdf, fonte, fonteTitulo, titulo, texto) {
     pagina = pdf.addPage([A4.largura, A4.altura]);
     y = A4.altura - MARGEM;
     if (comTitulo) {
-      pagina.drawText(titulo, { x: MARGEM, y: y - 12, size: 11, font: fonteTitulo, color: rgb(0.1, 0.1, 0.1) });
+      pagina.drawText(noPapel(titulo, fonteTitulo), { x: MARGEM, y: y - 12, size: 11, font: fonteTitulo, color: rgb(0.1, 0.1, 0.1) });
       y -= 34;
     }
   };
@@ -148,7 +167,7 @@ async function paginaDeImagem(pdf, fonteTitulo, titulo, bytes, ext) {
   const img = IMAGENS_JPG.has(ext) ? await pdf.embedJpg(bytes) : await pdf.embedPng(bytes);
   const pagina = pdf.addPage([A4.largura, A4.altura]);
 
-  pagina.drawText(titulo, {
+  pagina.drawText(noPapel(titulo, fonteTitulo), {
     x: MARGEM, y: A4.altura - MARGEM, size: 11, font: fonteTitulo, color: rgb(0.1, 0.1, 0.1),
   });
 
@@ -169,8 +188,8 @@ async function paginaDeImagem(pdf, fonteTitulo, titulo, bytes, ext) {
 function folhaDoColaborador(pdf, fonteTitulo, fonte, pessoa, info, quantos) {
   const pagina = pdf.addPage([A4.largura, A4.altura]);
   const meio = A4.altura / 2;
-  pagina.drawText(pessoa, { x: MARGEM, y: meio + 20, size: 22, font: fonteTitulo, color: rgb(0, 0, 0) });
-  pagina.drawText(info, { x: MARGEM, y: meio - 8, size: 12, font: fonte, color: rgb(0.35, 0.35, 0.35) });
+  pagina.drawText(noPapel(pessoa, fonteTitulo), { x: MARGEM, y: meio + 20, size: 22, font: fonteTitulo, color: rgb(0, 0, 0) });
+  pagina.drawText(noPapel(info, fonte), { x: MARGEM, y: meio - 8, size: 12, font: fonte, color: rgb(0.35, 0.35, 0.35) });
   pagina.drawText(`${quantos} documento(s)`, {
     x: MARGEM, y: meio - 28, size: 11, font: fonte, color: rgb(0.35, 0.35, 0.35),
   });
