@@ -7,14 +7,6 @@ import { fimDeSemana, nomeDoFeriado, diaDaSemana } from './feriados.js';
 import { MARGEM_AUMENTO } from './banco.js';
 import { totalDeKmDeclarado } from './util.js';
 
-// Entre dois dias uteis seguidos o carro nao tem por onde rodar muito fora do
-// trabalho - so a noite. Passou disto, e erro.
-const SALTO_DIA_UTIL = 600;
-
-// Com fim de semana ou feriado no meio, o salto grande so vira aviso (ver
-// USO_PARTICULAR_ESPERADO). Acima disto nem o fim de semana explica: e digito
-// trocado, outro carro, ou dia de outro mes. Continua erro.
-const SALTO_IMPOSSIVEL = 2000;
 // Distancia que nao cabe num dia de trabalho, de carro.
 export const KM_IMPOSSIVEL_NUM_DIA = 2000;
 
@@ -83,10 +75,12 @@ const HORA_LIMITE = 18;
 //  18  sabado e domingo com lancamento reprovam em todas as empresas - a DSO
 //      perdeu a excecao da versao 5. Combustivel de gerente no fim de semana
 //      tambem conta.
+//  19  saiu a regra do salto impossivel do odometro (KM inicial muito acima
+//      do KM final do dia anterior): nao reprova mais.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 18;
+export const VERSAO_REGRAS = 19;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -462,24 +456,11 @@ export function conferir(
       const lacuna = inicio - fimAnterior;
       const seguidos = diasSeguidos(ant.data, at.data);
 
-      // Entre dias uteis seguidos: ate 600 km passa calado (o aviso de
-      // qualquer diferenca saiu na versao 5), acima disso e erro.
-      //
-      // Com fim de semana ou feriado no meio, o carro roda por conta propria.
-      // Ate 2 mil km vira so aviso; acima nao existe explicacao inocente - um
-      // salto de 67.868 km entre sexta e segunda ja passou assim.
-      if (seguidos ? lacuna > SALTO_DIA_UTIL : lacuna > SALTO_IMPOSSIVEL) {
-        achados.push(
-          achado(
-            'erro',
-            'hodometro_salto',
-            `${dataBr(at.data)}: o KM inicial (${inicio.toLocaleString('pt-BR')}) esta `
-              + `${lacuna.toLocaleString('pt-BR')} km acima do KM final de ${dataBr(ant.data)} `
-              + `(${fimAnterior.toLocaleString('pt-BR')}). Confira se o numero foi digitado certo.`,
-            at.data,
-          ),
-        );
-      } else if (!seguidos && lacuna > USO_PARTICULAR_ESPERADO) {
+      // O salto do painel de um dia para o outro nao reprova mais (versao 19):
+      // a regra "salto impossivel" - mais de 600 km entre dias uteis seguidos,
+      // ou mais de 2 mil com fim de semana no meio - foi tirada a pedido do
+      // Eduardo em 02/10. Fica so o aviso de quando ha fim de semana no meio.
+      if (!seguidos && lacuna > USO_PARTICULAR_ESPERADO) {
         // Tem fim de semana no meio, mas rodar isso tudo fora do trabalho e
         // muito - vale a pessoa confirmar, sem travar o envio.
         achados.push(

@@ -55,3 +55,19 @@ assert.match(doDia[0].mensagem, /02\/09\/2026.*km num dia so.*61\.528.*1\.261\.5
 assert.ok(!r.achados.some((a) => a.codigo === 'km_do_dia_impossivel'));
 
 console.log('OK - ponto de milhar volta a ser milhar; dia com km impossivel reprova em vez de entrar no total');
+
+// A regra do "salto impossivel" saiu (versao 19): KM inicial muito acima do KM
+// final do dia anterior nao reprova mais, nem entre dias seguidos nem com fim
+// de semana no meio.
+const comSalto = conferir(
+  { mes_ref: '2026-09' },
+  [
+    { data: '2026-09-01', km_inicial: 1000, km_final: 1100, itinerario: 'A - B' },
+    { data: '2026-09-02', km_inicial: 9000, km_final: 9100, itinerario: 'B - C' },
+    { data: '2026-09-07', km_inicial: 99000, km_final: 99100, itinerario: 'C - D' },
+  ],
+  [{ tipo: 'rdv' }], 0.9, null, 'DSO', 'Vendedor',
+);
+assert.ok(!comSalto.achados.some((a) => a.codigo === 'hodometro_salto'));
+assert.ok(!comSalto.achados.some((a) => a.gravidade === 'erro' && /hodometro/.test(a.codigo)));
+console.log('OK - salto do odometro entre dias nao reprova mais');
