@@ -131,4 +131,14 @@ assert.equal(comCarro.valorKm, 302.83);
 assert.equal(comCarro.totalDoMes, 701.43);
 assert.deepEqual(comCarro.achados.filter((a) => a.gravidade === 'erro').map((a) => a.codigo), []);
 
+// Cadastro atrasado (carro pessoal) com o RDV de carro da empresa: o formulario
+// manda - nao cobra foto do odometro nem km x taxa.
+const cadastroAtrasado = conferir(relDoCarro, carroDaEmpresa.linhas, anexosDoCarro, 0.9, null, 'DSO', 'Supervisor', 'pessoal');
+assert.equal(cadastroAtrasado.valorKm, 302.83);
+assert.deepEqual(cadastroAtrasado.achados.filter((a) => a.gravidade === 'erro').map((a) => a.codigo), []);
+assert.ok(!cadastroAtrasado.achados.some((a) => /odometro/.test(a.codigo)), 'sem cobranca de foto');
+// Carro pessoal com o formulario comum continua devendo a foto.
+const pessoal = conferir({ mes_ref: '2026-08', extraido: JSON.stringify(normal) }, normal.linhas, [{ tipo: 'rdv' }], 0.9, null, 'DSO', 'Vendedor', 'pessoal');
+assert.ok(pessoal.achados.some((a) => a.codigo === 'sem_odometro'));
+
 console.log('OK - RDV lido por codigo: normal, Excel em ingles, planilha partida, carro da empresa e extrato recusado');

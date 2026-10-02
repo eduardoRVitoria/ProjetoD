@@ -745,6 +745,16 @@ async function lerRdv(req, res, usuario) {
 
     db.exec('COMMIT');
 
+    // RDV "Carro da Empresa" (combustivel por dia) de quem esta no cadastro
+    // com carro pessoal: o cadastro e que esta atrasado. Acerta aqui, para a
+    // tela dele parar de pedir foto do odometro e a nota passar a pedir o valor.
+    if (usuario.carro !== 'empresa' && extraido.linhas.some((l) => Number(l.combustivel) > 0)) {
+      db.prepare("UPDATE usuarios SET carro = 'empresa' WHERE id = ?").run(usuario.id);
+      log.info('relatorio', 'RDV de carro da empresa - cadastro passou para carro da empresa', {
+        quem: usuario.login, mes,
+      });
+    }
+
     // Se o documento trouxe placa e a pessoa ainda nao tem, aproveita.
     //
     // Passa pela peneira antes: isto grava no CADASTRO de uma pessoa a partir

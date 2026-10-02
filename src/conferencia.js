@@ -79,10 +79,13 @@ const HORA_LIMITE = 18;
 //      do KM final do dia anterior): nao reprova mais.
 //  20  quem tem carro da empresa e entrega o RDV de combustivel por dia e
 //      conferido como o gerente: recebe o combustivel, nao km x taxa.
+//  21  o RDV de combustivel por dia ("Carro da Empresa") vale como carro da
+//      empresa mesmo com o cadastro dizendo carro pessoal: nao cobra foto do
+//      odometro e paga pelo combustivel.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 20;
+export const VERSAO_REGRAS = 21;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -293,9 +296,13 @@ export function conferir(
   rel, linhas, anexos, vlrKm = 0.9, mesAnterior = null, empresa = null, funcao = null, carro = 'pessoal',
 ) {
   const achados = [];
-  // Pago pelo combustivel: gerente e coordenador sempre; e quem tem carro da
-  // empresa e entregou o formulario de combustivel por dia (supervisor com
-  // carro da empresa usa o mesmo RDV "Carro da Empresa" do gerente).
+  // Quem usa carro da empresa nao manda foto do odometro e recebe pelo
+  // combustivel. O cadastro diz quem e - mas ele costuma estar atrasado: o
+  // supervisor com carro da empresa entra como "carro pessoal" e era cobrado
+  // de foto e de km x taxa. O proprio RDV resolve: o formulario "Carro da
+  // Empresa" tem combustivel por dia, e quem entrega esse formulario usa carro
+  // da empresa (versao 21).
+  if ((Array.isArray(linhas) ? linhas : []).some((l) => Number(l?.combustivel) > 0)) carro = 'empresa';
   const gerente = pagoPorCombustivel(funcao, carro, linhas);
 
   // Dia com data que nao existe ("2026-13-45", campo em branco) vira pendencia

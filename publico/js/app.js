@@ -124,9 +124,12 @@ let salvando = false;
 // Pago pelo combustivel: gerente e coordenador, e quem tem carro da empresa e
 // lancou combustivel por dia (o RDV "Carro da Empresa"). Mesma regra do servidor.
 const ehGerente = () => eu?.funcao === 'Gerente' || eu?.funcao === 'Coordenador'
-  || (eu?.carro === 'empresa' && (estado?.grade || []).some((d) => Number(d.combustivel) > 0));
+  || (estado?.grade || []).some((d) => Number(d.combustivel) > 0);
 // Carro da empresa nao precisa de foto do odometro.
-const carroDaEmpresa = () => eu?.carro === 'empresa';
+// O cadastro, ou o proprio RDV: quem lancou combustivel por dia entregou o
+// formulario "Carro da Empresa".
+const carroDaEmpresa = () => eu?.carro === 'empresa'
+  || (estado?.grade || []).some((d) => Number(d.combustivel) > 0);
 
 // ------------------------------------------------------------------- inicio
 
@@ -687,7 +690,7 @@ async function enviarArquivos(arquivos) {
   // combustivel dos dias e conferido.
   // Hotel e outras despesas tambem: a soma dos comprovantes e conferida contra
   // o que o RDV declara.
-  if ((tipoEmUso === 'danfe' && (ehGerente() || eu?.carro === 'empresa')) || tipoEmUso === 'hotel' || tipoEmUso === 'outras_despesas') {
+  if ((tipoEmUso === 'danfe' && (ehGerente() || carroDaEmpresa())) || tipoEmUso === 'hotel' || tipoEmUso === 'outras_despesas') {
     for (const arquivo of arquivos) {
       const valor = await pedirValorDaNota(arquivo, tipoEmUso);
       if (valor === null) {
