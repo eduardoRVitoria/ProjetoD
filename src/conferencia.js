@@ -85,10 +85,12 @@ const HORA_LIMITE = 18;
 //  22  totais digitados pelo admin valem na conferencia (nao se cobra mais a
 //      soma dos dias nem a leitura incerta), e a decisao tomada na mao pelo
 //      conferente se mantem ao conferir de novo.
+//  23  PROMOTORES mandam foto do odometro todo dia rodado, nao so segunda de
+//      manha e sexta a noite.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 22;
+export const VERSAO_REGRAS = 23;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -789,9 +791,29 @@ export function conferir(
       achado(
         'erro',
         'sem_odometro',
-        'Nao foi enviada nenhuma foto do odometro. E preciso a foto de segunda de manha e a de sexta a noite de cada semana.',
+        empresa === 'PROMOTORES'
+          ? 'Nao foi enviada nenhuma foto do odometro. Promotor manda a foto do painel todo dia rodado.'
+          : 'Nao foi enviada nenhuma foto do odometro. E preciso a foto de segunda de manha e a de sexta a noite de cada semana.',
       ),
     );
+  } else if (empresa === 'PROMOTORES') {
+    // Promotor manda a foto todo dia rodado (pedido do Eduardo em 05/10).
+    const faltam = fotosQueFaltam(fotosDiarias(linhas, rel.mes_ref), fotos);
+    if (faltam.length > 0) {
+      const lista = faltam
+        .slice(0, 8)
+        .map((f) => `${diaDaSemana(f.data)} ${dataBr(f.data).slice(0, 5)}`)
+        .join(', ');
+      const resto = faltam.length > 8 ? ` e mais ${faltam.length - 8}` : '';
+      achados.push(
+        achado(
+          'aviso',
+          'odometro_incompleto',
+          `Falta${faltam.length > 1 ? 'm' : ''} ${faltam.length} foto(s) do odometro: ${lista}${resto}. `
+            + 'Promotor manda a foto do painel todo dia rodado.',
+        ),
+      );
+    }
   } else {
     // Uma foto no comeco e outra no fim de cada trecho de dias uteis. Feriado
     // parte a semana: com feriado na quarta, sao quatro fotos - segunda de
@@ -1144,6 +1166,15 @@ export function fotosEsperadas(linhas, mesRef) {
     fechar();
   }
   return esperadas;
+}
+
+/** Promotor: uma foto por dia rodado do mes. */
+export function fotosDiarias(linhas, mesRef) {
+  return [...new Set(
+    linhas
+      .filter((l) => Number(l.km_final) - Number(l.km_inicial) > 0 && String(l.data).startsWith(mesRef))
+      .map((l) => l.data),
+  )].sort().map((data) => ({ data, momento: 'dia' }));
 }
 
 /**

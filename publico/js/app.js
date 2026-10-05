@@ -137,6 +137,9 @@ try {
     ? 'Obrigatória: você é reembolsado pelo combustível. Ao anexar, digite o valor total da nota — '
       + 'a soma das notas tem que bater com o combustível lançado nos dias.'
     : 'Pode ser a DANFE, o cupom fiscal ou a foto da nota. Não reprova se faltar, mas ajuda a conferência.';
+  if (eu.empresa === 'PROMOTORES') {
+    $('texto-odometro').innerHTML = 'A foto do painel <strong>todo dia rodado</strong>. Tire direto pelo celular.';
+  }
   $('meu-nome').textContent = eu.nome;
   $('minhas-iniciais').textContent = String(eu.nome || '')
     .split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
