@@ -347,10 +347,8 @@ const FERRAMENTA = {
 
 // O que a pessoa le quando o portal nao conseguiu.
 const SEM_LEITURA_AUTOMATICA =
-  'Nao consegui ler esse arquivo sozinho. O que o portal le melhor e o RDV em PDF salvo direto '
-  + 'da planilha (Arquivo > Salvar como > PDF). Escaneado ou foto ele tambem le, mas precisa '
-  + 'estar inteiro, reto e nitido. Anexe de novo assim, ou use "Preencher na mao" para nao '
-  + 'travar o seu mes.';
+  'O portal nao conseguiu ler a tabela desse arquivo automaticamente. Clique em "Preencher na mao" '
+  + 'e digite os dias - o arquivo continua anexado e vai junto para a conferencia.';
 
 /**
  * Extrai a tabela do RDV a partir dos anexos marcados como o proprio relatorio.

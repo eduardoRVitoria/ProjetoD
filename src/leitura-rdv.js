@@ -444,6 +444,47 @@ function linhasDoOcr(lido, pagina) {
     .filter((l) => l.tokens.length);
 }
 
+/**
+ * Reserva para RDV escaneado de formulario diferente do nosso: cada linha com
+ * uma data seguida de dois numeros de odometro (o segundo maior, ate KM_NUM_DIA
+ * de diferenca) vira um dia. Nao le totais - sai como rascunho para conferir.
+ */
+export function diasSoltos(linhas) {
+  const brutos = [];
+  for (const l of linhas) {
+    const ss = l.tokens.map((t) => t.s.replace(/[|[\]()"'´`]/g, ''));
+    const iData = ss.findIndex((s) => DATA.test(s));
+    if (iData < 0) continue;
+    const [, d, m, a] = ss[iData].match(DATA);
+    const nums = [];
+    const palavras = [];
+    for (const s of ss.slice(iData + 1)) {
+      if (/^\d{1,3}(?:\.\d{3})+$|^\d{4,7}$/.test(s)) nums.push(Number(s.replace(/\./g, '')));
+      else if (/\p{L}{3,}/u.test(s)) palavras.push(s);
+    }
+    let par = null;
+    for (let j = 0; j + 1 < nums.length && !par; j++) {
+      const dif = nums[j + 1] - nums[j];
+      if (dif >= 0 && dif <= KM_NUM_DIA && nums[j] >= 100) par = [nums[j], nums[j + 1]];
+    }
+    if (!par) continue;
+    brutos.push({ dia: Number(d), mes: Number(m), ano: a, km_inicial: par[0], km_final: par[1], itinerario: palavras.join(' ') });
+  }
+  const anoLido = brutos.map((b) => b.ano).find(Boolean);
+  const ano = anoLido ? (anoLido.length === 2 ? `20${anoLido}` : anoLido) : String(new Date().getFullYear());
+  return brutos
+    .filter((b) => b.dia >= 1 && b.dia <= 31 && b.mes >= 1 && b.mes <= 12)
+    .map((b) => ({
+      data: `${ano}-${String(b.mes).padStart(2, '0')}-${String(b.dia).padStart(2, '0')}`,
+      km_inicial: b.km_inicial,
+      km_final: b.km_final,
+      itinerario: b.itinerario,
+      pedagio: 0,
+      estacionamento: 0,
+      combustivel: 0,
+    }));
+}
+
 const diasNoTexto = (texto) => (String(texto).match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g) || []).length;
 
 /**
@@ -470,7 +511,17 @@ export async function lerRdvEscaneado(imagens) {
     if (melhor) linhas.push(...linhasDoOcr(melhor.lido, pagina));
   }
 
-  const dados = interpretarRdv(linhas);
+  let dados = interpretarRdv(linhas);
+  let formularioDiferente = false;
+  if (!dados.linhas.length) {
+    const soltos = diasSoltos(linhas);
+    if (soltos.length) {
+      const contagem = new Map();
+      for (const l of soltos) contagem.set(l.data.slice(0, 7), (contagem.get(l.data.slice(0, 7)) || 0) + 1);
+      dados = { ...vazio(), linhas: soltos, mes_referencia: [...contagem.entries()].sort((a, b) => b[1] - a[1])[0][0] };
+      formularioDiferente = true;
+    }
+  }
   // Um digito mal lido nao joga fora o RDV inteiro: o dia impossivel sai da
   // leitura e a pessoa completa na mao. Antes, um so derrubava tudo e o
   // vendedor via "nao consegui ler" com o PDF certo na mao.
@@ -500,7 +551,9 @@ export async function lerRdvEscaneado(imagens) {
   if (fecha && (t.total_km == null || t.total_km !== km)) t.total_km = km;
 
   const problemas = [];
-  if (!fecha) problemas.push('O RDV veio escaneado ou em foto e a leitura automatica nao fechou com o total do documento. Confira os km de cada dia.');
+  if (formularioDiferente) {
+    problemas.push('O RDV escaneado nao e o formulario padrao: so os dias e os km foram lidos. Confira cada dia e preencha pedagio e totais.');
+  } else if (!fecha) problemas.push('O RDV veio escaneado ou em foto e a leitura automatica nao fechou com o total do documento. Confira os km de cada dia.');
   if (descartados.length) {
     problemas.push(`${descartados.length} dia(s) do RDV escaneado nao deram para ler (${descartados.slice(0, 5).join(', ')}) - preencha na mao.`);
   }
