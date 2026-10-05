@@ -87,10 +87,12 @@ const HORA_LIMITE = 18;
 //      conferente se mantem ao conferir de novo.
 //  23  PROMOTORES mandam foto do odometro todo dia rodado, nao so segunda de
 //      manha e sexta a noite.
+//  24  RDV lido com duvida (leitura_incerta): foto do odometro que nao bate
+//      com o RDV vira aviso - o erro pode ser da leitura, nao da foto.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 23;
+export const VERSAO_REGRAS = 24;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;
@@ -836,6 +838,16 @@ export function conferir(
     }
   }
 
+  // Com o RDV lido com duvida (escaneado que nao fechou com o total), os km
+  // dos dias podem estar errados: a foto que nao bate vira aviso. Reprovar
+  // aqui seria culpar o colaborador pela leitura do portal (Mauricio, 05/10).
+  const leituraDuvidosa = Boolean(doPdf) && !totaisDoAdmin && doPdf.confianca === 'baixa';
+  const DA_LEITURA = ' O RDV foi lido com duvida - pode ser a leitura do portal, e nao a foto.';
+  const daFoto = (gravidade, codigo, mensagem, data) =>
+    leituraDuvidosa && gravidade === 'erro'
+      ? achado('aviso', codigo, mensagem + DA_LEITURA, data)
+      : achado(gravidade, codigo, mensagem, data);
+
   // ------------------------------------------- 7.1 cada foto contra o SEU dia
   //
   // A checagem que faltava. Ate aqui a foto era comparada com o intervalo do
@@ -915,7 +927,7 @@ export function conferir(
       achados.push(
         porQue
           ? achado('aviso', 'foto_nao_bate_justificada', `${fato} Justificativa: "${porQue}"`, f.data_leitura)
-          : achado('erro', 'foto_nao_bate_com_o_dia', `${fato} Corrija o KM ou justifique.`, f.data_leitura),
+          : daFoto('erro', 'foto_nao_bate_com_o_dia', `${fato} Corrija o KM ou justifique.`, f.data_leitura),
       );
     }
   }
@@ -972,7 +984,7 @@ export function conferir(
 
       if (fora.length) {
         achados.push(
-          achado(
+          daFoto(
             'erro',
             'odometro_fora_do_rdv',
             `${fora.length} leitura(s) de odometro nao batem com o relatorio: ` +
