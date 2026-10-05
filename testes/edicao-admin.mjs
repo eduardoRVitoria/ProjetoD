@@ -232,6 +232,24 @@ try {
   await chamar('/api/relatorio?mes=2026-09');
   assert.equal((await chamar('/api/relatorio/enviar', { mes: '2026-09' })).status, 400);
 
+  // PDF com varias fotos do odometro: uma leitura (dia + KM) por foto vira um
+  // anexo por foto - antes era uma foto so, datada no dia do envio.
+  const { PDFDocument } = await import('pdf-lib');
+  const pdf = await PDFDocument.create();
+  pdf.addPage();
+  pdf.addPage();
+  const leituras = [{ data: '2026-09-01', km: 1000 }, { data: '2026-09-02', km: 1080 }];
+  const subida = await fetch(
+    `${base}/api/anexo?mes=2026-09&tipo=odometro&nome=fotos.pdf&leituras=${encodeURIComponent(JSON.stringify(leituras))}`,
+    { method: 'POST', headers: { cookie: `sid=${token}`, 'content-type': 'application/pdf', origin: base }, body: await pdf.save() },
+  );
+  const subiu = await subida.json();
+  assert.equal(subida.status, 200, JSON.stringify(subiu));
+  const fotosDoPdf = subiu.anexos.filter((a) => a.tipo === 'odometro');
+  assert.deepEqual(fotosDoPdf.map((a) => [a.data_leitura, a.km]), [['2026-09-01', 1000], ['2026-09-02', 1080]]);
+  const arquivos = db.prepare("SELECT arquivo FROM anexos WHERE nome_original LIKE 'fotos.pdf%' ORDER BY id").all().map((a) => a.arquivo);
+  assert.equal(new Set(arquivos).size, 2, 'cada foto com seu arquivo');
+
   // Colaborador nao chega na rota.
   entrarComo(vendedor);
   assert.equal((await editar({ valores: { valor_km: 1 } })).status, 403);

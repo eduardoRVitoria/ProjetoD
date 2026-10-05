@@ -742,11 +742,16 @@ function pedirKm(arquivo) {
           : `<img alt="foto do odômetro" id="previa-foto" class="foto-odometro">
         <p class="sub" style="font-size:13px">Toque na foto para ampliar.</p>`}
         <div id="recado-km"></div>
-        <label for="km-foto">KM que aparece no painel</label>
+        ${ehPdf
+          ? `<p class="sub" style="font-size:13px">Arquivo com várias fotos do painel? Uma linha
+               por foto: o dia e o KM de cada uma.</p>
+             <div id="linhas-km"></div>
+             <button type="button" class="pequeno secundario" id="mais-foto">+ outra foto</button>`
+          : `<label for="km-foto">KM que aparece no painel</label>
         <input type="text" id="km-foto" inputmode="numeric"
                placeholder="ex.: 271368" autocomplete="off">
         <label for="data-foto">Dia da foto</label>
-        <input type="date" id="data-foto" value="${hojeLocal()}">
+        <input type="date" id="data-foto" value="${hojeLocal().startsWith(mes) ? hojeLocal() : ''}">`}
         <div class="linha-botoes">
           <button id="km-ok">Anexar</button>
           <button class="secundario" id="km-cancela">Cancelar</button>
@@ -777,7 +782,23 @@ function pedirKm(arquivo) {
       document.body.appendChild(lupa);
     });
 
-    const campo = fundo.querySelector('#km-foto');
+    // PDF/PowerPoint: uma linha (dia + KM) por foto que o arquivo traz.
+    const linhasKm = fundo.querySelector('#linhas-km');
+    const novaLinha = () => {
+      const div = document.createElement('div');
+      div.className = 'linha-km';
+      div.style.cssText = 'display:flex;gap:8px;margin-bottom:8px';
+      div.innerHTML = `<input type="date" class="data-l" style="flex:1">
+        <input type="text" class="km-l" inputmode="numeric" placeholder="KM do painel" autocomplete="off" style="flex:1">`;
+      linhasKm.appendChild(div);
+      div.querySelector('.data-l').focus();
+    };
+    if (linhasKm) {
+      novaLinha();
+      fundo.querySelector('#mais-foto').addEventListener('click', novaLinha);
+    }
+
+    const campo = fundo.querySelector('#km-foto') || fundo.querySelector('.data-l');
     campo.focus();
 
     const fechar = (valor) => {
@@ -788,6 +809,22 @@ function pedirKm(arquivo) {
     };
 
     const confirmar = () => {
+      if (linhasKm) {
+        const lidas = [];
+        for (const div of linhasKm.querySelectorAll('.linha-km')) {
+          const data = div.querySelector('.data-l').value;
+          const bruto = div.querySelector('.km-l').value;
+          if (!data && !bruto.trim()) continue;
+          const kmL = lerNumeroBr(bruto, NaN);
+          if (!data) return mostrarRecado('recado-km', 'Falta o dia de uma das fotos.', 'erro');
+          if (!Number.isFinite(kmL) || kmL <= 0) {
+            return mostrarRecado('recado-km', 'Falta o KM de uma das fotos.', 'erro');
+          }
+          lidas.push({ data, km: kmL });
+        }
+        if (!lidas.length) return mostrarRecado('recado-km', 'Digite o dia e o KM de cada foto.', 'erro');
+        return fechar(lidas.length === 1 ? lidas[0] : { leituras: lidas });
+      }
       const km = lerNumeroBr(campo.value, NaN);
       if (!Number.isFinite(km) || km <= 0) {
         return mostrarRecado('recado-km', 'Digite o número que aparece no painel.', 'erro');

@@ -968,6 +968,7 @@ async function subirAnexo(req, res, url, usuario) {
   const kmBruto = url.searchParams.get('km');
   const dataLeitura = url.searchParams.get('data');
   const valorBruto = url.searchParams.get('valor');
+  const leiturasBrutas = url.searchParams.get('leituras');
 
   if (!mesValido(mes)) return erro(res, 'Mes invalido.');
   if (!TIPOS_DE_ANEXO.has(tipo)) return erro(res, 'Tipo de anexo invalido.');
@@ -976,7 +977,32 @@ async function subirAnexo(req, res, url, usuario) {
   // alguem teria que abrir a imagem e ler o painel na mao, que e o trabalho
   // que este sistema existe para acabar.
   let km = null;
-  if (tipo === 'odometro') {
+  // PDF ou PowerPoint com varias fotos do painel: vem uma leitura (dia + KM)
+  // por foto. Cada uma vira um anexo proprio, com uma copia do arquivo, para a
+  // conferencia ver o mes inteiro e nao uma foto so.
+  let leituras = null;
+  if (tipo === 'odometro' && leiturasBrutas) {
+    let lista;
+    try {
+      lista = JSON.parse(leiturasBrutas);
+    } catch {
+      return erro(res, 'Leituras do odometro invalidas.');
+    }
+    if (!Array.isArray(lista) || !lista.length || lista.length > 60) {
+      return erro(res, 'Informe de 1 a 60 leituras do odometro.');
+    }
+    leituras = [];
+    for (const l of lista) {
+      const k = numero(l?.km, NaN);
+      if (!Number.isFinite(k) || k <= 0) return erro(res, 'Digite o KM de cada foto do arquivo.');
+      if (k > 9_999_999) return erro(res, 'Um dos KM parece alto demais. Confira o numero.');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(l?.data || ''))) return erro(res, 'Informe o dia de cada foto do arquivo.');
+      leituras.push({ km: k, data: l.data });
+    }
+  }
+  if (tipo === 'odometro' && leituras) {
+    km = leituras[0].km;
+  } else if (tipo === 'odometro') {
     km = numero(kmBruto, NaN);
     if (!Number.isFinite(km) || km <= 0) {
       return erro(res, 'Digite o KM que aparece no painel da foto.');
@@ -1059,22 +1085,27 @@ async function subirAnexo(req, res, url, usuario) {
     return erro(res, naoAbre);
   }
 
-  db.prepare(
+  const inserir = db.prepare(
     `INSERT INTO anexos (relatorio_id, tipo, nome_original, arquivo, mime, tamanho,
                          km, data_leitura, valor, enviado_em)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    rel.id,
-    tipo,
-    decodeURIComponent(nomeBruto).slice(0, 200),
-    salvo,
-    req.headers['content-type'] || 'application/octet-stream',
-    dados.length,
-    km,
-    dataLeitura || null,
-    valorNota,
-    agora(),
   );
+  const nomeOriginal = decodeURIComponent(nomeBruto).slice(0, 200);
+  const mime = req.headers['content-type'] || 'application/octet-stream';
+  if (leituras && leituras.length > 1) {
+    leituras.forEach((l, i) => {
+      let arquivo = salvo;
+      if (i > 0) {
+        arquivo = `${rel.id}-${crypto.randomBytes(6).toString('hex')}-${nomeLimpo}`;
+        fs.copyFileSync(caminhoSalvo, path.join(PASTA_ANEXOS, arquivo));
+      }
+      inserir.run(rel.id, tipo, `${nomeOriginal} (foto ${i + 1} de ${leituras.length})`.slice(0, 200),
+        arquivo, mime, dados.length, l.km, l.data, null, agora());
+    });
+  } else {
+    inserir.run(rel.id, tipo, nomeOriginal, salvo, mime, dados.length, km,
+      (leituras ? leituras[0].data : dataLeitura) || null, valorNota, agora());
+  }
 
   // A nota que faltava chegou: o relatorio volta sozinho para a fila de
   // conferencia. Sem isso ele ficaria parado em "So falta DANFE" para sempre -

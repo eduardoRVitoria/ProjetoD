@@ -154,13 +154,14 @@ export async function api(rota, { metodo = 'GET', corpo = null } = {}) {
   return dados;
 }
 
-export async function subirArquivo(arquivo, { mes, tipo, km, data, valor }) {
+export async function subirArquivo(arquivo, { mes, tipo, km, data, valor, leituras }) {
   let rota = `/api/anexo?mes=${encodeURIComponent(mes)}&tipo=${encodeURIComponent(
     tipo,
   )}&nome=${encodeURIComponent(arquivo.name)}`;
   if (km != null) rota += `&km=${encodeURIComponent(km)}`;
   if (data) rota += `&data=${encodeURIComponent(data)}`;
   if (valor != null) rota += `&valor=${encodeURIComponent(valor)}`;
+  if (leituras) rota += `&leituras=${encodeURIComponent(JSON.stringify(leituras))}`;
   const resposta = await buscar(rota, {
     method: 'POST',
     headers: { 'Content-Type': arquivo.type || 'application/octet-stream' },
