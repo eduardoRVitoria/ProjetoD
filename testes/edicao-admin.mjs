@@ -247,7 +247,7 @@ try {
   assert.equal(subida.status, 200, JSON.stringify(subiu));
   const fotosDoPdf = subiu.anexos.filter((a) => a.tipo === 'odometro');
   assert.deepEqual(fotosDoPdf.map((a) => [a.data_leitura, a.km]), [['2026-09-01', 1000], ['2026-09-02', 1080]]);
-  const arquivos = db.prepare("SELECT arquivo FROM anexos WHERE nome_original LIKE 'fotos.pdf%' ORDER BY id").all().map((a) => a.arquivo);
+  const arquivos = db.prepare("SELECT arquivo FROM anexos WHERE nome_original LIKE 'fotos (foto%' ORDER BY id").all().map((a) => a.arquivo);
   assert.equal(new Set(arquivos).size, 2, 'cada foto com seu arquivo');
 
   // Colaborador nao chega na rota.

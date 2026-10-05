@@ -7,7 +7,8 @@
 // Entram RDV, nota de abastecimento e comprovante de pedagio/estacionamento -
 // o que a conferencia precisa ter no papel. Foto de odometro e "outros
 // documentos" ficam de fora: sao apoio da conferencia na tela, nao documento de
-// prestacao de contas.
+// prestacao de contas. Excecao: a ALPHA imprime as fotos do odometro tambem
+// (pedido do Eduardo em 05/10), depois dos comprovantes de cada pessoa.
 //
 // Cada anexo vira pagina conforme o que ele e:
 //   PDF      -> as paginas dele entram inteiras
@@ -24,9 +25,12 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { db, PASTA_ANEXOS } from './banco.js';
 import { planilhaEmTexto } from './extrair.js';
 import { mesPorExtenso } from './util.js';
+import { fotosDoPptx } from './pptx.js';
 
 // O que vai para o papel, na ordem em que sai impresso.
-const TIPOS_IMPRESSOS = ['rdv', 'pedagio', 'danfe', 'hotel', 'outras_despesas'];
+const TIPOS_IMPRESSOS = ['rdv', 'pedagio', 'danfe', 'hotel', 'outras_despesas', 'odometro'];
+// Empresas que levam as fotos do odometro para o papel.
+const IMPRIMEM_ODOMETRO = ['ALPHA'];
 
 const ROTULO_TIPO = {
   rdv: 'RDV',
@@ -34,6 +38,7 @@ const ROTULO_TIPO = {
   danfe: 'Nota de abastecimento',
   hotel: 'Nota do hotel',
   outras_despesas: 'Outras despesas',
+  odometro: 'Odometro',
 };
 
 const A4 = { largura: 595.28, altura: 841.89 };
@@ -42,6 +47,12 @@ const MARGEM = 40;
 const IMAGENS_JPG = new Set(['.jpg', '.jpeg', '.jfif']);
 const PLANILHAS = new Set(['.xlsx', '.xlsm', '.xls']);
 const TEXTOS = new Set(['.csv', '.txt']);
+const OUTRAS_IMAGENS = new Set(['.webp', '.heic', '.heif', '.gif', '.bmp', '.tif', '.tiff']);
+
+async function emJpg(bytes) {
+  const { default: sharp } = await import('sharp');
+  return sharp(bytes).rotate().jpeg({ quality: 85 }).toBuffer();
+}
 
 /**
  * Os anexos que entram na impressao, na ordem de leitura.
@@ -54,9 +65,10 @@ const TEXTOS = new Set(['.csv', '.txt']);
 function anexosParaImprimir(mes, usuarioId = null, escopo = null) {
   const condicoes = [
     'r.mes_ref = ?',
-    "a.tipo IN ('rdv', 'pedagio', 'danfe', 'hotel', 'outras_despesas')",
+    `(a.tipo IN ('rdv', 'pedagio', 'danfe', 'hotel', 'outras_despesas')
+      OR (a.tipo = 'odometro' AND u.empresa IN (${IMPRIMEM_ODOMETRO.map(() => '?').join(', ')})))`,
   ];
-  const args = [mes];
+  const args = [mes, ...IMPRIMEM_ODOMETRO];
   if (usuarioId) {
     condicoes.push('r.usuario_id = ?');
     args.push(usuarioId);
@@ -67,7 +79,7 @@ function anexosParaImprimir(mes, usuarioId = null, escopo = null) {
   }
   return db
     .prepare(
-      `SELECT a.id, a.tipo, a.nome_original, a.arquivo, a.mime, a.enviado_em,
+      `SELECT a.id, a.tipo, a.nome_original, a.arquivo, a.mime, a.enviado_em, a.km, a.data_leitura,
               u.id AS usuario_id, u.nome AS pessoa, u.empresa, u.funcao
          FROM anexos a
          JOIN relatorios r ON r.id = a.relatorio_id
@@ -75,8 +87,14 @@ function anexosParaImprimir(mes, usuarioId = null, escopo = null) {
         WHERE ${condicoes.join(' AND ')}
         ORDER BY u.nome, a.id`,
     )
-    .all(...args);
+    .all(...args)
+    // PDF/PowerPoint com varias fotos vira um anexo por foto, cada um com uma
+    // copia do arquivo: no papel ele sai uma vez so, na "foto 1".
+    .filter((a) => !(a.tipo === 'odometro' && /\(foto ([2-9]|\d{2,}) de \d+\)(\.\w+)?$/.test(a.nome_original || '')));
 }
+
+const dataCurta = (iso) => (iso ? String(iso).split('-').reverse().join('/') : 'sem data');
+
 
 /**
  * O texto do jeito que a fonte do caderno consegue escrever.
@@ -233,7 +251,9 @@ export async function montarImpressao(mes, usuarioId = null, escopo = null) {
     lista.sort((x, y) => TIPOS_IMPRESSOS.indexOf(x.tipo) - TIPOS_IMPRESSOS.indexOf(y.tipo));
 
     for (const a of lista) {
-      const titulo = `${primeiro.pessoa} · ${ROTULO_TIPO[a.tipo]} · ${a.nome_original}`;
+      const titulo = a.tipo === 'odometro'
+        ? `${primeiro.pessoa} · Odometro · ${dataCurta(a.data_leitura)} · ${a.km != null ? `${Number(a.km).toLocaleString('pt-BR')} km` : 'sem KM'} · ${a.nome_original}`
+        : `${primeiro.pessoa} · ${ROTULO_TIPO[a.tipo]} · ${a.nome_original}`;
       const caminho = path.join(PASTA_ANEXOS, a.arquivo);
       const ext = path.extname(a.nome_original || '').toLowerCase();
 
@@ -246,6 +266,17 @@ export async function montarImpressao(mes, usuarioId = null, escopo = null) {
           for (const p of paginas) pdf.addPage(p);
         } else if (IMAGENS_JPG.has(ext) || ext === '.png') {
           await paginaDeImagem(pdf, fonteTitulo, titulo, bytes, ext);
+        } else if (OUTRAS_IMAGENS.has(ext)) {
+          // HEIC, WEBP e afins: o PDF so aceita JPG e PNG, entao converte antes.
+          await paginaDeImagem(pdf, fonteTitulo, titulo, await emJpg(bytes), '.jpg');
+        } else if (ext === '.pptx') {
+          const fotos = await fotosDoPptx(caminho);
+          if (!fotos.length) throw new Error('nenhuma foto dentro do PowerPoint');
+          for (const f of fotos) {
+            const extFoto = path.extname(f.nome).toLowerCase();
+            const jpgOuPng = IMAGENS_JPG.has(extFoto) || extFoto === '.png';
+            await paginaDeImagem(pdf, fonteTitulo, titulo, jpgOuPng ? f.dados : await emJpg(f.dados), jpgOuPng ? extFoto : '.jpg');
+          }
         } else if (PLANILHAS.has(ext)) {
           paginasDeTexto(pdf, fonte, fonteTitulo, titulo, await planilhaEmTexto(caminho, ext));
         } else if (TEXTOS.has(ext)) {

@@ -1099,7 +1099,10 @@ async function subirAnexo(req, res, url, usuario) {
         arquivo = `${rel.id}-${crypto.randomBytes(6).toString('hex')}-${nomeLimpo}`;
         fs.copyFileSync(caminhoSalvo, path.join(PASTA_ANEXOS, arquivo));
       }
-      inserir.run(rel.id, tipo, `${nomeOriginal} (foto ${i + 1} de ${leituras.length})`.slice(0, 200),
+      // A extensao fica no fim: e por ela que o arquivo e aberto e lido.
+      const ext = path.extname(nomeOriginal);
+      const base = nomeOriginal.slice(0, nomeOriginal.length - ext.length).slice(0, 170);
+      inserir.run(rel.id, tipo, `${base} (foto ${i + 1} de ${leituras.length})${ext}`,
         arquivo, mime, dados.length, l.km, l.data, null, agora());
     });
   } else {
