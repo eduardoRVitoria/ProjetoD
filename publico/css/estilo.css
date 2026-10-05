@@ -673,6 +673,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 }
 .achado.erro  { background: var(--pastel-rosa); }
 .achado.aviso { background: var(--pastel-amarelo); }
+/* Justificativa do comparativo com o mes anterior: roxo, para saltar aos olhos. */
+.achado.justificativa { background: var(--pastel-lilas); color: var(--lilas); }
+.achado.justificativa .icone { color: var(--lilas); }
 .achado .icone { font-weight: 700; }
 .achado.erro .icone  { color: var(--vermelho); }
 .achado.aviso .icone { color: var(--amarelo); }

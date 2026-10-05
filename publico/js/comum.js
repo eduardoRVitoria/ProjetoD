@@ -287,6 +287,9 @@ export function agruparAchados(lista, { manter = () => false } = {}) {
 }
 
 /** O grupo de `agruparAchados` como uma faixa so. */
+/** Classe extra do achado: a justificativa do aumento sobre o mes anterior sai em roxo. */
+export const classeDoAchado = (a) => (a.codigo === 'aumento_justificado' ? ' justificativa' : '');
+
 export function htmlDoGrupoDeAchados(g) {
   const comDia = Boolean(g.itens[0].data);
   const cabeca = comDia
@@ -298,7 +301,7 @@ export function htmlDoGrupoDeAchados(g) {
          <ul>${g.itens.map((a) => `<li>${escapar(a.mensagem)}${anexoDoAchado(a)}</li>`).join('')}</ul>
        </details>`
     : g.itens.map((a) => anexoDoAchado(a)).join('');
-  return `<div class="achado ${g.gravidade}">
+  return `<div class="achado ${g.gravidade}${classeDoAchado(g)}">
     <span class="icone">${g.gravidade === 'erro' ? '✕' : '!'}</span>
     <div class="corpo">
       <span>${cabeca}</span>

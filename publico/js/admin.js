@@ -1,6 +1,7 @@
 // Tela do administrador: painel do mes, conferencia com IA, colaboradores e ajustes.
 
 import {
+  classeDoAchado,
   api, mostrarRecado, escapar, brl, numeroBr, dataBr, dataHoraBr,
   tamanhoBr, mesAtual, sair, ROTULO_ANEXO, marcarAmbiente, anexoDoAchado, placaParaTela,
   lembrarQuemEsta, lerNumeroBr, valorNoCampo, agruparAchados, htmlDoGrupoDeAchados,
@@ -1136,7 +1137,7 @@ function blocoAchados(r) {
       .map((a) =>
         a.grupo
           ? htmlDoGrupoDeAchados(a)
-          : `<div class="achado ${a.gravidade}">
+          : `<div class="achado ${a.gravidade}${classeDoAchado(a)}">
           <span class="icone">${a.gravidade === 'erro' ? '✕' : '!'}</span>
           <div class="corpo">
             <span>${escapar(a.mensagem)}</span>

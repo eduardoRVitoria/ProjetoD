@@ -1,6 +1,7 @@
 // Tela do colaborador: preencher o RDV, anexar comprovantes e enviar.
 
 import {
+  classeDoAchado,
   api, subirArquivo, mostrarRecado, escapar, brl, numeroBr,
   dataBr, dataHoraBr, tamanhoBr, mesAtual, hojeLocal, lerNumeroBr, valorNoCampo, lembrarQuemEsta, sair, ROTULO_ANEXO, marcarAmbiente, anexoDoAchado,
   agruparAchados, htmlDoGrupoDeAchados,
@@ -994,7 +995,7 @@ function linhaDeAchado(a, chavesUsadas = null) {
        </div>`
     : '';
 
-  return `<div class="achado ${a.gravidade}">
+  return `<div class="achado ${a.gravidade}${classeDoAchado(a)}">
     <span class="icone">${a.gravidade === 'erro' ? '✕' : '!'}</span>
     <div class="corpo">
       <span>${escapar(a.mensagem)}</span>
