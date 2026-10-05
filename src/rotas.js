@@ -878,15 +878,20 @@ async function enviarRelatorio(req, res, usuario) {
   }
   if (codigos.has('sem_odometro')) faltando.push('a foto do odometro');
 
+  // Reenvio: guarda os erros que o relatorio tinha, para o painel mostrar o
+  // que a pessoa corrigiu e o que continua.
+  const errosAnteriores = rel.enviado_em ? errosDoParecer(rel.achados) : null;
+
   db.prepare(
     `UPDATE relatorios SET status = 'ENVIADO', enviado_em = ?, achados = NULL, parecer_ia = NULL,
+            envios = COALESCE(envios, 0) + 1, erros_do_envio_anterior = ?,
             o_que_fazer = NULL, conferido_em = NULL, pedagio_comprovado = NULL,
             pedagio_comprovado_admin = NULL,
             -- Reenviou: o que estava impresso era a versao antiga, e a decisao
             -- do conferente era sobre ela.
             impresso_em = NULL, impresso_por = NULL, decisao_manual = NULL
       WHERE id = ?`,
-  ).run(agora(), rel.id);
+  ).run(agora(), errosAnteriores ? JSON.stringify(errosAnteriores) : null, rel.id);
 
   log.info('relatorio', rel.status === 'RASCUNHO' ? 'enviado' : 'reenviado corrigido', {
     rel: rel.id,
@@ -1117,9 +1122,10 @@ async function subirAnexo(req, res, url, usuario) {
   if (rel.status === 'SO_FALTA_DANFE') {
     db.prepare(
       `UPDATE relatorios SET status = 'ENVIADO', enviado_em = ?, achados = NULL,
-              parecer_ia = NULL, o_que_fazer = NULL, conferido_em = NULL
+              parecer_ia = NULL, o_que_fazer = NULL, conferido_em = NULL,
+              envios = COALESCE(envios, 0) + 1, erros_do_envio_anterior = ?
         WHERE id = ?`,
-    ).run(agora(), rel.id);
+    ).run(agora(), JSON.stringify(errosDoParecer(rel.achados) || []), rel.id);
     voltouParaFila = true;
   }
 
@@ -1302,6 +1308,11 @@ function painel(res, url, quem) {
       subtotal_rdv: subtotalGravado(r.extraido),
       // Quem confere marca na mao o que ja foi para o papel.
       impresso_em: r.impresso_em || null,
+      // 2o envio em diante: quantos erros do envio anterior sumiram.
+      correcao: (() => {
+        const c = correcaoDoReenvio(r);
+        return c && { envio: c.envio, aguardando: c.aguardando, corrigidos: c.corrigidos.length, continuam: c.continuam.length };
+      })(),
       comprovado: r.pedagio_comprovado,
       // Diferenca so existe quando ha DOIS numeros para comparar.
       //
@@ -1319,6 +1330,34 @@ function painel(res, url, quem) {
       achados: listaDeJson(r.achados),
     })),
   });
+}
+
+// Os erros de um parecer gravado, so com o que precisa para comparar.
+function errosDoParecer(achadosJson) {
+  const erros = listaDeJson(achadosJson).filter((a) => a.gravidade === 'erro');
+  return erros.length ? erros.map((a) => ({ codigo: a.codigo, mensagem: a.mensagem, data: a.data || null })) : null;
+}
+
+/**
+ * Reenvio: o que estava errado no envio anterior e foi corrigido, e o que
+ * continua. null no primeiro envio. Enquanto a conferencia do novo envio nao
+ * roda, `aguardando` fica true e nada e dado como corrigido.
+ */
+function correcaoDoReenvio(r) {
+  if (!(r.envios > 1)) return null;
+  const anteriores = listaDeJson(r.erros_do_envio_anterior);
+  const chave = (a) => `${a.codigo}|${a.data || ''}`;
+  if (!r.conferido_em) {
+    return { envio: r.envios, aguardando: true, corrigidos: [], continuam: [], anteriores: anteriores.length };
+  }
+  const atuais = new Set(listaDeJson(r.achados).filter((a) => a.gravidade === 'erro').map(chave));
+  return {
+    envio: r.envios,
+    aguardando: false,
+    corrigidos: anteriores.filter((a) => !atuais.has(chave(a))),
+    continuam: anteriores.filter((a) => atuais.has(chave(a))),
+    anteriores: anteriores.length,
+  };
 }
 
 // O subtotal do RDV guardado junto da leitura, ou null.
@@ -1376,6 +1415,7 @@ function relatorioDetalhe(res, url, quem) {
     // (`/api/relatorio`) não tem este campo, e a prévia dele continua sem as
     // cobranças de anexo.
     pendencias_agora: pendenciasAgora,
+    correcao: correcaoDoReenvio(rel),
     // Para a tela de edicao refazer as contas enquanto o admin digita.
     valor_do_km: valorDoKm(),
     gerente: pagoPorCombustivel(rel.funcao, rel.carro, linhas),

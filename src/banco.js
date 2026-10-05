@@ -176,6 +176,13 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     db.exec('ALTER TABLE relatorios ADD COLUMN impresso_em TEXT');
     db.exec('ALTER TABLE relatorios ADD COLUMN impresso_por INTEGER');
   }
+  if (!colunas.has('envios')) {
+    // Quantas vezes o relatorio foi enviado, e os erros que ele tinha quando
+    // foi reenviado - para quem confere ver "2o envio" e o que foi corrigido.
+    db.exec('ALTER TABLE relatorios ADD COLUMN envios INTEGER NOT NULL DEFAULT 0');
+    db.exec('ALTER TABLE relatorios ADD COLUMN erros_do_envio_anterior TEXT');
+    db.exec('UPDATE relatorios SET envios = 1 WHERE enviado_em IS NOT NULL');
+  }
   if (!colunas.has('pedagio_comprovado_admin')) {
     // Pedagio comprovado que o admin digitou na mao. Enquanto existir, vale
     // mais que a leitura do comprovante - senao "Conferir de novo" apagava a

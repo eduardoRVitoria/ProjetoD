@@ -677,6 +677,18 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .achado.justificativa { background: var(--pastel-lilas); color: var(--lilas); }
 .achado.justificativa .icone { color: var(--lilas); }
 .achado .icone { font-weight: 700; }
+/* Reenvio: "2o envio" no painel e o quadro do que foi corrigido. */
+.selo-envio { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: 4px;
+  background: var(--pastel-lilas); color: var(--lilas); margin-left: 6px; white-space: nowrap; }
+.selo-envio.tudo-certo { background: var(--pastel-verde); color: var(--verde); }
+.quadro-correcao { border: 1px solid var(--borda); border-left: 4px solid var(--lilas); border-radius: var(--raio);
+  padding: 12px 14px; margin: 12px 0; background: var(--superficie); }
+.quadro-correcao h3 { margin: 0 0 6px; font-size: 15px; }
+.lista-correcao { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+.lista-correcao li { display: flex; gap: 8px; align-items: baseline; }
+.lista-correcao li > span:first-child { font-weight: 700; }
+.lista-correcao li.ok > span:first-child { color: var(--verde); }
+.lista-correcao li.nao > span:first-child { color: var(--vermelho); }
 .achado.erro .icone  { color: var(--vermelho); }
 .achado.aviso .icone { color: var(--amarelo); }
 .achado .corpo { flex: 1; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }

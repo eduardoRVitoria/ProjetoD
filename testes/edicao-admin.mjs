@@ -227,6 +227,29 @@ try {
   const envio = await chamar('/api/relatorio/enviar', { mes: '2026-09' });
   assert.equal(envio.status, 200, JSON.stringify(envio.dados));
   assert.notEqual(db.prepare('SELECT status FROM relatorios WHERE id = ?').get(rascunho).status, 'RASCUNHO');
+
+  // Reenvio: corrige o km invertido e manda de novo. O painel mostra "2o envio"
+  // e o detalhe, o que foi corrigido e o que continua.
+  const conferido = async () => {
+    for (let i = 0; i < 80; i++) {
+      const r = db.prepare('SELECT status, conferido_em FROM relatorios WHERE id = ?').get(rascunho);
+      if (r.conferido_em && r.status === 'ERRADA') return;
+      await new Promise((ok) => setTimeout(ok, 100));
+    }
+    throw new Error('a conferencia automatica nao terminou');
+  };
+  await conferido();
+  db.prepare("UPDATE linhas SET km_inicial = 20, km_final = 30 WHERE relatorio_id = ? AND data = '2026-09-02'").run(rascunho);
+  const reenvio = await chamar('/api/relatorio/enviar', { mes: '2026-09' });
+  assert.equal(reenvio.status, 200, JSON.stringify(reenvio.dados));
+  await conferido();
+  entrarComo(chefe);
+  const doReenvio = (await chamar('/api/admin/painel?mes=2026-09')).dados.relatorios.find((r) => r.id === rascunho);
+  assert.equal(doReenvio.correcao.envio, 2);
+  assert.ok(doReenvio.correcao.corrigidos >= 1, JSON.stringify(doReenvio.correcao));
+  const correcao = (await chamar(`/api/admin/relatorio?id=${rascunho}`)).dados.correcao;
+  assert.ok(correcao.corrigidos.some((a) => a.codigo === 'km_invertido'), 'o km invertido foi corrigido');
+  assert.ok(correcao.continuam.some((a) => a.codigo === 'sem_odometro'), 'a foto do odometro continua faltando');
   // So nao envia quem nao tem nada: nem dia lancado, nem o arquivo do RDV.
   entrarComo(semNada);
   await chamar('/api/relatorio?mes=2026-09');

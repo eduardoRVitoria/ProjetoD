@@ -614,7 +614,7 @@ function linhaTabela(r) {
   return `<tr class="de-${escapar(r.empresa || 'DISO')}">
     <td><span class="selo ${r.status}">${escapar(r.rotulo_status)}</span>${r.regras_antigas ? `<br><span class="regras-antigas" title="Este parecer foi dado antes das regras atuais. Conferir de novo aplica as de hoje.">regras antigas</span>` : ''}</td>
     <td>
-      ${escapar(r.nome)}<br>
+      ${escapar(r.nome)}${seloDoEnvio(r)}<br>
       <span class="emp ${escapar(r.empresa || 'DISO')}">${escapar(r.cracha || r.empresa || '')}</span>
     </td>
     <td class="num">${numeroBr(r.total_km)}</td>
@@ -855,6 +855,7 @@ async function abrirDetalhe(id) {
 
       ${r.observacao ? `<div class="aviso info"><strong>Observação do colaborador:</strong><br>${escapar(r.observacao)}</div>` : ''}
 
+      ${blocoCorrecao(d.correcao)}
       ${blocoAssinatura(r)}
       ${blocoPendenciasAgora(d.pendencias_agora, d)}
       ${r.regras_antigas ? `<div class="aviso atencao">Este parecer foi dado com <strong>regras anteriores</strong> as de hoje. Use \"Conferir de novo\" para aplicar as regras atuais.</div>` : ''}
@@ -2598,4 +2599,35 @@ function duracaoBr(segundos) {
   const h = Math.floor(s / 3600);
   if (!h) return `${min} min`;
   return `${h} h ${min} min`;
+}
+
+// ------------------------------------------------------------ reenvio
+//
+// "2o envio": o relatorio voltou corrigido. O selo diz quantos erros do envio
+// anterior sumiram e quantos continuam; o quadro no detalhe lista cada um.
+function seloDoEnvio(r) {
+  const c = r.correcao;
+  if (!c) return '';
+  const resolveu = !c.aguardando && !c.continuam;
+  const resumo = c.aguardando
+    ? 'aguardando a conferencia'
+    : `${c.corrigidos} corrigido(s)${c.continuam ? `, ${c.continuam} continua(m)` : ''}`;
+  return ` <span class="selo-envio${resolveu ? ' tudo-certo' : ''}"
+    title="Enviado de novo. Erros do envio anterior: ${escapar(resumo)}">${c.envio}º envio${resolveu ? ' ✓' : ''}</span>`;
+}
+
+function blocoCorrecao(c) {
+  if (!c) return '';
+  const item = (a, ok) => `<li class="${ok ? 'ok' : 'nao'}"><span>${ok ? '✓' : '✕'}</span>
+    <span>${a.data ? `<strong>${escapar(dataBr(a.data).slice(0, 5))}</strong> ` : ''}${escapar(a.mensagem)}</span></li>`;
+  const corpo = c.aguardando
+    ? '<p class="sub" style="margin:0">A conferência deste envio ainda não rodou. Quando rodar, aparece aqui o que foi corrigido.</p>'
+    : !c.anteriores
+      ? '<p class="sub" style="margin:0">O envio anterior não tinha erro apontado.</p>'
+      : `<p class="sub" style="margin:0 0 8px">${c.corrigidos.length} de ${c.anteriores} erro(s) corrigido(s).</p>
+         <ul class="lista-correcao">${c.corrigidos.map((a) => item(a, true)).join('')}${c.continuam.map((a) => item(a, false)).join('')}</ul>`;
+  return `<div class="quadro-correcao">
+    <h3>${c.envio}º envio — o que mudou desde o envio anterior</h3>
+    ${corpo}
+  </div>`;
 }
