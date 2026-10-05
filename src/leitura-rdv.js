@@ -459,7 +459,8 @@ export async function lerRdvEscaneado(imagens) {
     pagina++;
     // Escaneado deitado e comum: fica o giro em que aparecem mais dias.
     let melhor = null;
-    for (const giro of [0, 90, 270]) {
+    // De cabeca para baixo tambem: folha virada no scanner (RDV do Mauricio, 05/10).
+    for (const giro of [0, 90, 270, 180]) {
       const lido = await lerFormulario(imagem, giro);
       if (!lido) break;
       const dias = diasNoTexto(lido.texto);
@@ -470,11 +471,13 @@ export async function lerRdvEscaneado(imagens) {
   }
 
   const dados = interpretarRdv(linhas);
-  if (dados.linhas.length < 3) return null;
-  const absurda = dados.linhas.some(
-    (l) => l.km_inicial > KM_MAXIMO || l.km_final > KM_MAXIMO || l.km_final - l.km_inicial > KM_NUM_DIA,
-  );
-  if (absurda) return null;
+  // Um digito mal lido nao joga fora o RDV inteiro: o dia impossivel sai da
+  // leitura e a pessoa completa na mao. Antes, um so derrubava tudo e o
+  // vendedor via "nao consegui ler" com o PDF certo na mao.
+  const impossivel = (l) => l.km_inicial > KM_MAXIMO || l.km_final > KM_MAXIMO || l.km_final - l.km_inicial > KM_NUM_DIA;
+  const descartados = dados.linhas.filter(impossivel).map((l) => l.data);
+  dados.linhas = dados.linhas.filter((l) => !impossivel(l));
+  if (!dados.linhas.length) return null;
 
   // A conta do documento fecha?
   const t = dados.totais_declarados;
@@ -496,11 +499,14 @@ export async function lerRdvEscaneado(imagens) {
   // conta fechando, o que vale e a soma dos dias.
   if (fecha && (t.total_km == null || t.total_km !== km)) t.total_km = km;
 
+  const problemas = [];
+  if (!fecha) problemas.push('O RDV veio escaneado ou em foto e a leitura automatica nao fechou com o total do documento. Confira os km de cada dia.');
+  if (descartados.length) {
+    problemas.push(`${descartados.length} dia(s) do RDV escaneado nao deram para ler (${descartados.slice(0, 5).join(', ')}) - preencha na mao.`);
+  }
   return {
     ...dados,
-    confianca: fecha ? 'alta' : 'baixa',
-    problemas_de_leitura: fecha
-      ? []
-      : ['O RDV veio escaneado ou em foto e a leitura automatica nao fechou com o total do documento. Confira os km de cada dia.'],
+    confianca: fecha && !descartados.length ? 'alta' : 'baixa',
+    problemas_de_leitura: problemas,
   };
 }
