@@ -1334,7 +1334,7 @@ function painel(res, url, quem) {
 
 // Os erros de um parecer gravado, so com o que precisa para comparar.
 function errosDoParecer(achadosJson) {
-  const erros = listaDeJson(achadosJson).filter((a) => a.gravidade === 'erro');
+  const erros = (listaDeJson(achadosJson) || []).filter((a) => a.gravidade === 'erro');
   return erros.length ? erros.map((a) => ({ codigo: a.codigo, mensagem: a.mensagem, data: a.data || null })) : null;
 }
 
@@ -1345,12 +1345,13 @@ function errosDoParecer(achadosJson) {
  */
 function correcaoDoReenvio(r) {
   if (!(r.envios > 1)) return null;
-  const anteriores = listaDeJson(r.erros_do_envio_anterior);
+  // Envio anterior sem erro grava null: lista vazia, senao o painel cai.
+  const anteriores = listaDeJson(r.erros_do_envio_anterior) || [];
   const chave = (a) => `${a.codigo}|${a.data || ''}`;
   if (!r.conferido_em) {
     return { envio: r.envios, aguardando: true, corrigidos: [], continuam: [], anteriores: anteriores.length };
   }
-  const atuais = new Set(listaDeJson(r.achados).filter((a) => a.gravidade === 'erro').map(chave));
+  const atuais = new Set((listaDeJson(r.achados) || []).filter((a) => a.gravidade === 'erro').map(chave));
   return {
     envio: r.envios,
     aguardando: false,
