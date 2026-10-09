@@ -100,6 +100,24 @@ r = montarParecer({
 });
 assert.equal(r.parecer.pedagio_comprovado, 242.8);
 
+// Extrato com passagem de sabado, e o declarado e o total impresso (que inclui
+// o sabado): o total escrito NAO confirma. Comprovado e so o dia util.
+const comSabado = { anexo: anexo(10, 'pedagio'), leitura: { passagens: [
+  ...doExtrato.leitura.passagens,
+  { data: '2026-08-08', hora: '', valor: 15, local: 'X', tipo: 'pedagio' },
+], todos: [11.1, 15, 37.2] } };
+r = montarParecer({ lidos: [comSabado], linhas, mesRef: '2026-08', declarado: 37.2 });
+assert.equal(r.parecer.pedagio_comprovado, 22.2, 'o sabado nao entra no comprovado');
+assert.deepEqual(r.achados.map((a) => a.codigo), ['pedagio_fora_da_soma']);
+assert.match(r.achados[0].mensagem, /15,00.*08\/08/);
+// Mesmo sem o extrato imprimir o total: declarado = uteis + sabado, reprova igual.
+r = montarParecer({ lidos: [{ ...comSabado, leitura: { ...comSabado.leitura, todos: [11.1, 15] } }], linhas, mesRef: '2026-08', declarado: 37.2 });
+assert.equal(r.parecer.pedagio_comprovado, 22.2);
+// Declarou so os dias uteis: confirmado, sem achado - o sabado no extrato nao incomoda.
+r = montarParecer({ lidos: [comSabado], linhas, mesRef: '2026-08', declarado: 22.2 });
+assert.equal(r.parecer.pedagio_comprovado, 22.2);
+assert.equal(r.achados.length, 0);
+
 // Nota: chave OU mencao a combustivel confirma; nada disso, aviso.
 r = montarParecer({ lidos: [{ anexo: anexo(4, 'danfe'), leitura: { chave: '3526...0001', combustivel: false } }], linhas, mesRef: '2026-08', declarado: 0 });
 assert.equal(r.parecer.tem_danfe_de_abastecimento, true);

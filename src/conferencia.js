@@ -89,10 +89,13 @@ const HORA_LIMITE = 18;
 //      manha e sexta a noite.
 //  24  RDV lido com duvida (leitura_incerta): foto do odometro que nao bate
 //      com o RDV vira aviso - o erro pode ser da leitura, nao da foto.
+//  25  pedagio: o total impresso no extrato nao confirma mais o declarado
+//      quando ha passagem de fim de semana, feriado sem lancamento ou outro
+//      mes. Essas passagens saem da conta e a diferenca reprova.
 //
 // A 4 perdoa: quem da DISO foi reprovado so por despesa noturna aparece no
 // painel como "regras antigas" e merece uma reconferencia.
-export const VERSAO_REGRAS = 24;
+export const VERSAO_REGRAS = 25;
 
 const CENTAVO = 0.01;
 const perto = (a, b, tol = CENTAVO) => Math.abs(a - b) <= tol;

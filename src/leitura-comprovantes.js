@@ -305,7 +305,18 @@ export function montarParecer({ lidos, linhas, mesRef, declarado }) {
   // Duas formas de confirmar: a soma do que foi lido da o declarado, ou o
   // proprio documento traz o total declarado escrito (o extrato da tag fecha
   // com "Pedagios R$ 242,80"). Bater no centavo por acaso e improvavel.
-  const totalEscrito = dePedagio.some((l) => (l.leitura.todos || []).some((v) => centavos(v) === centavos(declarado)));
+  //
+  // O total escrito so vale quando nenhuma passagem ficou de fora. O extrato
+  // fecha com o mes inteiro, sabado e domingo junto: quem copiava esse total
+  // para o RDV saia aprovado com fim de semana dentro (out/26).
+  const centavosFora = soma.fora.reduce((s, p) => s + centavos(p.valor), 0);
+  const totalEscrito = centavosFora === 0
+    && dePedagio.some((l) => (l.leitura.todos || []).some((v) => centavos(v) === centavos(declarado)));
+
+  // O declarado e exatamente o que conta MAIS o que ficou de fora: a pessoa
+  // lancou as passagens de fim de semana/feriado ou de outro mes. O comprovado
+  // e so o que conta, e a diferenca reprova.
+  const declarouOQueFicouFora = centavosFora > 0 && centavos(declarado) === centavos(lido) + centavosFora;
 
   // Leitura FECHADA: todo comprovante e extrato, e a soma das passagens lidas
   // de cada um e o total que o proprio documento imprime. Ai o numero lido e
@@ -322,8 +333,16 @@ export function montarParecer({ lidos, linhas, mesRef, declarado }) {
   if (declarado > 0 && dePedagio.length) {
     if (centavos(lido) === centavos(declarado) || totalEscrito) {
       comprovado = declarado;
-    } else if (fechada) {
+    } else if (fechada || declarouOQueFicouFora) {
       comprovado = lido;
+      if (centavosFora > 0) {
+        const dias = [...new Set(soma.fora.map((p) => p.data))].sort()
+          .map((d) => d.split('-').reverse().slice(0, 2).join('/')).join(', ');
+        aviso(
+          'pedagio_fora_da_soma',
+          `${brl(centavosFora / 100)} do extrato nao entram no RDV (fim de semana, feriado sem lancamento ou outro mes): ${dias}.`,
+        );
+      }
     } else {
       aviso(
         'pedagio_nao_confirmado',
