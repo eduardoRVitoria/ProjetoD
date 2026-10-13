@@ -26,6 +26,7 @@ import {
   gravidadeDoAchadoDaIa,
   ehGerente,
   pagoPorCombustivel,
+  cobraFotoOdometro,
   dataValida,
   VERSAO_REGRAS,
 } from './conferencia.js';
@@ -640,6 +641,40 @@ async function lerRdv(req, res, usuario) {
     return erro(res, 'Anexe primeiro o arquivo do seu RDV (PDF ou foto).');
   }
 
+  let lido;
+  try {
+    lido = await lerEGravarRdv(rel, usuario, arquivos, mes);
+  } catch (e) {
+    if (e.mesDoDocumento) {
+      return responderJson(res, { erro: e.message, mes_do_documento: e.mesDoDocumento }, 400);
+    }
+    if (e.naoLeu) return erro(res, e.message, 502);
+    throw e;
+  }
+  const { extraido, linhas, anexos } = lido;
+
+  responderJson(res, {
+    ok: true,
+    extraido,
+    previa: soOsErros(
+      conferirRel(db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id), linhas, anexos),
+    ),
+    grade: gradeDoMes(mes, linhas),
+    aviso: avisoDaLeitura(extraido, usuario),
+  });
+}
+
+/**
+ * Le o arquivo do RDV e grava os dias, os totais e o que o documento declarava.
+ *
+ * Saiu de dentro da rota porque a conferencia tambem precisa: quem anexa o RDV
+ * e envia sem tocar em "Ler meu relatorio" chegava ao painel com zero dias, e
+ * o relatorio certo ficava cobrado de "lancamentos dia a dia".
+ *
+ * Lanca erro com `naoLeu` quando a leitura falha e com `mesDoDocumento` quando
+ * o arquivo e de outro mes; nos dois casos nada e gravado.
+ */
+async function lerEGravarRdv(rel, usuario, arquivos, mes) {
   let extraido;
   const comecouEm = Date.now();
   try {
@@ -662,7 +697,8 @@ async function lerRdv(req, res, usuario) {
       arquivos: arquivos.map((a) => a.nome_original).join(' | '),
       levou: log.desde(comecouEm),
     });
-    return erro(res, e.message, 502);
+    e.naoLeu = true;
+    throw e;
   }
 
   // O "Subtotal das Despesas" e o total que o documento declara. Se a leitura
@@ -674,17 +710,13 @@ async function lerRdv(req, res, usuario) {
   // O relatorio e de outro mes. Recusar e melhor que arquivar julho dentro de
   // setembro ou esvaziar tudo porque o seletor estava errado.
   if (extraido.mes_do_documento && extraido.mes_do_documento !== mes) {
-    return responderJson(
-      res,
-      {
-        erro:
-          `Este arquivo e o relatorio de ${mesPorExtenso(extraido.mes_do_documento)}, ` +
-          `mas voce esta no mes de ${mesPorExtenso(mes)}. ` +
-          'Troque o mes no topo da tela e leia de novo, ou anexe o relatorio do mes certo.',
-        mes_do_documento: extraido.mes_do_documento,
-      },
-      400,
+    const e = new Error(
+      `Este arquivo e o relatorio de ${mesPorExtenso(extraido.mes_do_documento)}, `
+        + `mas voce esta no mes de ${mesPorExtenso(mes)}. `
+        + 'Troque o mes no topo da tela e leia de novo, ou anexe o relatorio do mes certo.',
     );
+    e.mesDoDocumento = extraido.mes_do_documento;
+    throw e;
   }
 
   db.exec('BEGIN');
@@ -778,15 +810,7 @@ async function lerRdv(req, res, usuario) {
       });
     }
 
-    responderJson(res, {
-      ok: true,
-      extraido,
-      previa: soOsErros(
-        conferirRel(db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id), linhas, anexos),
-      ),
-      grade: gradeDoMes(mes, linhas),
-      aviso: avisoDaLeitura(extraido, usuario),
-    });
+    return { extraido, linhas, anexos };
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
@@ -1420,6 +1444,14 @@ function relatorioDetalhe(res, url, quem) {
     // Para a tela de edicao refazer as contas enquanto o admin digita.
     valor_do_km: valorDoKm(),
     gerente: pagoPorCombustivel(rel.funcao, rel.carro, linhas),
+    // Carro da empresa nao manda foto do odometro: o "o que falta chegar" do
+    // painel nao pode cobrar. O RDV com combustivel por dia vale como carro da
+    // empresa mesmo com o cadastro atrasado, igual na conferencia.
+    cobra_odometro: cobraFotoOdometro(
+      rel.empresa,
+      rel.funcao,
+      linhas.some((l) => Number(l.combustivel) > 0) ? 'empresa' : rel.carro,
+    ),
   });
 }
 
@@ -1504,8 +1536,8 @@ async function conferirRelatorio(rel, opcoes = {}) {
 }
 
 async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decididoPor = null } = {}) {
-  const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(rel.usuario_id);
-  const linhas = linhasDo(rel.id);
+  let usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(rel.usuario_id);
+  let linhas = linhasDo(rel.id);
   const anexos = db.prepare('SELECT * FROM anexos WHERE relatorio_id = ?').all(rel.id);
   const vlrKm = valorDoKm();
 
@@ -1518,10 +1550,32 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
     );
   }
 
+  // Anexou o RDV e enviou sem tocar em "Ler meu relatorio": o arquivo esta
+  // aqui, entao a conferencia le antes de reclamar que nao ha dia nenhum.
+  let motivoDaLeitura = '';
+  const arquivosDoRdv = anexos.filter((a) => a.tipo === 'rdv').sort((a, b) => a.id - b.id);
+  if (linhas.length === 0 && arquivosDoRdv.length) {
+    try {
+      await lerEGravarRdv(rel, usuario, arquivosDoRdv, rel.mes_ref);
+      linhas = linhasDo(rel.id);
+      rel = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(rel.id);
+      usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(rel.usuario_id);
+      log.info('relatorio', 'RDV enviado sem leitura - lido na conferencia', {
+        rel: rel.id, quem: usuario.login, linhas: linhas.length,
+      });
+    } catch (e) {
+      if (!e.naoLeu && !e.mesDoDocumento) throw e;
+      motivoDaLeitura = e.message;
+    }
+  }
+
   if (linhas.length === 0) {
     const e = new Error(
-      'Este relatorio nao tem os lancamentos dia a dia (veio da conferencia antiga). '
-        + 'Use "Ler o RDV" para extrair do arquivo, ou decida na mao pelos botoes abaixo.',
+      arquivosDoRdv.length
+        ? `Nao consegui ler os dias do arquivo do RDV${motivoDaLeitura ? ` (${motivoDaLeitura})` : ''}. `
+          + 'Abra o arquivo e decida na mao pelos botoes abaixo.'
+        : 'Este relatorio nao tem os lancamentos dia a dia nem o arquivo do RDV. '
+          + 'Decida na mao pelos botoes abaixo.',
     );
     e.semLinhas = true;
     throw e;

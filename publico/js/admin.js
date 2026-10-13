@@ -1096,7 +1096,10 @@ function blocoPendenciasAgora(pendencias, d) {
   if (!d.linhas.length) falta.push('os lançamentos do dia a dia');
   if (!d.anexos.some((a) => a.tipo === 'rdv')) falta.push('o arquivo do RDV');
   if (!d.anexos.some((a) => a.tipo === 'danfe')) falta.push('a nota de abastecimento');
-  if (!d.anexos.some((a) => a.tipo === 'odometro')) falta.push('as fotos do odômetro');
+  // Carro da empresa não manda foto do odômetro.
+  if (d.cobra_odometro !== false && !d.anexos.some((a) => a.tipo === 'odometro')) {
+    falta.push('as fotos do odômetro');
+  }
 
   const declarado = Number(pendencias.totalDeclarado || 0);
   if (declarado > 0 && !d.anexos.some((a) => a.tipo === 'pedagio')) {
