@@ -990,6 +990,25 @@ async function abrirDetalhe(id) {
     await conferirUm(id, null);
   });
 
+  // Vetar um erro (ou desfazer): o parecer muda, entao a janela abre de novo.
+  for (const b of fundo.querySelectorAll('[data-vetar], [data-desvetar]')) {
+    b.addEventListener('click', async () => {
+      const vetar = b.dataset.vetar != null;
+      b.disabled = true;
+      try {
+        await api('/api/admin/vetar', {
+          metodo: 'POST',
+          corpo: { relatorio_id: id, chave: vetar ? b.dataset.vetar : b.dataset.desvetar, vetar },
+        });
+        fundo.remove();
+        await abrirDetalhe(id);
+      } catch (e) {
+        b.disabled = false;
+        mostrarRecado('recado-veto', e.message, 'erro');
+      }
+    });
+  }
+
   for (const b of fundo.querySelectorAll('[data-status]')) {
     b.addEventListener('click', async () => {
       try {
@@ -1128,27 +1147,65 @@ function blocoPendenciasAgora(pendencias, d) {
     ${corpo}`;
 }
 
+// A mesma chave do servidor: o veto é por tipo de erro dentro do relatório; o
+// recado livre da IA não tem tipo, então vale o texto.
+const chaveDoVeto = (a) => (a.codigo === 'ia' ? `ia|${a.mensagem}` : a.codigo);
+
 function blocoAchados(r) {
-  if (!r.achados?.length) return '';
+  const vetos = r.vetos || [];
+  if (!r.achados?.length && !vetos.length) return '';
+  // Só erro de relatório já conferido pode ser vetado.
+  const podeVetar = ['CERTA', 'SO_FALTA_DANFE', 'ERRADA'].includes(r.status);
+  const botaoVetar = (a) =>
+    podeVetar && a.gravidade === 'erro'
+      ? `<button class="secundario pequeno vetar" data-vetar="${escapar(chaveDoVeto(a.grupo ? a.itens[0] : a))}"
+           title="Este erro deixa de contar neste relatório. Dá para desfazer.">Vetar</button>`
+      : '';
   // Erro primeiro, aviso depois; o mesmo problema em varios dias vira uma
   // linha so, com os dias na frente.
   const emOrdem = [
-    ...r.achados.filter((a) => a.gravidade === 'erro'),
-    ...r.achados.filter((a) => a.gravidade !== 'erro'),
+    ...(r.achados || []).filter((a) => a.gravidade === 'erro'),
+    ...(r.achados || []).filter((a) => a.gravidade !== 'erro'),
   ];
-  return `<h2 style="margin-top:4px">O que foi encontrado</h2>
+  const encontrados = emOrdem.length
+    ? `<h2 style="margin-top:4px">O que foi encontrado</h2>
+    <div id="recado-veto"></div>
     ${agruparAchados(emOrdem)
       .map((a) =>
         a.grupo
-          ? htmlDoGrupoDeAchados(a)
+          ? htmlDoGrupoDeAchados(a, botaoVetar(a))
           : `<div class="achado ${a.gravidade}${classeDoAchado(a)}">
           <span class="icone">${a.gravidade === 'erro' ? '✕' : '!'}</span>
           <div class="corpo">
             <span>${escapar(a.mensagem)}</span>
             ${anexoDoAchado(a)}
-          </div></div>`,
+          </div>${botaoVetar(a)}</div>`,
       )
-      .join('')}`;
+      .join('')}`
+    : '<div id="recado-veto"></div>';
+
+  const vetados = vetos.length
+    ? `<h2 style="margin-top:14px">Erros vetados</h2>
+    <p class="sub">Não contam neste relatório, nem ao conferir de novo.</p>
+    ${vetos
+      .map((v) => {
+        const grupos = agruparAchados(v.itens || []);
+        const texto = grupos.length
+          ? grupos.map((g) => (g.grupo ? `${g.titulo} (${g.itens.length} dias)` : g.mensagem)).join(' · ')
+          : 'Não apareceu na última conferência.';
+        return `<div class="achado vetado">
+          <span class="icone">⊘</span>
+          <div class="corpo">
+            <span class="riscado">${escapar(texto)}</span>
+            <span class="sub">Vetado por ${escapar(v.por || 'conferente')} em ${escapar(dataBr(String(v.em || '').slice(0, 10)))}</span>
+          </div>
+          <button class="secundario pequeno vetar" data-desvetar="${escapar(v.chave)}">Desfazer</button>
+        </div>`;
+      })
+      .join('')}`
+    : '';
+
+  return encontrados + vetados;
 }
 
 // ------------------------------------------------- edicao pelo admin

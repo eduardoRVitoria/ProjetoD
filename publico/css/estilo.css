@@ -677,6 +677,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .achado.justificativa { background: var(--pastel-lilas); color: var(--lilas); }
 .achado.justificativa .icone { color: var(--lilas); }
 .achado .icone { font-weight: 700; }
+/* Erro que o conferente vetou: fica a vista, riscado, sem contar. */
+.achado.vetado { background: var(--cinza-botao); color: var(--texto-2); }
+.achado.vetado .riscado { text-decoration: line-through; }
+.achado .vetar { flex: 0 0 auto; align-self: center; }
 /* Reenvio: "2o envio" no painel e o quadro do que foi corrigido. */
 .selo-envio { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: 4px;
   background: var(--pastel-lilas); color: var(--lilas); margin-left: 6px; white-space: nowrap; }

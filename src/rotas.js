@@ -208,6 +208,7 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/fila' && metodo === 'GET') return responderJson(res, estadoDaFila());
     if (rota === '/api/admin/fila-parar' && metodo === 'POST') return responderJson(res, pedirParada());
     if (rota === '/api/admin/decidir' && metodo === 'POST') return decidir(req, res, usuario);
+    if (rota === '/api/admin/vetar' && metodo === 'POST') return vetarErro(req, res, usuario);
     if (rota === '/api/admin/relatorio-editar' && metodo === 'POST') return editarRelatorio(req, res, usuario);
     if (rota === '/api/admin/impresso' && metodo === 'POST') return marcarImpresso(req, res, usuario);
     if (rota === '/api/admin/galeria' && metodo === 'GET') return verGaleria(res, url, usuario);
@@ -429,9 +430,13 @@ function anexosDo(relId) {
 // A conferencia por regra depende da empresa do dono do relatorio (fim de
 // semana e 18h so sao aviso na DSO). Todo lugar que confere passa por aqui,
 // para nenhum esquecer de mandar a empresa.
-function conferirRel(rel, linhas, anexos) {
+//
+// O erro que o conferente vetou no relatorio nao volta por aqui: senao a tela
+// do colaborador continuaria cobrando o que ja foi dispensado. `comVetados` e
+// para a conferencia, que precisa da lista inteira para guardar o que vetou.
+function conferirRel(rel, linhas, anexos, { comVetados = false } = {}) {
   const dono = db.prepare('SELECT empresa, funcao, carro FROM usuarios WHERE id = ?').get(rel.usuario_id);
-  return conferir(
+  const r = conferir(
     rel,
     linhas,
     anexos,
@@ -441,6 +446,38 @@ function conferirRel(rel, linhas, anexos) {
     dono?.funcao ?? null,
     dono?.carro ?? 'pessoal',
   );
+  if (!comVetados && separarVetados(r.achados, listaDeJson(rel.vetos)).length) {
+    r.statusSugerido = statusPelosErros(r.achados);
+  }
+  return r;
+}
+
+// ------------------------------------------------------------ erros vetados
+//
+// O conferente olha um erro apitado e decide que, neste relatorio, ele nao
+// vale: o sabado foi trabalhado mesmo, a foto que falta esta justificada. O
+// veto e por TIPO de erro dentro do relatorio - vetar "lancamento em fim de
+// semana" dispensa todos os dias daquele relatorio, que e como a tela mostra.
+// O recado livre da IA nao tem tipo, entao vale o texto.
+const chaveDoVeto = (a) => (a.codigo === 'ia' ? `ia|${a.mensagem}` : a.codigo);
+
+const statusPelosErros = (achados) => {
+  const erros = achados.filter((a) => a.gravidade === 'erro');
+  if (erros.length === 0) return 'CERTA';
+  return erros.length === 1 && erros[0].codigo === 'sem_danfe' ? 'SO_FALTA_DANFE' : 'ERRADA';
+};
+
+/** Tira de `achados` (na propria lista) os erros vetados e devolve os que sairam. */
+function separarVetados(achados, vetos) {
+  const chaves = new Set((vetos || []).map((v) => v.chave));
+  const sairam = [];
+  if (!chaves.size) return sairam;
+  for (let i = achados.length - 1; i >= 0; i--) {
+    if (achados[i].gravidade === 'erro' && chaves.has(chaveDoVeto(achados[i]))) {
+      sairam.unshift(...achados.splice(i, 1));
+    }
+  }
+  return sairam;
 }
 
 /**
@@ -1429,6 +1466,7 @@ function relatorioDetalhe(res, url, quem) {
       rotulo_status: ROTULO_STATUS[rel.status],
       mes_extenso: mesPorExtenso(rel.mes_ref),
       achados: listaDeJson(rel.achados),
+      vetos: listaDeJson(rel.vetos) || [],
       regras_antigas: Boolean(rel.conferido_em) && (rel.versao_regras ?? 0) < VERSAO_REGRAS,
       parecer_ia: rel.parecer_ia ? JSON.parse(rel.parecer_ia) : null,
       assinatura: rel.assinatura ? JSON.parse(rel.assinatura) : null,
@@ -1593,7 +1631,7 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
       db.prepare('UPDATE anexos SET km = ? WHERE id = ?').run(inteiro, a.id);
     }
   }
-  const porRegra = conferirRel(rel, linhas, anexos);
+  const porRegra = conferirRel(rel, linhas, anexos, { comVetados: true });
   // Os dias mudaram: o total de km e o valor gravados eram a soma errada.
   if (kmConsertado) {
     db.prepare('UPDATE relatorios SET total_km = ?, valor_km = ? WHERE id = ?')
@@ -1805,9 +1843,17 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
     }
   }
 
+  // O que o conferente vetou neste relatorio sai do parecer e nao conta. O veto
+  // guarda o que a conferencia de hoje apitou, para a tela mostrar o que ficou
+  // de fora.
+  const vetos = listaDeJson(rel.vetos) || [];
+  if (vetos.length) {
+    const vetados = separarVetados(achados, vetos);
+    for (const v of vetos) v.itens = vetados.filter((a) => chaveDoVeto(a) === v.chave);
+  }
+
   const erros = achados.filter((a) => a.gravidade === 'erro');
-  const soDanfe = erros.length === 1 && erros[0].codigo === 'sem_danfe';
-  const statusDaConferencia = erros.length === 0 ? 'CERTA' : soDanfe ? 'SO_FALTA_DANFE' : 'ERRADA';
+  const statusDaConferencia = statusPelosErros(achados);
 
   // A decisao que o conferente tomou na mao se mantem. Conferir de novo
   // atualiza os achados - para ele ver o que a conferencia aponta hoje -, mas
@@ -1858,7 +1904,7 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
     `UPDATE relatorios
         SET status = ?, achados = ?, parecer_ia = ?, o_que_fazer = ?,
             pedagio_comprovado = ?, conferido_em = ?, decidido_por = ?,
-            pedagio_declarado = ?, estac_declarado = ?, versao_regras = ?
+            pedagio_declarado = ?, estac_declarado = ?, versao_regras = ?, vetos = ?
       WHERE id = ?`,
   ).run(
     status,
@@ -1878,6 +1924,7 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
     // Em que versao das regras este parecer foi julgado. E o que permite o
     // painel avisar quando um relatorio ficou para tras.
     VERSAO_REGRAS,
+    vetos.length ? JSON.stringify(vetos) : null,
     rel.id,
   );
 
@@ -2057,6 +2104,65 @@ async function decidir(req, res, admin) {
     de: dono.nome,
     por: admin.login,
     valor: rel.valor_km,
+  });
+
+  responderJson(res, { ok: true, status, rotulo_status: ROTULO_STATUS[status] });
+}
+
+/**
+ * Veta (ou devolve) um erro apitado num relatorio ja conferido.
+ *
+ * Nao roda a conferencia de novo: mexe no parecer gravado, que e o que o
+ * conferente esta olhando, e refaz o status pelos erros que sobraram. Decisao
+ * tomada na mao continua mandando no status.
+ */
+async function vetarErro(req, res, admin) {
+  const { relatorio_id, chave, vetar = true } = await lerJson(req);
+  const rel = db.prepare('SELECT * FROM relatorios WHERE id = ?').get(Number(relatorio_id));
+  if (!rel) return erro(res, 'Relatorio nao encontrado.', 404);
+
+  const dono = db.prepare('SELECT nome, empresa, funcao FROM usuarios WHERE id = ?').get(rel.usuario_id);
+  if (!podeVerUsuario(admin, dono)) return erro(res, 'Esse relatorio e de outra empresa.', 403);
+  if (!['CERTA', 'SO_FALTA_DANFE', 'ERRADA'].includes(rel.status) || rel.achados == null) {
+    return erro(res, 'So da para vetar erro de relatorio ja conferido. Confira primeiro.');
+  }
+
+  const achados = listaDeJson(rel.achados) || [];
+  let vetos = listaDeJson(rel.vetos) || [];
+  const jaVetado = vetos.find((v) => v.chave === chave);
+
+  if (vetar) {
+    if (jaVetado) return erro(res, 'Esse erro ja esta vetado.');
+    const itens = separarVetados(achados, [{ chave }]);
+    if (!itens.length) return erro(res, 'Esse erro nao esta mais no parecer. Abra o relatorio de novo.');
+    vetos.push({ chave, codigo: itens[0].codigo, itens, por: admin.nome, por_id: admin.id, em: agora() });
+  } else {
+    if (!jaVetado) return erro(res, 'Esse erro nao esta vetado.');
+    vetos = vetos.filter((v) => v !== jaVetado);
+    achados.push(...(jaVetado.itens || []));
+  }
+
+  const manual = ['CERTA', 'SO_FALTA_DANFE', 'ERRADA'].includes(rel.decisao_manual) ? rel.decisao_manual : null;
+  const status = manual || statusPelosErros(achados);
+  const oQueFazer = manual
+    ? (rel.o_que_fazer || '')
+    : achados.filter((a) => a.gravidade === 'erro').map((a) => a.mensagem).join(' ');
+
+  db.prepare(
+    'UPDATE relatorios SET status = ?, achados = ?, vetos = ?, o_que_fazer = ?, decidido_por = ? WHERE id = ?',
+  ).run(
+    status,
+    JSON.stringify(achados),
+    vetos.length ? JSON.stringify(vetos) : null,
+    oQueFazer,
+    // O status mudou por causa de uma pessoa: fica o nome dela no parecer.
+    status !== rel.status ? admin.id : rel.decidido_por,
+    rel.id,
+  );
+
+  log.info('veto', vetar ? 'erro vetado' : 'veto desfeito', {
+    rel: rel.id, mes: rel.mes_ref, de: dono.nome, por: admin.login, erro: chave.slice(0, 80),
+    status: status !== rel.status ? `${rel.status} -> ${status}` : undefined,
   });
 
   responderJson(res, { ok: true, status, rotulo_status: ROTULO_STATUS[status] });

@@ -176,6 +176,12 @@ CREATE INDEX IF NOT EXISTS idx_rel_mes     ON relatorios(mes_ref);
     db.exec('ALTER TABLE relatorios ADD COLUMN impresso_em TEXT');
     db.exec('ALTER TABLE relatorios ADD COLUMN impresso_por INTEGER');
   }
+  if (!colunas.has('vetos')) {
+    // Erros que o conferente vetou neste relatorio: saem do parecer, param de
+    // contar para o status e continuam vetados a cada reconferencia e reenvio.
+    // JSON: [{ chave, codigo, itens, por, por_id, em }].
+    db.exec('ALTER TABLE relatorios ADD COLUMN vetos TEXT');
+  }
   if (!colunas.has('envios')) {
     // Quantas vezes o relatorio foi enviado, e os erros que ele tinha quando
     // foi reenviado - para quem confere ver "2o envio" e o que foi corrigido.

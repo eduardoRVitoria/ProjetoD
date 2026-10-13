@@ -291,7 +291,7 @@ export function agruparAchados(lista, { manter = () => false } = {}) {
 /** Classe extra do achado: a justificativa do aumento sobre o mes anterior sai em roxo. */
 export const classeDoAchado = (a) => (a.codigo === 'aumento_justificado' ? ' justificativa' : '');
 
-export function htmlDoGrupoDeAchados(g) {
+export function htmlDoGrupoDeAchados(g, extra = '') {
   const comDia = Boolean(g.itens[0].data);
   const cabeca = comDia
     ? `<strong>${escapar(rotuloDosDias(g.itens.map((a) => a.data)))}</strong> — ${escapar(g.titulo)}`
@@ -307,7 +307,7 @@ export function htmlDoGrupoDeAchados(g) {
     <div class="corpo">
       <span>${cabeca}</span>
       ${corpo}
-    </div>
+    </div>${extra}
   </div>`;
 }
 
