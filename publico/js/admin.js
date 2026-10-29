@@ -618,7 +618,7 @@ function linhaTabela(r) {
     <td><span class="selo ${r.status}">${escapar(r.rotulo_status)}</span>${r.regras_antigas ? `<br><span class="regras-antigas" title="Este parecer foi dado antes das regras atuais. Conferir de novo aplica as de hoje.">regras antigas</span>` : ''}</td>
     <td>
       ${escapar(r.nome)}${seloDoEnvio(r)}<br>
-      <span class="emp ${escapar(r.empresa || 'DISO')}">${escapar(r.cracha || r.empresa || '')}</span>
+      <span class="emp ${escapar(r.empresa || 'DISO')}">${escapar(r.cracha || r.empresa || '')}</span>${r.enviado_em ? `<br><span class="sub" style="font-size:12px" title="Quando o colaborador enviou o relatório">Enviado ${escapar(dataHoraBr(r.enviado_em))}</span>` : ''}
     </td>
     <td class="num">${numeroBr(r.total_km)}</td>
     <td class="num">${brl(r.valor_km)}</td>
@@ -833,6 +833,7 @@ async function abrirDetalhe(id) {
         ${escapar(r.mes_extenso)} ·
         <span class="selo ${r.status}">${escapar(r.rotulo_status)}</span>
         ${r.placas ? ` · placas: ${escapar(placaParaTela(r.placas))}` : " · sem placa declarada"}
+        · ${r.enviado_em ? `enviado em <strong>${escapar(dataHoraBr(r.enviado_em))}</strong>` : 'ainda não enviado'}
       </p>
 
       <div id="edicao" class="esconde"></div>
@@ -878,6 +879,7 @@ async function abrirDetalhe(id) {
                   ${a.tipo === 'odometro' ? `<span class="selo" title="Dia e KM que a pessoa informou ao anexar a foto">${escapar(diaDaFoto(a))}</span>` : ''}
                   ${a.valor ? `<span class="selo CERTA">${brl(a.valor)}</span>` : ''}
                   ${a.arquivado_em ? `<span class="selo" title="Tirado do servidor. Devolva o bloco para abrir aqui.">Arquivado · bloco ${a.arquivado_bloco}</span>` : ''}
+                  <span class="peso" title="Quando o arquivo foi anexado">${escapar(dataHoraBr(a.enviado_em))}</span>
                   <span class="peso">${tamanhoBr(a.tamanho)}</span>
                 </div>`,
               )
