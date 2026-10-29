@@ -431,23 +431,23 @@ async function inscreverEsteAparelho() {
   });
 }
 
-function adiado() {
+function adiado(chave = 'notif-adiada-ate') {
   try {
-    return Number(localStorage.getItem('notif-adiada-ate') || 0) > Date.now();
+    return Number(localStorage.getItem(chave) || 0) > Date.now();
   } catch {
     return false;
   }
 }
 
-function adiar() {
+function adiar(chave = 'notif-adiada-ate', dias = ADIAR_DIAS) {
   try {
-    localStorage.setItem('notif-adiada-ate', String(Date.now() + ADIAR_DIAS * 864e5));
+    localStorage.setItem(chave, String(Date.now() + dias * 864e5));
   } catch {
     // sem armazenamento: o convite volta na proxima vez, so isso
   }
 }
 
-function faixaDeNotificacao(html, { comBotao }) {
+function faixaDeNotificacao(html, { botaoSim = null, chave, dias } = {}) {
   const faixa = document.createElement('div');
   faixa.className = 'cartao';
   faixa.style.cssText = [
@@ -457,15 +457,76 @@ function faixaDeNotificacao(html, { comBotao }) {
   faixa.innerHTML = `
     <div>${html}</div>
     <div class="linha-botoes" style="margin-top:12px">
-      ${comBotao ? '<button type="button" data-sim>Ativar notificações</button>' : ''}
-      <button type="button" class="secundario" data-nao>${comBotao ? 'Agora não' : 'Entendi'}</button>
+      ${botaoSim ? `<button type="button" data-sim>${botaoSim}</button>` : ''}
+      <button type="button" class="secundario" data-nao>Agora não</button>
     </div>`;
   document.body.append(faixa);
   faixa.querySelector('[data-nao]').addEventListener('click', () => {
-    adiar();
+    adiar(chave, dias);
     faixa.remove();
   });
   return faixa;
+}
+
+// ------------------------------------------------------- instalar o app
+//
+// Notificacao confiavel no celular so com o portal instalado: no iPhone e a
+// unica forma, e no Android o app instalado tem o proprio ajuste de som. Por
+// isso, quem entra pelo navegador do celular ve o convite para instalar toda
+// vez que entra - "Agora nao" so cala por um dia.
+//
+// O Chrome do Android avisa que da para instalar com o evento
+// beforeinstallprompt; guardado aqui, vira o botao "Instalar app". Ele pode
+// chegar antes ou depois do convite aparecer, entao o botao nasce escondido.
+// iPhone e os outros navegadores nao tem o evento: ficam so as instrucoes.
+
+let pedidoDeInstalacao = null;
+let faixaDeInstalacao = null;
+
+window.addEventListener('beforeinstallprompt', (ev) => {
+  ev.preventDefault();
+  pedidoDeInstalacao = ev;
+  faixaDeInstalacao?.querySelector('[data-sim]')?.classList.remove('esconde');
+});
+
+window.addEventListener('appinstalled', () => {
+  pedidoDeInstalacao = null;
+  if (!faixaDeInstalacao) return;
+  faixaDeInstalacao.innerHTML = `<div class="aviso ok"><strong>App instalado!</strong> Agora abra o portal pelo
+    ícone <strong>RDV</strong> na tela inicial e toque em <strong>Ativar notificações</strong>.</div>`;
+  setTimeout(() => faixaDeInstalacao?.remove(), 8000);
+});
+
+function ehCelular() {
+  return ehIphone() || /Android|Mobi/.test(navigator.userAgent);
+}
+
+function convidarParaInstalar() {
+  const comoFazer = ehIphone()
+    ? `No Safari, toque em <strong>Compartilhar</strong> (o quadrado com a seta) e depois em
+       <strong>Adicionar à Tela de Início</strong>.`
+    : `Toque no menu <strong>⋮</strong> do navegador e em <strong>Instalar app</strong>
+       (ou <strong>Adicionar à tela inicial</strong>).`;
+  faixaDeInstalacao = faixaDeNotificacao(
+    `<strong>Instale o app do Portal RDV</strong>
+     <p class="sub" style="margin:6px 0 0">É assim que o seu celular recebe os avisos do portal,
+     como RDV conferido ou com pendência. ${comoFazer}
+     Depois, abra pelo ícone novo e ative as notificações.</p>`,
+    { botaoSim: 'Instalar app', chave: 'instalar-adiado-ate', dias: 1 },
+  );
+  const botao = faixaDeInstalacao.querySelector('[data-sim]');
+  if (!pedidoDeInstalacao) botao.classList.add('esconde');
+  botao.addEventListener('click', async () => {
+    if (!pedidoDeInstalacao) return;
+    pedidoDeInstalacao.prompt();
+    const { outcome } = await pedidoDeInstalacao.userChoice;
+    pedidoDeInstalacao = null;
+    // Aceitou: o 'appinstalled' troca o recado. Recusou: o convite volta amanha.
+    if (outcome !== 'accepted') {
+      adiar('instalar-adiado-ate', 1);
+      faixaDeInstalacao.remove();
+    }
+  });
 }
 
 /** Chamar depois do login. Nao trava a tela: tudo aqui e silencioso se falhar. */
@@ -473,31 +534,26 @@ export async function oferecerNotificacoes() {
   try {
     const temPush = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 
-    // iPhone pelo Safari nao tem push: so com o portal instalado.
-    if (!temPush) {
-      if (ehIphone() && !estaInstalado() && !adiado()) {
-        faixaDeNotificacao(
-          `<strong>Quer receber avisos do portal no iPhone?</strong>
-           <p class="sub" style="margin:6px 0 0">Toque em <strong>Compartilhar</strong> e depois em
-           <strong>Adicionar à Tela de Início</strong>. Abra o portal pelo ícone novo e ative as notificações.</p>`,
-          { comBotao: false },
-        );
-      }
-      return;
-    }
-
-    if (Notification.permission === 'granted') {
+    if (temPush && Notification.permission === 'granted') {
       // Ja aceitou antes: so renova o endereco, que pode ter mudado.
       await inscreverEsteAparelho();
       return;
     }
-    if (Notification.permission === 'denied' || adiado()) return;
+
+    // Celular pelo navegador: primeiro instalar. As notificacoes o convite
+    // abaixo pede quando a pessoa abrir pelo icone.
+    if (ehCelular() && !estaInstalado()) {
+      if (!adiado('instalar-adiado-ate')) convidarParaInstalar();
+      return;
+    }
+
+    if (!temPush || Notification.permission === 'denied' || adiado()) return;
 
     const faixa = faixaDeNotificacao(
       `<strong>Ativar notificações do Portal RDV?</strong>
        <p class="sub" style="margin:6px 0 0">Você recebe no celular quando o seu RDV for conferido
        ou tiver alguma pendência.</p>`,
-      { comBotao: true },
+      { botaoSim: 'Ativar notificações' },
     );
     faixa.querySelector('[data-sim]').addEventListener('click', async () => {
       const resposta = await Notification.requestPermission();
