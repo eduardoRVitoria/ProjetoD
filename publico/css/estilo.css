@@ -423,11 +423,6 @@ button.pequeno { padding: 5px 11px; font-size: 13px; }
 
 .linha-botoes { display: flex; gap: 10px; flex-wrap: wrap; }
 
-/* Dois valores lado a lado - hotel e outras despesas. No celular empilha. */
-.dois-campos { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
-.dois-campos label { margin-bottom: 0; }
-@media (max-width: 560px) { .dois-campos { grid-template-columns: 1fr; } }
-
 /* ============================================================ AVISOS */
 
 .aviso {
@@ -748,16 +743,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 }
 
 .esconde { display: none !important; }
-
-.rodape-fixo {
-  position: fixed; left: 0; right: 0; bottom: 0;
-  background: var(--superficie); border-top: 1px solid var(--fio);
-  padding: 12px 32px calc(12px + env(safe-area-inset-bottom));
-  display: flex; gap: 10px; align-items: center;
-  z-index: 30;
-}
-.rodape-fixo .resumo { font-size: 13px; color: var(--texto-fraco); line-height: 1.35; }
-.rodape-fixo button { margin-left: auto; }
 
 .carregando { color: var(--texto-fraco); font-size: 14px; padding: 28px; text-align: center; }
 
