@@ -76,6 +76,12 @@ self.addEventListener('push', (ev) => {
       icon: '/icone-192.png',
       badge: '/icone-192.png',
       data: { url: dados.url || '/' },
+      // O som quem decide e o celular (configuracao do app/site). Daqui da
+      // para pedir vibracao no Android e que avisos seguidos toquem de novo.
+      silent: false,
+      vibrate: [200, 100, 200],
+      tag: 'portal-rdv',
+      renotify: true,
     }),
   );
 });
