@@ -42,6 +42,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>
       Valores pagos
     </button>
+    <button data-aba="notificacoes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/></svg>
+      Notificações
+    </button>
     <button data-aba="config">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
       Configurações
@@ -303,6 +307,36 @@
           <tbody id="vp-lista"></tbody>
         </table>
       </div>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------- notificacoes -->
+  <section id="aba-notificacoes" class="esconde">
+    <div class="cartao">
+      <h2>Enviar notificação</h2>
+      <p class="sub">
+        Chega no celular de quem abriu o portal e tocou em <strong>Ativar notificações</strong>.
+        No iPhone, só com o portal instalado na tela de início.
+      </p>
+      <div id="recado-notificacao"></div>
+      <label for="n-titulo">Título</label>
+      <input type="text" id="n-titulo" maxlength="80" placeholder="Ex.: RDV de outubro">
+      <label for="n-texto">Mensagem</label>
+      <textarea id="n-texto" maxlength="300" rows="3" placeholder="Ex.: O prazo para enviar o RDV termina sexta-feira."></textarea>
+      <div class="linha-botoes">
+        <button id="botao-notificar">Enviar para os marcados</button>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:space-between">
+        <h2 style="margin:0">Aparelhos que recebem</h2>
+        <label style="display:flex; gap:8px; align-items:center; margin:0">
+          <input type="checkbox" id="n-todos" style="width:auto; margin:0"> Marcar todos
+        </label>
+      </div>
+      <div class="numeros" id="aparelhos-contagem" style="margin-top:14px"></div>
+      <div id="aparelhos-lista"><p class="carregando">Carregando...</p></div>
     </div>
   </section>
 

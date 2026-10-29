@@ -4,7 +4,7 @@ import {
   classeDoAchado,
   api, subirArquivo, mostrarRecado, escapar, brl, numeroBr,
   dataBr, dataHoraBr, tamanhoBr, mesAtual, hojeLocal, lerNumeroBr, valorNoCampo, lembrarQuemEsta, sair, ROTULO_ANEXO, marcarAmbiente, anexoDoAchado,
-  agruparAchados, htmlDoGrupoDeAchados,
+  agruparAchados, htmlDoGrupoDeAchados, oferecerNotificacoes,
 } from '/js/comum.js';
 
 const $ = (id) => document.getElementById(id);
@@ -146,6 +146,8 @@ try {
     .split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
   marcarAmbiente(dados.ambiente);
   if (eu.trocar_senha) pedirTrocaDeSenha();
+  // Com a troca de senha na frente, o convite fica para a proxima abertura.
+  else oferecerNotificacoes();
 } catch (e) {
   // So volta para o login se a sessao caiu mesmo. Sinal ruim no 4G nao e
   // motivo para mandar a pessoa digitar a senha de novo.

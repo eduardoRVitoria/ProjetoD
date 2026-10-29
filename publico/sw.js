@@ -9,7 +9,7 @@
 // Agora a regra e simples: HTML, CSS e JS vem SEMPRE da rede. O cache guarda
 // so o icone e o manifest, que nunca mudam de forma.
 
-const CACHE = 'portal-rdv-v3';
+const CACHE = 'portal-rdv-v4';
 const SO_ESTES = ['/icone.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (ev) => {
@@ -55,6 +55,44 @@ self.addEventListener('fetch', (ev) => {
         })
         .catch(() => doCache);
       return doCache || daRede;
+    }),
+  );
+});
+
+// ------------------------------------------------------------ notificacoes
+//
+// O servidor manda {titulo, texto, url}. Mostrar a notificacao e obrigatorio:
+// o Chrome e o iPhone cortam a permissao de quem recebe push sem mostrar nada.
+self.addEventListener('push', (ev) => {
+  let dados = {};
+  try {
+    dados = ev.data ? ev.data.json() : {};
+  } catch {
+    dados = { texto: ev.data ? ev.data.text() : '' };
+  }
+  ev.waitUntil(
+    self.registration.showNotification(dados.titulo || 'Portal RDV', {
+      body: dados.texto || '',
+      icon: '/icone-192.png',
+      badge: '/icone-192.png',
+      data: { url: dados.url || '/' },
+    }),
+  );
+});
+
+// Tocar na notificacao abre o portal - ou traz para frente a janela ja aberta,
+// sem recarregar: a pessoa pode estar no meio do preenchimento.
+self.addEventListener('notificationclick', (ev) => {
+  ev.notification.close();
+  const destino = new URL(ev.notification.data?.url || '/', self.location.origin).href;
+  ev.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((janelas) => {
+      for (const j of janelas) {
+        if (new URL(j.url).origin === self.location.origin && 'focus' in j) {
+          return j.focus();
+        }
+      }
+      return self.clients.openWindow(destino);
     }),
   );
 });

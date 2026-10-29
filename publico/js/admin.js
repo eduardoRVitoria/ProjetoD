@@ -5,6 +5,7 @@ import {
   api, mostrarRecado, escapar, brl, numeroBr, dataBr, dataHoraBr,
   tamanhoBr, mesAtual, sair, ROTULO_ANEXO, marcarAmbiente, anexoDoAchado, placaParaTela,
   lembrarQuemEsta, lerNumeroBr, valorNoCampo, agruparAchados, htmlDoGrupoDeAchados,
+  oferecerNotificacoes,
 } from '/js/comum.js';
 
 const $ = (id) => document.getElementById(id);
@@ -150,6 +151,7 @@ try {
     $('aba-tudo-botao')?.classList.remove('esconde');
     $('opcao-super')?.classList.remove('esconde');
   }
+  oferecerNotificacoes();
 } catch {
   location.href = '/';
 }
@@ -247,6 +249,7 @@ for (const b of document.querySelectorAll('.abas button')) {
     if (b.dataset.aba === 'config') carregarConfig();
     if (b.dataset.aba === 'valores') carregarValoresPagos();
     if (b.dataset.aba === 'tudo') carregarTudo();
+    if (b.dataset.aba === 'notificacoes') carregarAparelhos();
     window.scrollTo({ top: 0 });
   });
 }
@@ -2691,3 +2694,75 @@ function blocoCorrecao(c) {
     ${corpo}
   </div>`;
 }
+
+// ------------------------------------------------------------ notificacoes
+//
+// Lista de quem aceitou receber aviso no celular e o envio para os marcados.
+// Cada admin so ve (e so alcanca) o pessoal do proprio recorte.
+
+
+async function carregarAparelhos() {
+  let aparelhos;
+  try {
+    aparelhos = await api('/api/admin/aparelhos');
+  } catch (e) {
+    $('aparelhos-lista').innerHTML = '';
+    return mostrarRecado('recado-notificacao', e.message, 'erro');
+  }
+  const pessoas = new Set(aparelhos.map((a) => a.usuario_id)).size;
+  $('aparelhos-contagem').innerHTML = `
+    <div class="numero destaque"><div class="rotulo">Aparelhos</div><div class="valor">${aparelhos.length}</div></div>
+    <div class="numero"><div class="rotulo">Pessoas</div><div class="valor">${pessoas}</div></div>
+    <div class="numero"><div class="rotulo">App instalado</div>
+      <div class="valor">${aparelhos.filter((a) => a.instalado).length}</div></div>`;
+  $('n-todos').checked = false;
+
+  if (!aparelhos.length) {
+    $('aparelhos-lista').innerHTML = `<p class="sub">Nenhum aparelho ainda. A lista enche conforme o pessoal
+      abre o portal e toca em <strong>Ativar notificações</strong>.</p>`;
+    return;
+  }
+  $('aparelhos-lista').innerHTML = `<div class="rolagem"><table>
+    <thead><tr><th></th><th>Colaborador</th><th>Crachá</th><th>Aparelho</th><th>App instalado</th>
+      <th>Último acesso</th><th>Último envio</th></tr></thead>
+    <tbody>${aparelhos.map((a) => `<tr>
+      <td><input type="checkbox" data-aparelho="${a.id}" style="width:auto; margin:0"></td>
+      <td>${escapar(a.nome)}</td>
+      <td><span class="emp ${escapar(a.empresa)}">${escapar(a.cracha || a.empresa)}</span></td>
+      <td>${escapar(a.descricao || '—')}</td>
+      <td>${a.instalado ? 'Sim' : 'Não'}</td>
+      <td>${dataHoraBr(a.visto_em)}</td>
+      <td>${a.ultimo_erro
+        ? `<span style="color:var(--vermelho)" title="${escapar(a.ultimo_erro)}">Falhou</span>`
+        : a.ultimo_envio ? dataHoraBr(a.ultimo_envio) : '—'}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+$('n-todos').addEventListener('change', (ev) => {
+  for (const c of document.querySelectorAll('[data-aparelho]')) c.checked = ev.target.checked;
+});
+
+$('botao-notificar').addEventListener('click', async () => {
+  const ids = [...document.querySelectorAll('[data-aparelho]:checked')].map((c) => Number(c.dataset.aparelho));
+  const titulo = $('n-titulo').value.trim();
+  const texto = $('n-texto').value.trim();
+  if (!titulo) return mostrarRecado('recado-notificacao', 'Escreva o título.', 'erro');
+  if (!ids.length) return mostrarRecado('recado-notificacao', 'Marque pelo menos um aparelho na lista.', 'erro');
+  if (!confirm(`Enviar "${titulo}" para ${ids.length} aparelho(s)?`)) return;
+
+  const botao = $('botao-notificar');
+  botao.disabled = true;
+  try {
+    const r = await api('/api/admin/notificar', { metodo: 'POST', corpo: { titulo, texto, ids } });
+    const partes = [`Enviada para ${r.enviados} aparelho(s).`];
+    if (r.removidos) partes.push(`${r.removidos} saíram da lista (desinstalaram ou tiraram a permissão).`);
+    if (r.falhas) partes.push(`${r.falhas} falharam — tente de novo mais tarde.`);
+    mostrarRecado('recado-notificacao', partes.join(' '), r.falhas ? 'atencao' : 'ok');
+    carregarAparelhos();
+  } catch (e) {
+    mostrarRecado('recado-notificacao', e.message, 'erro');
+  } finally {
+    botao.disabled = false;
+  }
+});

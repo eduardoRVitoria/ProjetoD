@@ -18,6 +18,7 @@ import {
   cookieDeSaida,
 } from './auth.js';
 import { checarSaude } from './saude.js';
+import { chavePublica, inscrever, desinscrever, enviar as enviarNotificacao } from './notificacoes.js';
 import {
   conferir,
   diferencaDePedagio as achadoDeDiferenca,
@@ -150,6 +151,9 @@ export async function tratarApi(req, res, url, usuario, seguro) {
 
   if (rota === '/api/eu' && metodo === 'GET') return eu(res, usuario);
   if (rota === '/api/trocar-senha' && metodo === 'POST') return trocarMinhaSenha(req, res, usuario);
+  if (rota === '/api/push/chave' && metodo === 'GET') return responderJson(res, { chave: chavePublica() });
+  if (rota === '/api/push/inscrever' && metodo === 'POST') return inscreverAparelho(req, res, usuario);
+  if (rota === '/api/push/sair' && metodo === 'POST') return desinscreverAparelho(req, res, usuario);
 
   // Admin lancando pelo colaborador: `?em_nome_de=<id>` faz o relatorio e os
   // anexos cairem na conta dele, como se ele mesmo tivesse mandado. Serve para
@@ -225,6 +229,8 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/valores-pagos' && metodo === 'GET') return listarValoresPagos(res, url, usuario);
     if (rota === '/api/admin/valor-pago' && metodo === 'POST') return gravarValorPago(req, res, usuario);
     if (rota === '/api/admin/usuario' && metodo === 'DELETE') return excluirUsuario(req, res, usuario);
+    if (rota === '/api/admin/aparelhos' && metodo === 'GET') return listarAparelhos(res, usuario);
+    if (rota === '/api/admin/notificar' && metodo === 'POST') return notificar(req, res, usuario);
     if (rota === '/api/admin/historico' && metodo === 'GET') return exportarHistorico(res, url, usuario);
     if (rota === '/api/admin/config' && metodo === 'GET') return pegarConfig(res);
     if (rota === '/api/admin/config' && metodo === 'POST') return salvarConfig(req, res);
@@ -3291,4 +3297,65 @@ function diferencaDePedagio(rel) {
 
   const dif = Number((comprovado - declarado).toFixed(2));
   return Math.abs(dif) < 0.01 ? 0 : dif;
+}
+
+// ------------------------------------------------------------- notificacoes
+
+async function inscreverAparelho(req, res, usuario) {
+  const { inscricao, descricao, instalado } = await lerJson(req);
+  try {
+    inscrever(usuario.id, inscricao, { descricao, instalado });
+  } catch (e) {
+    return erro(res, e.message);
+  }
+  responderJson(res, { ok: true });
+}
+
+async function desinscreverAparelho(req, res, usuario) {
+  const { endpoint } = await lerJson(req);
+  desinscrever(usuario.id, endpoint);
+  responderJson(res, { ok: true });
+}
+
+// Cada admin ve e notifica so quem esta no recorte dele, como no resto do painel.
+function aparelhosNoAlcance(quem) {
+  const { sql: filtro, args } = filtroSql(quem);
+  return db
+    .prepare(
+      `SELECT a.id, a.endpoint, a.p256dh, a.auth, a.descricao, a.instalado, a.criado_em, a.visto_em,
+              a.ultimo_envio, a.ultimo_erro,
+              u.id AS usuario_id, u.nome, u.login, u.empresa, u.funcao
+         FROM aparelhos a JOIN usuarios u ON u.id = a.usuario_id
+        WHERE u.ativo = 1 ${filtro}
+        ORDER BY u.nome, a.visto_em DESC`,
+    )
+    .all(...args);
+}
+
+function listarAparelhos(res, quem) {
+  responderJson(
+    res,
+    aparelhosNoAlcance(quem).map(({ endpoint, p256dh, auth, ...a }) => ({
+      ...a,
+      cracha: cracha(a.empresa, a.funcao),
+    })),
+  );
+}
+
+async function notificar(req, res, quem) {
+  const { titulo, texto, ids } = await lerJson(req);
+  const t = String(titulo || '').trim().slice(0, 80);
+  const x = String(texto || '').trim().slice(0, 300);
+  if (!t) return erro(res, 'Escreva o titulo da notificacao.');
+  if (!Array.isArray(ids) || !ids.length) return erro(res, 'Escolha pelo menos um aparelho.');
+
+  const escolhidos = new Set(ids.map(Number));
+  const alvo = aparelhosNoAlcance(quem).filter((a) => escolhidos.has(a.id));
+  if (!alvo.length) return erro(res, 'Nenhum dos aparelhos escolhidos esta no seu alcance.');
+
+  const r = await enviarNotificacao(alvo, {
+    titulo: t, texto: x, url: '/', contato: `https://${req.headers.host}`,
+  });
+  log.info('push', 'notificacao enviada', { quem: quem.login, titulo: t, ...r });
+  responderJson(res, r);
 }

@@ -378,6 +378,147 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
+// ------------------------------------------------------------ notificacoes
+//
+// Pede permissao para avisar no celular e manda o endereco do aparelho para o
+// servidor, que guarda na lista do admin. O pedido sai de um toque num botao
+// porque o iPhone recusa pedido de permissao que nao vem de um toque, e o
+// Chrome esconde o que aparece sozinho ao abrir a pagina.
+
+const ADIAR_DIAS = 7;
+
+function estaInstalado() {
+  return window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+
+function ehIphone() {
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function descricaoDoAparelho() {
+  const ua = navigator.userAgent;
+  const sistema = ehIphone() ? (/iPad/.test(ua) ? 'iPad' : 'iPhone')
+    : /Android/.test(ua) ? 'Android'
+    : /Windows/.test(ua) ? 'Windows'
+    : /Mac/.test(ua) ? 'Mac' : 'Outro';
+  const navegador = /SamsungBrowser/.test(ua) ? 'Samsung'
+    : /Edg\//.test(ua) ? 'Edge'
+    : /Firefox|FxiOS/.test(ua) ? 'Firefox'
+    : /Chrome|CriOS/.test(ua) ? 'Chrome'
+    : /Safari/.test(ua) ? 'Safari' : '';
+  return navegador ? `${sistema} - ${navegador}` : sistema;
+}
+
+function chaveEmBytes(base64url) {
+  const b64 = (base64url + '='.repeat((4 - (base64url.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+async function inscreverEsteAparelho() {
+  const registro = await navigator.serviceWorker.ready;
+  let inscricao = await registro.pushManager.getSubscription();
+  if (!inscricao) {
+    const { chave } = await api('/api/push/chave');
+    inscricao = await registro.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: chaveEmBytes(chave),
+    });
+  }
+  await api('/api/push/inscrever', {
+    metodo: 'POST',
+    corpo: { inscricao: inscricao.toJSON(), descricao: descricaoDoAparelho(), instalado: estaInstalado() },
+  });
+}
+
+function adiado() {
+  try {
+    return Number(localStorage.getItem('notif-adiada-ate') || 0) > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+function adiar() {
+  try {
+    localStorage.setItem('notif-adiada-ate', String(Date.now() + ADIAR_DIAS * 864e5));
+  } catch {
+    // sem armazenamento: o convite volta na proxima vez, so isso
+  }
+}
+
+function faixaDeNotificacao(html, { comBotao }) {
+  const faixa = document.createElement('div');
+  faixa.className = 'cartao';
+  faixa.style.cssText = [
+    'position:fixed', 'left:12px', 'right:12px', 'bottom:12px', 'z-index:9000',
+    'max-width:480px', 'margin:0 auto', 'box-shadow:0 8px 28px rgba(0,0,0,.18)',
+  ].join(';');
+  faixa.innerHTML = `
+    <div>${html}</div>
+    <div class="linha-botoes" style="margin-top:12px">
+      ${comBotao ? '<button type="button" data-sim>Ativar notificações</button>' : ''}
+      <button type="button" class="secundario" data-nao>${comBotao ? 'Agora não' : 'Entendi'}</button>
+    </div>`;
+  document.body.append(faixa);
+  faixa.querySelector('[data-nao]').addEventListener('click', () => {
+    adiar();
+    faixa.remove();
+  });
+  return faixa;
+}
+
+/** Chamar depois do login. Nao trava a tela: tudo aqui e silencioso se falhar. */
+export async function oferecerNotificacoes() {
+  try {
+    const temPush = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+    // iPhone pelo Safari nao tem push: so com o portal instalado.
+    if (!temPush) {
+      if (ehIphone() && !estaInstalado() && !adiado()) {
+        faixaDeNotificacao(
+          `<strong>Quer receber avisos do portal no iPhone?</strong>
+           <p class="sub" style="margin:6px 0 0">Toque em <strong>Compartilhar</strong> e depois em
+           <strong>Adicionar à Tela de Início</strong>. Abra o portal pelo ícone novo e ative as notificações.</p>`,
+          { comBotao: false },
+        );
+      }
+      return;
+    }
+
+    if (Notification.permission === 'granted') {
+      // Ja aceitou antes: so renova o endereco, que pode ter mudado.
+      await inscreverEsteAparelho();
+      return;
+    }
+    if (Notification.permission === 'denied' || adiado()) return;
+
+    const faixa = faixaDeNotificacao(
+      `<strong>Ativar notificações do Portal RDV?</strong>
+       <p class="sub" style="margin:6px 0 0">Você recebe no celular quando o seu RDV for conferido
+       ou tiver alguma pendência.</p>`,
+      { comBotao: true },
+    );
+    faixa.querySelector('[data-sim]').addEventListener('click', async () => {
+      const resposta = await Notification.requestPermission();
+      if (resposta === 'granted') {
+        try {
+          await inscreverEsteAparelho();
+          faixa.innerHTML = '<div class="aviso ok">Pronto! Este aparelho vai receber os avisos do portal.</div>';
+        } catch {
+          faixa.innerHTML = '<div class="aviso erro">Não deu para ativar agora. Tente de novo mais tarde.</div>';
+        }
+        setTimeout(() => faixa.remove(), 3500);
+      } else {
+        adiar();
+        faixa.remove();
+      }
+    });
+  } catch {
+    // notificacao e conveniencia: nunca pode quebrar a tela
+  }
+}
+
 /**
  * Faixa de ambiente de teste.
  *
