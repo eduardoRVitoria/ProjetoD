@@ -493,7 +493,7 @@ window.addEventListener('appinstalled', () => {
   pedidoDeInstalacao = null;
   if (!telaDeInstalacao) return;
   telaDeInstalacao.querySelector('[data-conteudo]').innerHTML = `
-    <img src="/icone-192.png" alt="" width="88" height="88" style="border-radius:20px; display:block; margin:0 auto 20px">
+    <img src="/logodiso.png" alt="" width="88" height="88" style="border-radius:20px; display:block; margin:0 auto 20px">
     <h2 style="font-size:26px; text-align:center; border:0; margin:0 0 12px">App instalado!</h2>
     <p style="font-size:18px; line-height:1.5; text-align:center; margin:0 0 28px">
       Agora feche o navegador, abra o portal pelo ícone <strong>RDV</strong> na tela inicial
@@ -540,7 +540,7 @@ function convidarParaInstalar() {
   ].join(';');
   telaDeInstalacao.innerHTML = `
     <div data-conteudo style="width:100%; max-width:440px; margin:auto">
-      <img src="/icone-192.png" alt="" width="88" height="88" style="border-radius:20px; display:block; margin:0 auto 20px">
+      <img src="/logodiso.png" alt="" width="88" height="88" style="border-radius:20px; display:block; margin:0 auto 20px">
       <h2 style="font-size:26px; text-align:center; border:0; margin:0 0 12px">Instale o app do Portal RDV</h2>
       <p style="font-size:17px; line-height:1.5; text-align:center; margin:0 0 24px">
         Só com o app instalado o seu celular recebe os avisos do portal:

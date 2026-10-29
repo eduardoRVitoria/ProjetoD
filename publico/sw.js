@@ -10,7 +10,7 @@
 // so o icone e o manifest, que nunca mudam de forma.
 
 const CACHE = 'portal-rdv-v4';
-const SO_ESTES = ['/icone.svg', '/manifest.webmanifest'];
+const SO_ESTES = ['/logodiso.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (ev) => {
   ev.waitUntil(
@@ -73,8 +73,8 @@ self.addEventListener('push', (ev) => {
   ev.waitUntil(
     self.registration.showNotification(dados.titulo || 'Portal RDV', {
       body: dados.texto || '',
-      icon: '/icone-192.png',
-      badge: '/icone-192.png',
+      icon: '/logodiso.png',
+      badge: '/logodiso.png',
       data: { url: dados.url || '/' },
       // O som quem decide e o celular (configuracao do app/site). Daqui da
       // para pedir vibracao no Android e que avisos seguidos toquem de novo.
