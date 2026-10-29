@@ -1115,8 +1115,11 @@ function blocoPendenciasAgora(pendencias, d) {
   // faltando. O que interessa nesta linha do painel e: ja da para conferir
   // este relatorio, ou ainda estou esperando documento?
   const falta = [];
-  if (!d.linhas.length) falta.push('os lançamentos do dia a dia');
-  if (!d.anexos.some((a) => a.tipo === 'rdv')) falta.push('o arquivo do RDV');
+  // Os dias saem do arquivo do RDV. Com o arquivo aqui e zero dias, nao falta
+  // nada da pessoa: falta so ler, e o "Conferir" le antes de conferir.
+  const temRdv = d.anexos.some((a) => a.tipo === 'rdv');
+  if (!temRdv) falta.push('o arquivo do RDV');
+  else if (!d.linhas.length) falta.push('ler o RDV anexado (o botão Conferir lê sozinho)');
   if (!d.anexos.some((a) => a.tipo === 'danfe')) falta.push('a nota de abastecimento');
   // Carro da empresa não manda foto do odômetro.
   if (d.cobra_odometro !== false && !d.anexos.some((a) => a.tipo === 'odometro')) {

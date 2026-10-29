@@ -103,7 +103,6 @@ PERGUNTA_DO_DIA.foto_nao_bate_justificada = PERGUNTA_DO_DIA.foto_nao_bate_com_o_
 PERGUNTA_DO_DIA.troca_de_carro_justificada = PERGUNTA_DO_DIA.fotos_em_ordem_errada;
 const perguntaDo = (codigo) => PERGUNTA_DO_DIA[codigo] || PERGUNTA_DO_DIA.noturna;
 
-let modoManual = false;
 let relogio = null;
 // A caixa de justificativa aberta na aba Conferencia, se houver alguma:
 // { chave: 'mes' | 'dia:2026-09-04', texto, focar }. Mora fora do DOM porque
@@ -189,21 +188,7 @@ for (const b of document.querySelectorAll('.abas button[data-aba]')) {
 
 $('esconder-vazios').addEventListener('change', desenharGrade);
 $('botao-ler').addEventListener('click', lerRdv);
-
-// Escape para quando a leitura falhar ou a IA estiver desligada: a pessoa
-// preenche a grade na mao, como antes. Melhor que travar o envio do mes.
-$('botao-manual').addEventListener('click', () => {
-  modoManual = true;
-  $('cartao-lido').style.display = '';
-  $('cartao-lido').querySelector('h2').textContent = 'Preencha os dias';
-  desenharGrade();
-  mostrarRecado(
-    'recado-leitura',
-    'Modo manual. Preencha os dias que voce rodou — o total e o valor são calculados sozinhos.',
-    'info',
-  );
-  $('cartao-lido').scrollIntoView({ behavior: 'smooth' });
-});
+// Nao existe mais "Preencher na mao": os dias vem so do RDV anexado.
 $('botao-salvar').addEventListener('click', () => salvar(true));
 $('botao-enviar').addEventListener('click', enviar);
 $('observacao').addEventListener('input', () => marcarSujo());
@@ -260,7 +245,7 @@ function desenharTudo() {
     (d) => d.km_inicial || d.km_final || d.itinerario || d.pedagio || d.estacionamento,
   );
   $('cartao-lido').style.display =
-    estado.relatorio.extraido || modoManual || temLinhas ? '' : 'none';
+    estado.relatorio.extraido || temLinhas ? '' : 'none';
 
   $('botao-ler').textContent = estado.relatorio.extraido ? 'Ler de novo' : 'Ler meu relatório';
 }
@@ -721,6 +706,9 @@ async function enviarArquivos(arquivos) {
     mostrarRecado('recado', avisoDoServidor || 'Arquivos enviados.', 'ok');
     if (!avisoDoServidor) setTimeout(() => mostrarRecado('recado', ''), 2500);
     avisoDoServidor = '';
+    // Os dias saem so do RDV anexado: le na hora, sem esperar a pessoa achar
+    // o botao. Quem anexava e nao tocava em "Ler" ficava com zero dias.
+    if (tipoEmUso === 'rdv' && EDITAVEIS.has(estado.relatorio.status)) await lerRdv();
   } catch (e) {
     mostrarRecado('recado', e.message, 'erro');
   }
