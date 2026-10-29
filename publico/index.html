@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#ffffff">
 <title>Portal RDV — DISO</title>
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/logodiso.png" type="image/svg+xml">
-<link rel="logodiso.png" href="/apple-touch-icon.png">
+<link rel="icon" href="/logodiso.png" type="image/png">
+<link rel="logodiso.png" href="/logodiso.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
@@ -16,7 +16,7 @@
   .abertura { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
   .caixa { width: 100%; max-width: 380px; }
   .entrada-topo { text-align: center; margin-bottom: 28px; }
-  .entrada-topo .logo { width: 48px; height: 48px; display: block; margin: 0 auto 20px; }
+  .entrada-topo .logo { width: 140px; height: auto; display: block; margin: 0 auto 20px; }
   .entrada-topo h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -.5px; }
   .entrada-topo p { margin: 8px 0 0; color: var(--texto-fraco); font-size: 15px; }
   .caixa .cartao { padding: 24px; }
@@ -28,11 +28,7 @@
 <div class="abertura">
   <div class="caixa">
     <div class="entrada-topo">
-      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="7" fill="#141414"/>
-      <path d="M10 8h8l4 4v12H10z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
-      <path d="M13.5 17l2 2 3.5-4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
+      <img src="/logodiso.png" alt="" class="logo">
       <h1>Entre no Portal RDV</h1>
       <p>Relatórios de despesas de viagem</p>
     </div>
