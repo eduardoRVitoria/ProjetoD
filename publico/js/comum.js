@@ -481,40 +481,80 @@ function faixaDeNotificacao(html, { botaoSim = null, chave, dias } = {}) {
 // iPhone e os outros navegadores nao tem o evento: ficam so as instrucoes.
 
 let pedidoDeInstalacao = null;
-let faixaDeInstalacao = null;
+let telaDeInstalacao = null;
 
 window.addEventListener('beforeinstallprompt', (ev) => {
   ev.preventDefault();
   pedidoDeInstalacao = ev;
-  faixaDeInstalacao?.querySelector('[data-sim]')?.classList.remove('esconde');
+  telaDeInstalacao?.querySelector('[data-sim]')?.classList.remove('esconde');
 });
 
 window.addEventListener('appinstalled', () => {
   pedidoDeInstalacao = null;
-  if (!faixaDeInstalacao) return;
-  faixaDeInstalacao.innerHTML = `<div class="aviso ok"><strong>App instalado!</strong> Agora abra o portal pelo
-    ícone <strong>RDV</strong> na tela inicial e toque em <strong>Ativar notificações</strong>.</div>`;
-  setTimeout(() => faixaDeInstalacao?.remove(), 8000);
+  if (!telaDeInstalacao) return;
+  telaDeInstalacao.querySelector('[data-conteudo]').innerHTML = `
+    <img src="/icone-192.png" alt="" width="88" height="88" style="border-radius:20px; display:block; margin:0 auto 20px">
+    <h2 style="font-size:26px; text-align:center; border:0; margin:0 0 12px">App instalado!</h2>
+    <p style="font-size:18px; line-height:1.5; text-align:center; margin:0 0 28px">
+      Agora feche o navegador, abra o portal pelo ícone <strong>RDV</strong> na tela inicial
+      e toque em <strong>Ativar notificações</strong>.</p>
+    <button type="button" data-fechar style="width:100%; font-size:18px; padding:16px">Entendi</button>`;
+  telaDeInstalacao.querySelector('[data-fechar]').addEventListener('click', fecharTelaDeInstalacao);
 });
 
 function ehCelular() {
   return ehIphone() || /Android|Mobi/.test(navigator.userAgent);
 }
 
+function fecharTelaDeInstalacao() {
+  telaDeInstalacao?.remove();
+  telaDeInstalacao = null;
+  document.body.style.overflow = '';
+}
+
+// Tela inteira de proposito: um cartao pequeno embaixo passa despercebido. A
+// pessoa ainda sai por "Agora nao", que esconde o convite por um dia.
 function convidarParaInstalar() {
-  const comoFazer = ehIphone()
-    ? `No Safari, toque em <strong>Compartilhar</strong> (o quadrado com a seta) e depois em
-       <strong>Adicionar à Tela de Início</strong>.`
-    : `Toque no menu <strong>⋮</strong> do navegador e em <strong>Instalar app</strong>
-       (ou <strong>Adicionar à tela inicial</strong>).`;
-  faixaDeInstalacao = faixaDeNotificacao(
-    `<strong>Instale o app do Portal RDV</strong>
-     <p class="sub" style="margin:6px 0 0">É assim que o seu celular recebe os avisos do portal,
-     como RDV conferido ou com pendência. ${comoFazer}
-     Depois, abra pelo ícone novo e ative as notificações.</p>`,
-    { botaoSim: 'Instalar app', chave: 'instalar-adiado-ate', dias: 1 },
-  );
-  const botao = faixaDeInstalacao.querySelector('[data-sim]');
+  const passos = ehIphone()
+    ? [
+      'Na barra do Safari, toque em <strong>Compartilhar</strong> (o quadrado com a seta para cima).',
+      'Role a lista e toque em <strong>Adicionar à Tela de Início</strong>.',
+      'Toque em <strong>Adicionar</strong>, no canto de cima.',
+      'Abra o portal pelo ícone <strong>RDV</strong> e toque em <strong>Ativar notificações</strong>.',
+    ]
+    : [
+      'Toque no menu <strong>⋮</strong>, no canto de cima do navegador.',
+      'Toque em <strong>Instalar app</strong> (ou <strong>Adicionar à tela inicial</strong>).',
+      'Confirme em <strong>Instalar</strong>.',
+      'Abra o portal pelo ícone <strong>RDV</strong> e toque em <strong>Ativar notificações</strong>.',
+    ];
+
+  telaDeInstalacao = document.createElement('div');
+  telaDeInstalacao.setAttribute('role', 'dialog');
+  telaDeInstalacao.setAttribute('aria-modal', 'true');
+  telaDeInstalacao.style.cssText = [
+    'position:fixed', 'inset:0', 'z-index:9500', 'background:var(--superficie, #fff)',
+    // Centraliza pelo margin:auto do conteudo, e nao por align-items: em tela
+    // baixa, align-items:center corta o topo e a rolagem nao alcanca.
+    'overflow-y:auto', 'display:flex', 'padding:28px 20px',
+  ].join(';');
+  telaDeInstalacao.innerHTML = `
+    <div data-conteudo style="width:100%; max-width:440px; margin:auto">
+      <img src="/icone-192.png" alt="" width="88" height="88" style="border-radius:20px; display:block; margin:0 auto 20px">
+      <h2 style="font-size:26px; text-align:center; border:0; margin:0 0 12px">Instale o app do Portal RDV</h2>
+      <p style="font-size:17px; line-height:1.5; text-align:center; margin:0 0 24px">
+        Só com o app instalado o seu celular recebe os avisos do portal:
+        <strong>RDV conferido, pendência e prazo</strong>.</p>
+      <button type="button" data-sim style="width:100%; font-size:18px; padding:16px; margin-bottom:24px">Instalar app</button>
+      <ol style="font-size:17px; line-height:1.5; padding-left:22px; margin:0 0 28px">
+        ${passos.map((p) => `<li style="margin-bottom:12px">${p}</li>`).join('')}
+      </ol>
+      <button type="button" class="secundario" data-nao style="width:100%; font-size:16px; padding:14px">Agora não</button>
+    </div>`;
+  document.body.append(telaDeInstalacao);
+  document.body.style.overflow = 'hidden';
+
+  const botao = telaDeInstalacao.querySelector('[data-sim]');
   if (!pedidoDeInstalacao) botao.classList.add('esconde');
   botao.addEventListener('click', async () => {
     if (!pedidoDeInstalacao) return;
@@ -524,8 +564,12 @@ function convidarParaInstalar() {
     // Aceitou: o 'appinstalled' troca o recado. Recusou: o convite volta amanha.
     if (outcome !== 'accepted') {
       adiar('instalar-adiado-ate', 1);
-      faixaDeInstalacao.remove();
+      fecharTelaDeInstalacao();
     }
+  });
+  telaDeInstalacao.querySelector('[data-nao]').addEventListener('click', () => {
+    adiar('instalar-adiado-ate', 1);
+    fecharTelaDeInstalacao();
   });
 }
 
