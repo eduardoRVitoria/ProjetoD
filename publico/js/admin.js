@@ -56,6 +56,218 @@ async function baixar(url) {
   }
 }
 
+// ------------------------------------------------- comparativo de despesas DSO
+//
+// Com o Chrome ou o Edge o portal grava direto no arquivo escolhido. Nos outros
+// navegadores nao ha como: o arquivo novo vem como download.
+
+const TIPO_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+async function escolherPlanilha() {
+  if (window.showOpenFilePicker) {
+    try {
+      const [alca] = await window.showOpenFilePicker({
+        types: [{ description: 'Planilha do Excel', accept: { [TIPO_XLSX]: ['.xlsx'] } }],
+      });
+      return { alca, arquivo: await alca.getFile() };
+    } catch (e) {
+      if (e.name === 'AbortError') return null;
+      throw e;
+    }
+  }
+  return new Promise((resolve) => {
+    const campo = document.createElement('input');
+    campo.type = 'file';
+    campo.accept = '.xlsx';
+    campo.addEventListener('change', () => resolve(campo.files[0] ? { alca: null, arquivo: campo.files[0] } : null));
+    campo.click();
+  });
+}
+
+async function pedirComparativo(acao, mesEscolhido, arquivo, decisoes) {
+  const r = await fetch(`/api/admin/comparativo?mes=${mesEscolhido}&acao=${acao}`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'X-Decisoes': encodeURIComponent(JSON.stringify(decisoes)) },
+    body: arquivo,
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    throw new Error(d.erro || 'Não foi possível ler a planilha.');
+  }
+  return r;
+}
+
+async function abrirComparativo() {
+  const escolha = await escolherPlanilha();
+  if (!escolha) return;
+  const mesEscolhido = mes;
+  const decisoes = { nomes: {}, valores: {}, novos: {} };
+  const espera = avisar('Lendo a planilha...', 'info', 0);
+  try {
+    const r = await pedirComparativo('previa', mesEscolhido, escolha.arquivo, decisoes);
+    desenharComparativo(await r.json(), escolha, mesEscolhido, decisoes);
+  } finally {
+    espera.remove();
+  }
+}
+
+function desenharComparativo(p, escolha, mesEscolhido, decisoes) {
+  document.getElementById('modal-comparativo')?.remove();
+  const fundo = document.createElement('div');
+  fundo.className = 'fundo-modal';
+  fundo.id = 'modal-comparativo';
+
+  const prontos = p.itens.filter((i) => i.situacao === 'ok');
+  const semNome = p.itens.filter((i) => i.situacao === 'sem_nome');
+  const faltando = p.itens.filter((i) => i.situacao === 'pendente' || i.situacao === 'sem_rdv');
+  const difere = (i) => {
+    const atual = Object.values(i.atual).find((v) => typeof v === 'number');
+    return i.valor != null && atual != null && Math.abs(atual - i.valor) >= 0.01 ? atual : null;
+  };
+  const opcoes = (marcado) => [
+    '<option value="">Escolha quem é</option>',
+    ...p.pessoas_dso.map((u) => `<option value="${u.id}" ${u.id === marcado ? 'selected' : ''}>${escapar(u.nome)}</option>`),
+  ].join('');
+  const campoValor = (i) => {
+    const digitado = decisoes.valores[i.chave];
+    return `<input type="text" inputmode="decimal" data-valor="${escapar(i.chave)}" style="margin:0;max-width:120px"
+              value="${digitado != null ? escapar(String(digitado).replace('.', ',')) : ''}"
+              placeholder="${i.valor_portal != null ? escapar(numeroBr(i.valor_portal)) : 'Em branco'}">`;
+  };
+  const rotulo = (i) => (i.situacao === 'sem_rdv' ? 'Sem RDV enviado' : `Portal: ${escapar(i.status || '')} (${brl(i.valor_portal)})`);
+
+  const divergentes = prontos.filter((i) => difere(i) != null);
+
+  fundo.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="titulo-comparativo">
+      <h2 id="titulo-comparativo">Comparativo DSO: ${escapar(mesEscolhido)}</h2>
+      <p class="sub">
+        ${p.coluna_ja_existe
+          ? 'Este mês já existe na planilha. Só as células vazias serão preenchidas; o que já tem valor fica como está.'
+          : `A planilha vai até ${escapar(p.ultimo_mes_da_planilha)}. Serão criadas as colunas de ${escapar(mesEscolhido)}.`}
+        ${prontos.length} aprovados entram sozinhos, somando ${brl(prontos.reduce((s, i) => s + (i.valor || 0), 0))}.
+      </p>
+
+      ${semNome.length ? `<h3>Nomes que não encontrei no portal (${semNome.length})</h3>
+        <p class="sub">Escolha uma vez e o portal lembra nos próximos meses.</p>
+        ${semNome.map((i) => `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+          <span style="flex:1 1 220px">${escapar(i.nome_planilha)}${i.aviso ? `<br><span class="sub">${escapar(i.aviso)}</span>` : ''}</span>
+          <select data-nome="${escapar(i.nome_planilha)}" style="margin:0;flex:1 1 220px">${opcoes(null)}</select>
+          ${campoValor(i)}
+        </div>`).join('')}` : ''}
+
+      ${faltando.length ? `<h3>Sem RDV aprovado (${faltando.length})</h3>
+        <p class="sub">Ficam em branco, a menos que você digite o valor.</p>
+        ${faltando.map((i) => `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+          <span style="flex:1 1 220px">${escapar(i.nome)}<br><span class="sub">${rotulo(i)}</span></span>
+          ${campoValor(i)}
+        </div>`).join('')}` : ''}
+
+      ${p.novos.length ? `<h3>Na DSO, mas fora da planilha (${p.novos.length})</h3>
+        <p class="sub">Só entra se você escolher o grupo. Na COMP PARA O DP ela vai para a ordem alfabética.</p>
+        ${p.novos.map((n) => `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+          <span style="flex:1 1 220px">${escapar(n.nome)}<br><span class="sub">${escapar(n.status)} (${brl(n.valor_portal)})</span></span>
+          <select data-novo="${n.usuario_id}" style="margin:0;flex:1 1 220px">
+            <option value="">Não incluir</option>
+            ${p.grupos.map((g) => `<option value="${escapar(g)}" ${decisoes.novos[n.usuario_id]?.grupo === g ? 'selected' : ''}>${escapar(g)}</option>`).join('')}
+          </select>
+          ${campoValor({ chave: `u:${n.usuario_id}`, valor_portal: n.valor_portal })}
+        </div>`).join('')}` : ''}
+
+      ${divergentes.length ? `<h3>Planilha diferente do portal (${divergentes.length})</h3>
+        <p class="sub">A planilha fica como está. É só para você saber.</p>
+        ${divergentes.map((i) => `<div style="margin-bottom:6px">${escapar(i.nome)}: planilha ${brl(difere(i))}, portal ${brl(i.valor)}</div>`).join('')}` : ''}
+
+      <div id="comparativo-erro" class="sub" role="alert" style="color:var(--vermelho);font-weight:600"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px">
+        <button class="secundario" id="comparativo-fechar">Fechar sem gravar</button>
+        <button id="comparativo-gravar">Gravar na planilha</button>
+      </div>
+    </div>`;
+  document.body.appendChild(fundo);
+
+  const lerDecisoes = () => {
+    for (const c of fundo.querySelectorAll('[data-valor]')) {
+      if (c.value.trim()) decisoes.valores[c.dataset.valor] = lerNumeroBr(c.value);
+      else delete decisoes.valores[c.dataset.valor];
+    }
+    for (const s of fundo.querySelectorAll('[data-novo]')) {
+      if (s.value) decisoes.novos[s.dataset.novo] = { grupo: s.value };
+      else delete decisoes.novos[s.dataset.novo];
+    }
+  };
+
+  fundo.querySelector('#comparativo-fechar').addEventListener('click', () => fundo.remove());
+
+  // Ligar um nome muda quem e a pessoa e o valor: refaz a previa.
+  for (const s of fundo.querySelectorAll('[data-nome]')) {
+    s.addEventListener('change', async () => {
+      if (!s.value) return;
+      lerDecisoes();
+      decisoes.nomes[s.dataset.nome] = Number(s.value);
+      try {
+        const r = await pedirComparativo('previa', mesEscolhido, await arquivoAtual(escolha), decisoes);
+        desenharComparativo(await r.json(), escolha, mesEscolhido, decisoes);
+      } catch (e) {
+        fundo.querySelector('#comparativo-erro').textContent = e.message;
+      }
+    });
+  }
+
+  const gravar = fundo.querySelector('#comparativo-gravar');
+  gravar.addEventListener('click', async () => {
+    const recado = fundo.querySelector('#comparativo-erro');
+    recado.textContent = '';
+    lerDecisoes();
+    gravar.disabled = true;
+    try {
+      // Tem que ser a primeira coisa do clique: depois da espera do servidor, o
+      // navegador ja nao aceita pedir permissao.
+      if (escolha.alca && await escolha.alca.requestPermission({ mode: 'readwrite' }) !== 'granted') {
+        throw new Error('Sem permissão para gravar na planilha. Clique em Gravar e permita.');
+      }
+      const r = await pedirComparativo('gerar', mesEscolhido, await arquivoAtual(escolha), decisoes);
+      const resumo = JSON.parse(decodeURIComponent(r.headers.get('X-Resumo') || '%7B%7D'));
+      const blob = await r.blob();
+      await salvarComparativo(blob, escolha);
+      fundo.remove();
+      avisar(
+        `Planilha gravada: ${resumo.lancados} valores lançados, ${resumo.sem_valor?.length ?? 0} em branco e ${resumo.justificativas} em Justificativas.`,
+        'ok',
+        10,
+      );
+    } catch (e) {
+      recado.textContent = e.message;
+    } finally {
+      gravar.disabled = false;
+    }
+  });
+}
+
+// Le o arquivo de novo a cada pedido: ele pode ter sido editado no Excel.
+const arquivoAtual = async (escolha) => (escolha.alca ? escolha.alca.getFile() : escolha.arquivo);
+
+async function salvarComparativo(blob, escolha) {
+  if (!escolha.alca) {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = escolha.arquivo.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+    return;
+  }
+  try {
+    const saida = await escolha.alca.createWritable();
+    await saida.write(blob);
+    await saida.close();
+  } catch {
+    throw new Error('Não consegui gravar. Feche a planilha no Excel e clique em Gravar de novo.');
+  }
+}
+
 // Le um campo de filtro sem quebrar se ele nao existir na pagina.
 // Um HTML antigo em cache com o JS novo derrubava a tela inteira: sem os
 // filtros, o `$(id).value` estourava e a lista nunca era desenhada.
@@ -148,6 +360,7 @@ try {
   // A aba "Tudo" e o perfil "Dono" so existem para quem ve tudo. A rota ja
   // recusa os outros; esconder evita oferecer o que so devolveria 403.
   if (souSuper) {
+    $('botao-comparativo')?.classList.remove('esconde');
     $('aba-tudo-botao')?.classList.remove('esconde');
     $('opcao-super')?.classList.remove('esconde');
   }
@@ -184,6 +397,9 @@ $('botao-exportar').addEventListener('click', () => {
 });
 $('botao-imprimir-mes').addEventListener('click', () => {
   baixar(`/api/admin/impressao?mes=${mes}`);
+});
+ligar('botao-comparativo', 'click', () => {
+  abrirComparativo().catch((e) => avisar(e.message || 'Não foi possível abrir a planilha.'));
 });
 $('botao-criar-usuario').addEventListener('click', criarUsuario);
 

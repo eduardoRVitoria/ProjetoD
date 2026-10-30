@@ -35,6 +35,7 @@ import { conferirComIa, iaDisponivel, textoDosIgnorados } from './ia.js';
 import { conferirEmDemo } from './ia-demo.js';
 import { conferirPorCodigo } from './leitura-comprovantes.js';
 import { gerarPlanilha, gerarHistorico } from './planilha.js';
+import { previaDoComparativo, gerarComparativo, normalizarNome } from './comparativo.js';
 import { enviarBackup, restaurarBackup, resumoDosDados, bancoFechadoPelaRestauracao } from './backup.js';
 import { montarImpressao } from './impressao.js';
 import { resumoDoArmazenamento, enviarBloco, liberarBloco, devolverBloco } from './arquivamento.js';
@@ -196,6 +197,7 @@ export async function tratarApi(req, res, url, usuario, seguro) {
       '/api/admin/bloco',
       '/api/admin/bloco-liberar',
       '/api/admin/bloco-devolver',
+      '/api/admin/comparativo',
     ];
     if (soSuper.includes(rota) && !ehSuper(usuario)) {
       return erro(
@@ -235,6 +237,7 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/config' && metodo === 'GET') return pegarConfig(res);
     if (rota === '/api/admin/config' && metodo === 'POST') return salvarConfig(req, res);
     if (rota === '/api/admin/exportar' && metodo === 'GET') return exportarCsv(res, url, usuario);
+    if (rota === '/api/admin/comparativo' && metodo === 'POST') return comparativo(req, res, url, usuario);
     if (rota === '/api/admin/backup' && metodo === 'GET') return baixarBackup(res, usuario);
     if (rota === '/api/admin/restaurar' && metodo === 'POST') return subirBackup(req, res, usuario);
     if (rota === '/api/admin/dados' && metodo === 'GET') return responderJson(res, resumoDosDados());
@@ -3238,6 +3241,64 @@ async function salvarConfig(req, res) {
     log.info('config', 'modelo da IA trocado', { modelo });
   }
   pegarConfig(res);
+}
+
+// Comparativo de despesas da DSO. O navegador manda a planilha do admin e recebe
+// a previa (JSON) ou a planilha com o mes novo; o portal nao guarda o arquivo.
+async function comparativo(req, res, url, quem) {
+  const mes = url.searchParams.get('mes') || '';
+  if (!mesValido(mes)) return erro(res, 'Mes invalido.');
+
+  const arquivo = await lerCorpo(req, 20 * 1024 * 1024);
+  if (!arquivo.length) return erro(res, 'Nenhuma planilha recebida.');
+
+  let decisoes = {};
+  try {
+    decisoes = JSON.parse(decodeURIComponent(req.headers['x-decisoes'] || '%7B%7D'));
+  } catch {
+    return erro(res, 'Pedido invalido.');
+  }
+
+  const nomesSalvos = listaDeNomesDoComparativo();
+  const nomes = { ...nomesSalvos };
+  for (const [nome, id] of Object.entries(decisoes.nomes || {})) nomes[normalizarNome(nome)] = Number(id);
+
+  const pessoas = db
+    .prepare(
+      `SELECT u.id, u.nome, u.empresa, u.funcao, u.ativo, r.status,
+              COALESCE(r.valor_km, 0) + COALESCE(r.pedagio_declarado, 0) + COALESCE(r.estac_declarado, 0)
+                + COALESCE(r.hotel_declarado, 0) + COALESCE(r.outros_declarado, 0) AS total
+         FROM usuarios u
+         LEFT JOIN relatorios r ON r.usuario_id = u.id AND r.mes_ref = ?`,
+    )
+    .all(mes);
+
+  try {
+    if (url.searchParams.get('acao') !== 'gerar') {
+      return responderJson(res, await previaDoComparativo(arquivo, mes, pessoas, { ...decisoes, nomes }));
+    }
+    const { arquivo: pronto, resumo } = await gerarComparativo(arquivo, mes, pessoas, { ...decisoes, nomes });
+    // Quem o admin ligou uma vez nao precisa ser ligado de novo no mes seguinte.
+    gravarConfig('comparativo_nomes', JSON.stringify(nomes));
+    log.info('comparativo', 'mes gravado', { mes, por: quem?.login, ...resumo, sem_valor: resumo.sem_valor.length });
+    res.writeHead(200, {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Length': pronto.length,
+      'X-Resumo': encodeURIComponent(JSON.stringify(resumo)),
+    });
+    return res.end(pronto);
+  } catch (e) {
+    log.aviso('comparativo', 'planilha recusada', { mes, por: quem?.login, motivo: e.message });
+    return erro(res, e.message);
+  }
+}
+
+function listaDeNomesDoComparativo() {
+  try {
+    return JSON.parse(lerConfig('comparativo_nomes') || '{}');
+  } catch {
+    return {};
+  }
 }
 
 async function exportarCsv(res, url, quem) {
