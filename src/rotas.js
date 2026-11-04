@@ -978,9 +978,10 @@ async function enviarRelatorio(req, res, usuario) {
     ok: true,
     // A cobranca de anexo nao aparece mais na aba durante o preenchimento, entao
     // o "enviado" e a ultima chance de dizer o que ficou faltando.
-    aviso: faltando.length
-      ? `Enviado, mas faltou ${faltando.join(' e ')} - isso costuma reprovar o relatorio.`
-      : 'Relatorio enviado para conferencia.',
+    // aviso: faltando.length
+    //   ? `Enviado, mas faltou ${faltando.join(' e ')} - isso costuma reprovar o relatorio.`
+    //   : 'Relatorio enviado para conferencia.',
+    aviso: 'Arquivos recebidos.',
   });
 
   // A conferencia comeca sozinha, DEPOIS de responder.

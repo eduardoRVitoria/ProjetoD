@@ -31,7 +31,9 @@
     </div>
     <button data-aba="lancamentos" class="ativa">Meu relatório <span class="estado-etapa" id="estado-lancamentos"></span></button>
     <button data-aba="comprovantes">Comprovantes <span class="estado-etapa" id="estado-comprovantes"></span></button>
-    <button data-aba="conferencia">Conferência <span class="estado-etapa" id="estado-conferencia"></span></button>
+    <!-- <button data-aba="conferencia">Conferência <span class="estado-etapa" id="estado-conferencia"></span></button> -->
+    <!-- Sem erros para o colaborador: a aba Conferencia fica escondida. O span continua para o app.js nao quebrar. -->
+    <span class="estado-etapa" id="estado-conferencia" hidden></span>
     <button data-aba="historico">Histórico</button>
     <button type="button" class="gaveta-instalar esconde" id="botao-instalar">Instalar o app no celular</button>
   </nav>

@@ -271,9 +271,10 @@ async function lerRdv() {
     sujo = false;
     desenharTudo();
 
-    const tipo =
-      r.extraido.confianca === 'alta' && !/ATENCAO/.test(r.aviso) ? 'ok' : 'atencao';
-    mostrarRecado('recado-leitura', r.aviso, tipo);
+    // const tipo =
+    //   r.extraido.confianca === 'alta' && !/ATENCAO/.test(r.aviso) ? 'ok' : 'atencao';
+    // mostrarRecado('recado-leitura', r.aviso, tipo);
+    mostrarRecado('recado-leitura', 'RDV recebido.', 'ok');
   } catch (e) {
     mostrarRecado('recado-leitura', e.message, 'erro');
   } finally {
@@ -1265,7 +1266,8 @@ async function enviarDeVerdade() {
     );
   }
 
-  if (avisam.length && !confirm(
+  // Sem erros para o colaborador: nao pergunta mais das pendencias.
+  if (false && avisam.length && !confirm(
     `O portal apontou ${avisam.length} pendência(s):\n\n${avisam.slice(0, 8).map((a) => `• ${a.mensagem}`).join('\n')}`
       + `${avisam.length > 8 ? `\n• ... e mais ${avisam.length - 8}` : ''}\n\n`
       + 'Você pode enviar assim mesmo e corrigir depois. Enviar agora?',
@@ -1276,7 +1278,8 @@ async function enviarDeVerdade() {
 
   try {
     const r = await api('/api/relatorio/enviar', { metodo: 'POST', corpo: { mes } });
-    mostrarRecado('recado', r.aviso, avisam.length ? 'atencao' : 'ok');
+    // mostrarRecado('recado', r.aviso, avisam.length ? 'atencao' : 'ok');
+    mostrarRecado('recado', r.aviso, 'ok');
     await carregar();
   } catch (e) {
     const bloqueios = e.dados?.bloqueios;
@@ -1322,6 +1325,25 @@ function luzesDoMes() {
     },
     // Gerente: obrigatoria e tem que bater com o combustivel. Os demais: so
     // recomendada - sem ela o relatorio nao reprova.
+    // Sem erros para o colaborador: as luzes so dizem se o arquivo foi enviado.
+    // O desenho antigo (com "valor nao bate" e pendencias) esta comentado abaixo.
+    {
+      icone: 'nota', ir: 'comprovantes', titulo: 'Nota do combustível',
+      estado: tem('danfe') ? 'ok' : 'alerta',
+      texto: tem('danfe') ? 'Enviada' : 'Não enviada',
+    },
+    {
+      icone: 'pedagio', ir: 'comprovantes', titulo: 'Pedágio',
+      estado: tem('pedagio') ? 'ok' : 'alerta',
+      texto: tem('pedagio') ? 'Enviado' : 'Não enviado',
+    },
+    {
+      icone: 'odometro', ir: 'comprovantes', titulo: 'Fotos do odômetro',
+      estado: fotos ? 'ok' : 'alerta',
+      texto: fotos ? `${fotos} foto${fotos > 1 ? 's' : ''}` : 'Não enviada',
+    },
+  ];
+  if (false) return [
     ehGerente()
       ? {
         icone: 'nota', ir: 'comprovantes', titulo: 'Nota do combustível',
@@ -1396,7 +1418,7 @@ function desenharPainel() {
   const nErros = (p.achados || []).filter((a) => a.gravidade === 'erro').length;
   paradaEm('estado-lancamentos', rdv.estado, rdv.estado === 'ok' ? 'Lido' : 'Falta');
   paradaEm('estado-comprovantes', comprov === 3 ? 'ok' : 'falha', `${comprov}/3`);
-  paradaEm('estado-conferencia', pend.estado, nErros ? String(nErros) : pend.estado === 'ok' ? 'Ok' : '!');
+  // paradaEm('estado-conferencia', pend.estado, nErros ? String(nErros) : pend.estado === 'ok' ? 'Ok' : '!');
 }
 
 function paradaEm(id, estadoLuz, texto) {
