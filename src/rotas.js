@@ -1321,6 +1321,10 @@ function painel(res, url, quem) {
          FROM relatorios r
          JOIN usuarios u ON u.id = r.usuario_id
         WHERE r.mes_ref = ? ${filtro}
+          -- Rascunho vazio (so abriu o mes) nao aparece aqui: esta na aba "Nao enviaram".
+          AND (r.status <> 'RASCUNHO'
+               OR EXISTS (SELECT 1 FROM linhas l WHERE l.relatorio_id = r.id)
+               OR EXISTS (SELECT 1 FROM anexos a WHERE a.relatorio_id = r.id))
         ORDER BY CASE r.status
                    WHEN 'ENVIADO' THEN 0 WHEN 'CONFERINDO' THEN 1 WHEN 'ERRADA' THEN 2
                    WHEN 'SO_FALTA_DANFE' THEN 3 WHEN 'CERTA' THEN 4 ELSE 5 END,
@@ -1343,9 +1347,16 @@ function painel(res, url, quem) {
           AND u.id NOT IN (
             SELECT usuario_id FROM relatorios WHERE mes_ref = ? AND status <> 'RASCUNHO'
           )
+          -- Quem ja comecou (dia lancado ou arquivo anexado) fica na pagina normal.
+          AND NOT EXISTS (
+            SELECT 1 FROM relatorios r
+             WHERE r.usuario_id = u.id AND r.mes_ref = ?
+               AND (EXISTS (SELECT 1 FROM linhas l WHERE l.relatorio_id = r.id)
+                 OR EXISTS (SELECT 1 FROM anexos a WHERE a.relatorio_id = r.id))
+          )
         ORDER BY u.nome`,
     )
-    .all(mes, ...argsEscopo, mes)
+    .all(mes, ...argsEscopo, mes, mes)
     .map((u) => ({ ...u, comecou: Boolean(u.comecou), cracha: cracha(u.empresa, u.funcao) }));
 
   const contagem = {};

@@ -116,12 +116,21 @@ try {
     "INSERT INTO relatorios (usuario_id, mes_ref, status, criado_em) VALUES (?, '2026-09', 'RASCUNHO', ?)",
   ).run(comecou, agora).lastInsertRowid);
   db.prepare("INSERT INTO linhas (relatorio_id, data, km_inicial, km_final, ordem) VALUES (?, '2026-09-01', 10, 20, 0)").run(rascunho);
-  const faltam = (await chamar('/api/admin/painel?mes=2026-09')).dados.nao_enviaram;
+  const so_abriu = novoUsuario('soabriu', 'colaborador');
+  const vazio = Number(db.prepare(
+    "INSERT INTO relatorios (usuario_id, mes_ref, status, criado_em) VALUES (?, '2026-09', 'RASCUNHO', ?)",
+  ).run(so_abriu, agora).lastInsertRowid);
+  const painelSet = (await chamar('/api/admin/painel?mes=2026-09')).dados;
+  const faltam = painelSet.nao_enviaram;
+  // So quem nem comecou fica na aba; quem comecou vai para a pagina normal.
   assert.deepEqual(
     faltam.map((u) => [u.login, u.empresa, u.cracha, u.comecou]),
-    [['comecou', 'DSO', 'DSO (V)', true], ['semnada', 'DSO', 'DSO (V)', false]],
-    'quem enviou (vendedor) fica de fora',
+    [['semnada', 'DSO', 'DSO (V)', false], ['soabriu', 'DSO', 'DSO (V)', false]],
+    'quem enviou (vendedor) e quem comecou ficam de fora',
   );
+  const ids = painelSet.relatorios.map((r) => r.id);
+  assert.ok(ids.includes(rascunho), 'quem comecou aparece na pagina normal');
+  assert.ok(!ids.includes(vazio), 'rascunho vazio nao aparece na pagina normal');
   assert.ok(semNada > 0);
   assert.ok(!codigos.includes('subtotal_nao_bate'));
   const planilha = await fetch(`${base}/api/admin/exportar?mes=2026-09`, { headers: { cookie: `sid=${token}` } });

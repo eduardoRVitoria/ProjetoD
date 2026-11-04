@@ -667,8 +667,9 @@ function desenharNaoEnviaram() {
       <div class="valor">${todos.length}</div></div>
     ${naoEnviaramPorEmpresa(todos).map(([e, l]) => `<div class="numero">
       <div class="rotulo">${escapar(e)}</div><div class="valor">${l.length}</div></div>`).join('')}
+    <!-- Quem comecou agora fica na pagina normal; este contador ficaria sempre 0.
     <div class="numero"><div class="rotulo">Começaram e não enviaram</div>
-      <div class="valor" style="color:var(--amarelo)">${todos.filter((u) => u.comecou).length}</div></div>`;
+      <div class="valor" style="color:var(--amarelo)">${todos.filter((u) => u.comecou).length}</div></div> -->`;
 
   if (!todos.length) {
     $('faltam-lista').innerHTML = `<div class="cartao"><p class="sub" style="margin:0">Todo mundo já enviou o RDV de ${escapar(painel.mes_extenso)}.</p></div>`;
