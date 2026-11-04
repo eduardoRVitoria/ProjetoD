@@ -870,8 +870,9 @@ async function conferirUm(id, botao, demo = false) {
       metodo: 'POST',
       corpo: { relatorio_id: id, demo },
     });
-    mostrarRecado('recado', `Conferido: ${r.rotulo_status}.${r.aviso ? ' ' + r.aviso : ''}`,
-      demo ? 'atencao' : r.status === 'CERTA' ? 'ok' : r.status === 'SO_FALTA_DANFE' ? 'atencao' : 'erro');
+    // mostrarRecado('recado', `Conferido: ${r.rotulo_status}.${r.aviso ? ' ' + r.aviso : ''}`,
+    //   demo ? 'atencao' : r.status === 'CERTA' ? 'ok' : r.status === 'SO_FALTA_DANFE' ? 'atencao' : 'erro');
+    mostrarRecado('recado', `Conferido: ${r.rotulo_status}.`, 'info');
     await carregarPainel();
   } catch (e) {
     mostrarRecado('recado', e.message, 'erro');

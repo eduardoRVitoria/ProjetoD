@@ -171,13 +171,22 @@ export function nomeDeArquivoSeguro(nome) {
     .slice(-120);
 }
 
+// export const ROTULO_STATUS = {
+//   RASCUNHO: 'Rascunho',
+//   ENVIADO: 'Enviado, aguardando conferencia',
+//   CONFERINDO: 'Em conferencia',
+//   CERTA: 'Aprovado',
+//   SO_FALTA_DANFE: 'So falta a nota de abastecimento',
+//   ERRADA: 'Reprovado - precisa corrigir',
+// };
+// Sem aprovado/reprovado: so "Recebido" ou "Nao enviado".
 export const ROTULO_STATUS = {
-  RASCUNHO: 'Rascunho',
-  ENVIADO: 'Enviado, aguardando conferencia',
-  CONFERINDO: 'Em conferencia',
-  CERTA: 'Aprovado',
-  SO_FALTA_DANFE: 'So falta a nota de abastecimento',
-  ERRADA: 'Reprovado - precisa corrigir',
+  RASCUNHO: 'Arquivos não enviados',
+  ENVIADO: 'Recebido',
+  CONFERINDO: 'Recebido',
+  CERTA: 'Recebido',
+  SO_FALTA_DANFE: 'Recebido',
+  ERRADA: 'Recebido',
 };
 
 /**

@@ -343,7 +343,11 @@ function desenharStatus() {
   $('selo-status').innerHTML = `<span class="selo ${r.status}">${escapar(r.rotulo_status)}</span>`;
 
   const painel = $('painel-status');
-  if (r.status === 'ERRADA' || r.status === 'SO_FALTA_DANFE') {
+  // Sem aprovado/reprovado: tudo que foi enviado aparece so como recebido.
+  // O bloco antigo continua aqui embaixo, desligado pelo "false &&".
+  if (r.status !== 'RASCUNHO') {
+    painel.innerHTML = `<div class="aviso info">Arquivos recebidos em ${dataHoraBr(r.enviado_em)}.</div>`;
+  } else if (false && (r.status === 'ERRADA' || r.status === 'SO_FALTA_DANFE')) {
     // As pendencias vem junto do recado, aqui na primeira tela.
     //
     // Elas existiam so no "Resultado da conferencia", dentro da aba
@@ -1372,8 +1376,9 @@ function desenharPainel() {
   $('medidor-quanto').textContent = `${prontos} de ${luzes.length}`;
   const falta = luzes.length - prontos;
   $('medidor-frase').textContent =
-    r.status === 'CERTA' ? 'Relatório aprovado'
-    : r.status === 'ENVIADO' || r.status === 'CONFERINDO' ? 'Enviado, aguardando a conferência'
+    // r.status === 'CERTA' ? 'Relatório aprovado'
+    // : r.status === 'ENVIADO' || r.status === 'CONFERINDO' ? 'Enviado, aguardando a conferência'
+    r.status !== 'RASCUNHO' ? 'Arquivos recebidos'
     : falta === 0 ? 'Tudo pronto para enviar'
     : `Falta${falta > 1 ? 'm' : ''} ${falta} ${falta > 1 ? 'itens' : 'item'} para enviar`;
 

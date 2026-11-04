@@ -250,7 +250,16 @@ export async function montarImpressao(mes, usuarioId = null, escopo = null) {
     // Dentro da pessoa, sai na ordem RDV -> pedagio -> DANFE.
     lista.sort((x, y) => TIPOS_IMPRESSOS.indexOf(x.tipo) - TIPOS_IMPRESSOS.indexOf(y.tipo));
 
-    for (const a of lista) {
+    // RDV mandado em PDF e em planilha e o mesmo relatorio duas vezes: no papel
+    // sai so o PDF.
+    const ehPdf = (a) => path.extname(a.nome_original || '').toLowerCase() === '.pdf' || a.mime === 'application/pdf';
+    const temRdvEmPdf = lista.some((a) => a.tipo === 'rdv' && ehPdf(a));
+    const paraImprimir = temRdvEmPdf
+      ? lista.filter((a) => !(a.tipo === 'rdv' && PLANILHAS.has(path.extname(a.nome_original || '').toLowerCase())))
+      : lista;
+
+    // for (const a of lista) {
+    for (const a of paraImprimir) {
       const titulo = a.tipo === 'odometro'
         ? `${primeiro.pessoa} · Odometro · ${dataCurta(a.data_leitura)} · ${a.km != null ? `${Number(a.km).toLocaleString('pt-BR')} km` : 'sem KM'} · ${a.nome_original}`
         : `${primeiro.pessoa} · ${ROTULO_TIPO[a.tipo]} · ${a.nome_original}`;
