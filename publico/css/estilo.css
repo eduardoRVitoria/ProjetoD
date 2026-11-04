@@ -927,3 +927,31 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 }
 .aviso-flutuante.erro    { background: var(--pastel-rosa);    color: var(--vermelho); border-color: currentColor; }
 .aviso-flutuante.atencao { background: var(--pastel-amarelo); color: var(--amarelo);  border-color: currentColor; }
+
+/* Visor de fotos e PDFs do admin: passa pela seta. */
+.visor {
+  position: fixed; inset: 0; z-index: 90; background: rgba(0, 0, 0, .88);
+  display: grid; grid-template-columns: 56px 1fr 56px; grid-template-rows: auto 1fr;
+}
+.visor-topo {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: 14px;
+  padding: 10px 16px; color: #fff; font-size: 14px; min-width: 0;
+}
+.visor-nome { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visor-conta { opacity: .75; white-space: nowrap; }
+.visor-abrir { color: #fff; opacity: .85; white-space: nowrap; }
+.visor-fechar, .visor-seta {
+  background: transparent; border: 0; color: #fff; cursor: pointer; box-shadow: none;
+}
+.visor-fechar { font-size: 22px; padding: 4px 8px; }
+.visor-seta { font-size: 52px; line-height: 1; padding: 0; align-self: center; height: 100%; }
+.visor-seta:disabled { opacity: .2; cursor: default; }
+.visor-seta:not(:disabled):hover { background: rgba(255, 255, 255, .08); }
+.visor-palco { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; padding: 0 0 16px; }
+.visor-palco img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.visor-palco iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+@media (max-width: 600px) {
+  .visor { grid-template-columns: 36px 1fr 36px; }
+  .visor-seta { font-size: 38px; }
+  .visor-abrir { display: none; }
+}

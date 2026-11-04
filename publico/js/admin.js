@@ -2989,3 +2989,96 @@ $('botao-notificar').addEventListener('click', async () => {
     botao.disabled = false;
   }
 });
+
+// ---------------------------------------------------------------- visor
+//
+// Foto ou PDF clicado no relatorio ou na galeria abre aqui por cima, e as
+// setas (na tela e no teclado) passam para o proximo arquivo da mesma janela.
+// Antes cada arquivo abria numa aba nova, e olhar 30 fotos de odometro era
+// abrir e fechar 30 abas. O que o navegador nao mostra (planilha, HEIC) segue
+// abrindo do jeito antigo.
+
+const VISOR_IMAGEM = /\.(jpe?g|png|gif|webp|bmp)$/i;
+const VISOR_PDF = /\.pdf$/i;
+
+function nomeDoLinkDeAnexo(a) {
+  return a.querySelector('img')?.alt || a.title?.split(' — ')[0] || a.textContent.trim();
+}
+
+function abrirVisor(lista, inicio) {
+  let atual = inicio;
+  const fundo = document.createElement('div');
+  fundo.className = 'visor';
+  fundo.innerHTML = `
+    <div class="visor-topo">
+      <span class="visor-nome"></span>
+      <span class="visor-conta"></span>
+      <a class="visor-abrir" target="_blank" rel="noopener">Abrir em outra aba</a>
+      <button class="visor-fechar" aria-label="Fechar">✕</button>
+    </div>
+    <button class="visor-seta anterior" aria-label="Anterior">‹</button>
+    <div class="visor-palco"></div>
+    <button class="visor-seta proxima" aria-label="Próxima">›</button>`;
+  document.body.appendChild(fundo);
+
+  const palco = fundo.querySelector('.visor-palco');
+  const mostrar = () => {
+    const item = lista[atual];
+    fundo.querySelector('.visor-nome').textContent = item.nome;
+    fundo.querySelector('.visor-conta').textContent = `${atual + 1} de ${lista.length}`;
+    fundo.querySelector('.visor-abrir').href = item.url;
+    palco.innerHTML = item.pdf
+      ? `<iframe src="${item.url}" title="${escapar(item.nome)}"></iframe>`
+      : `<img src="${item.url}" alt="${escapar(item.nome)}">`;
+    fundo.querySelector('.anterior').disabled = atual === 0;
+    fundo.querySelector('.proxima').disabled = atual === lista.length - 1;
+  };
+  const ir = (passo) => {
+    const novo = atual + passo;
+    if (novo < 0 || novo >= lista.length) return;
+    atual = novo;
+    mostrar();
+  };
+  const fechar = () => {
+    document.removeEventListener('keydown', teclas, true);
+    fundo.remove();
+  };
+  // Na captura e parando ali: o Esc fecha so o visor, nao o relatorio embaixo.
+  const teclas = (ev) => {
+    if (ev.key === 'ArrowRight') ir(1);
+    else if (ev.key === 'ArrowLeft') ir(-1);
+    else if (ev.key === 'Escape') fechar();
+    else return;
+    ev.preventDefault();
+    ev.stopPropagation();
+  };
+  document.addEventListener('keydown', teclas, true);
+  fundo.querySelector('.anterior').addEventListener('click', () => ir(-1));
+  fundo.querySelector('.proxima').addEventListener('click', () => ir(1));
+  fundo.querySelector('.visor-fechar').addEventListener('click', fechar);
+  fundo.addEventListener('click', (ev) => {
+    if (ev.target === fundo || ev.target === palco) fechar();
+  });
+  mostrar();
+}
+
+document.addEventListener('click', (ev) => {
+  const link = ev.target.closest('a[href^="/api/anexo/"]');
+  if (!link || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+  const visivel = (a) => VISOR_IMAGEM.test(nomeDoLinkDeAnexo(a)) || VISOR_PDF.test(nomeDoLinkDeAnexo(a));
+  if (!visivel(link)) return;
+
+  // A lista e o que esta na mesma janela (relatorio ou galeria), sem repetir.
+  const janela = link.closest('.modal') || document;
+  const vistos = new Set();
+  const lista = [];
+  for (const a of janela.querySelectorAll('a[href^="/api/anexo/"]')) {
+    const url = a.getAttribute('href');
+    if (vistos.has(url) || !visivel(a)) continue;
+    vistos.add(url);
+    const nome = nomeDoLinkDeAnexo(a);
+    lista.push({ url, nome, pdf: VISOR_PDF.test(nome) });
+  }
+  ev.preventDefault();
+  abrirVisor(lista, Math.max(0, lista.findIndex((i) => i.url === link.getAttribute('href'))));
+});
