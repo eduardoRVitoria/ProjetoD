@@ -179,8 +179,18 @@ export function nomeDeArquivoSeguro(nome) {
 //   SO_FALTA_DANFE: 'So falta a nota de abastecimento',
 //   ERRADA: 'Reprovado - precisa corrigir',
 // };
-// Sem aprovado/reprovado: so "Recebido" ou "Nao enviado".
+// O admin ve aprovado/reprovado - decidido sempre na mao.
 export const ROTULO_STATUS = {
+  RASCUNHO: 'Arquivos não enviados',
+  ENVIADO: 'Recebido - aguardando aprovação',
+  CONFERINDO: 'Recebido - aguardando aprovação',
+  CERTA: 'Aprovado',
+  SO_FALTA_DANFE: 'So falta a nota de abastecimento',
+  ERRADA: 'Reprovado',
+};
+
+// O colaborador nao ve aprovado/reprovado: so "Recebido" ou "Nao enviado".
+export const ROTULO_COLABORADOR = {
   RASCUNHO: 'Arquivos não enviados',
   ENVIADO: 'Recebido',
   CONFERINDO: 'Recebido',

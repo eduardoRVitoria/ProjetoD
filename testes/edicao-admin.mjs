@@ -233,12 +233,18 @@ try {
   const conferido = async () => {
     for (let i = 0; i < 80; i++) {
       const r = db.prepare('SELECT status, conferido_em FROM relatorios WHERE id = ?').get(rascunho);
-      if (r.conferido_em && r.status === 'ERRADA') return;
+      // if (r.conferido_em && r.status === 'ERRADA') return;
+      // A conferencia automatica nao reprova mais: so aponta e fica aguardando.
+      if (r.conferido_em && r.status === 'ENVIADO') return;
       await new Promise((ok) => setTimeout(ok, 100));
     }
     throw new Error('a conferencia automatica nao terminou');
   };
   await conferido();
+  // Reprovar e na mao: sem isso o colaborador nao pode reenviar.
+  entrarComo(chefe);
+  assert.equal((await chamar('/api/admin/decidir', { relatorio_id: rascunho, status: 'ERRADA', o_que_fazer: 'corrija o km' })).status, 200);
+  entrarComo(comecou);
   db.prepare("UPDATE linhas SET km_inicial = 20, km_final = 30 WHERE relatorio_id = ? AND data = '2026-09-02'").run(rascunho);
   const reenvio = await chamar('/api/relatorio/enviar', { mes: '2026-09' });
   assert.equal(reenvio.status, 200, JSON.stringify(reenvio.dados));

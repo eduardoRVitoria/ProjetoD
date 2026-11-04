@@ -449,13 +449,10 @@ button.pequeno { padding: 5px 11px; font-size: 13px; }
   font-weight: 500;
   white-space: nowrap;
 }
-/* .selo.CERTA          { background: var(--pastel-verde);   color: var(--verde); } */
-/* .selo.SO_FALTA_DANFE { background: var(--pastel-amarelo); color: var(--amarelo); } */
-/* .selo.ERRADA         { background: var(--pastel-rosa);    color: var(--vermelho); } */
-/* Sem verde/amarelo/vermelho: todo enviado fica azul de "Recebido". */
-.selo.CERTA,
-.selo.SO_FALTA_DANFE,
-.selo.ERRADA,
+/* As cores voltaram para o admin; o colaborador recebe so ENVIADO/RASCUNHO no app.js. */
+.selo.CERTA          { background: var(--pastel-verde);   color: var(--verde); }
+.selo.SO_FALTA_DANFE { background: var(--pastel-amarelo); color: var(--amarelo); }
+.selo.ERRADA         { background: var(--pastel-rosa);    color: var(--vermelho); }
 .selo.ENVIADO,
 .selo.CONFERINDO     { background: var(--pastel-azul);    color: var(--azul); }
 .selo.RASCUNHO       { background: var(--cinza-botao);    color: var(--texto-2); }

@@ -62,7 +62,7 @@ import {
   diasDoMes,
   mesPorExtenso,
   nomeDeArquivoSeguro,
-  ROTULO_STATUS, listaDeJson, textoDaIa, placaLimpa, odometroInteiro,
+  ROTULO_STATUS, ROTULO_COLABORADOR, listaDeJson, textoDaIa, placaLimpa, odometroInteiro,
 } from './util.js';
 
 const TIPOS_DE_ANEXO = new Set([
@@ -553,7 +553,8 @@ function pegarRelatorio(req, res, url, usuario) {
     relatorio: {
       ...rel,
       mes_extenso: mesPorExtenso(mes),
-      rotulo_status: ROTULO_STATUS[rel.status],
+      // rotulo_status: ROTULO_STATUS[rel.status],
+      rotulo_status: ROTULO_COLABORADOR[rel.status],
       editavel: EDITAVEL.has(rel.status),
       // Em "So falta DANFE" a pessoa nao edita nada, mas ainda manda a nota.
       aceita_anexo: ACEITA_ANEXO.has(rel.status),
@@ -1031,7 +1032,8 @@ function meusRelatorios(res, usuario) {
     .all(usuario.id);
   responderJson(
     res,
-    lista.map((r) => ({ ...r, rotulo_status: ROTULO_STATUS[r.status], mes_extenso: mesPorExtenso(r.mes_ref) })),
+    // lista.map((r) => ({ ...r, rotulo_status: ROTULO_STATUS[r.status], mes_extenso: mesPorExtenso(r.mes_ref) })),
+    lista.map((r) => ({ ...r, rotulo_status: ROTULO_COLABORADOR[r.status], mes_extenso: mesPorExtenso(r.mes_ref) })),
   );
 }
 
@@ -1870,7 +1872,10 @@ async function conferirRelatorioAgora(rel, { usarIa = true, demo = false, decidi
   // quem aprovou ou reprovou foi uma pessoa olhando o documento, e uma regra
   // nova nao desfaz isso calada. So o reenvio pelo colaborador zera.
   const manual = ['CERTA', 'SO_FALTA_DANFE', 'ERRADA'].includes(rel.decisao_manual) ? rel.decisao_manual : null;
-  const status = manual || statusDaConferencia;
+  // const status = manual || statusDaConferencia;
+  // Aprovar e reprovar e so na mao: a conferencia automatica so aponta os
+  // achados, e o relatorio fica "Recebido - aguardando aprovacao".
+  const status = manual || 'ENVIADO';
   if (manual && manual !== statusDaConferencia) {
     const quem = db.prepare('SELECT nome FROM usuarios WHERE id = ?').get(rel.decidido_por)?.nome;
     achados.unshift({
@@ -2133,7 +2138,9 @@ async function vetarErro(req, res, admin) {
 
   const dono = db.prepare('SELECT nome, empresa, funcao FROM usuarios WHERE id = ?').get(rel.usuario_id);
   if (!podeVerUsuario(admin, dono)) return erro(res, 'Esse relatorio e de outra empresa.', 403);
-  if (!['CERTA', 'SO_FALTA_DANFE', 'ERRADA'].includes(rel.status) || rel.achados == null) {
+  // if (!['CERTA', 'SO_FALTA_DANFE', 'ERRADA'].includes(rel.status) || rel.achados == null) {
+  // Conferido e aguardando aprovacao (ENVIADO) tambem aceita veto.
+  if (!['ENVIADO', 'CERTA', 'SO_FALTA_DANFE', 'ERRADA'].includes(rel.status) || rel.achados == null) {
     return erro(res, 'So da para vetar erro de relatorio ja conferido. Confira primeiro.');
   }
 
@@ -2153,7 +2160,9 @@ async function vetarErro(req, res, admin) {
   }
 
   const manual = ['CERTA', 'SO_FALTA_DANFE', 'ERRADA'].includes(rel.decisao_manual) ? rel.decisao_manual : null;
-  const status = manual || statusPelosErros(achados);
+  // const status = manual || statusPelosErros(achados);
+  // Vetar um erro nao aprova sozinho: sem decisao na mao, continua aguardando.
+  const status = manual || 'ENVIADO';
   const oQueFazer = manual
     ? (rel.o_que_fazer || '')
     : achados.filter((a) => a.gravidade === 'erro').map((a) => a.mensagem).join(' ');

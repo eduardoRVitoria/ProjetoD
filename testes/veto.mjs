@@ -79,7 +79,8 @@ try {
   // Vetar o fim de semana tira os dois dias; sobra so a nota -> so falta DANFE.
   let r = await vetar('data_fim_de_semana');
   assert.equal(r.status, 200, JSON.stringify(r.dados));
-  assert.equal(r.dados.status, 'SO_FALTA_DANFE');
+  // assert.equal(r.dados.status, 'SO_FALTA_DANFE');
+  assert.equal(r.dados.status, 'ENVIADO', 'veto nao aprova nem reprova sozinho');
   let d = await ver();
   assert.deepEqual(codigos(d.relatorio.achados), ['sem_danfe', 'leitura_parcial']);
   assert.equal(d.relatorio.vetos.length, 1);
@@ -90,7 +91,8 @@ try {
   assert.ok(!codigos(d.pendencias_agora.achados).includes('data_fim_de_semana'));
 
   // Vetar o que sobrou aprova; vetar duas vezes ou o que nao existe e recusado.
-  assert.equal((await vetar('sem_danfe')).dados.status, 'CERTA');
+  // assert.equal((await vetar('sem_danfe')).dados.status, 'CERTA');
+  assert.equal((await vetar('sem_danfe')).dados.status, 'ENVIADO');
   assert.equal((await vetar('sem_danfe')).status, 400);
   assert.equal((await vetar('km_invertido')).status, 400);
   // Aviso nao e erro: nao se veta.
@@ -98,7 +100,8 @@ try {
 
   // Desfazer devolve o erro e o status.
   r = await vetar('sem_danfe', false);
-  assert.equal(r.dados.status, 'SO_FALTA_DANFE');
+  // assert.equal(r.dados.status, 'SO_FALTA_DANFE');
+  assert.equal(r.dados.status, 'ENVIADO');
   d = await ver();
   assert.ok(codigos(d.relatorio.achados).includes('sem_danfe'));
 

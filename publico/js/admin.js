@@ -1380,7 +1380,8 @@ function blocoAchados(r) {
   const vetos = r.vetos || [];
   if (!r.achados?.length && !vetos.length) return '';
   // Só erro de relatório já conferido pode ser vetado.
-  const podeVetar = ['CERTA', 'SO_FALTA_DANFE', 'ERRADA'].includes(r.status);
+  // const podeVetar = ['CERTA', 'SO_FALTA_DANFE', 'ERRADA'].includes(r.status);
+  const podeVetar = ['ENVIADO', 'CERTA', 'SO_FALTA_DANFE', 'ERRADA'].includes(r.status) && r.achados != null;
   const botaoVetar = (a) =>
     podeVetar && a.gravidade === 'erro'
       ? `<button class="secundario pequeno vetar" data-vetar="${escapar(chaveDoVeto(a.grupo ? a.itens[0] : a))}"

@@ -341,7 +341,7 @@ function desenharComparacao() {
 
 function desenharStatus() {
   const r = estado.relatorio;
-  $('selo-status').innerHTML = `<span class="selo ${r.status}">${escapar(r.rotulo_status)}</span>`;
+  $('selo-status').innerHTML = `<span class="selo ${r.status === 'RASCUNHO' ? 'RASCUNHO' : 'ENVIADO'}">${escapar(r.rotulo_status)}</span>`;
 
   const painel = $('painel-status');
   // Sem aprovado/reprovado: tudo que foi enviado aparece so como recebido.
@@ -1471,7 +1471,7 @@ async function carregarHistorico() {
               const estac = Number(r.estac_declarado || 0);
               return `<tr>
             <td>${escapar(r.mes_extenso)}</td>
-            <td><span class="selo ${r.status}">${escapar(r.rotulo_status)}</span></td>
+            <td><span class="selo ${r.status === 'RASCUNHO' ? 'RASCUNHO' : 'ENVIADO'}">${escapar(r.rotulo_status)}</span></td>
             <td class="num">${numeroBr(r.total_km)}</td>
             <td class="num">${brl(r.valor_km)}</td>
             <td class="num">${brl(pedagio)}</td>
