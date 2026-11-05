@@ -940,6 +940,19 @@ async function enviarRelatorio(req, res, usuario) {
   // leitura incerta, falta de comprovante, aumento sem justificativa - e o
   // efeito era relatorio certo no papel preso porque o portal leu errado.
   // Fica so o registro do que estava vermelho na hora do envio.
+  //
+  // Excecao (ordem do Eduardo em 05/11/2026): aumento acima da margem sobre o
+  // mes anterior sem justificativa trava o envio. Como o colaborador nao ve
+  // mais a aba Conferencia, era o unico jeito de a justificativa ser pedida.
+  const aumento = r.achados.find((a) => a.codigo === 'aumento_sem_justificativa' && a.gravidade === 'erro');
+  if (aumento) {
+    log.aviso('relatorio', 'envio recusado', { quem: usuario.login, mes: rel.mes_ref, bloqueios: aumento.codigo });
+    return responderJson(res, {
+      erro: 'Este mês ficou mais caro que o anterior. Explique o motivo para poder enviar.',
+      bloqueios: [{ codigo: aumento.codigo, mensagem: aumento.mensagem }],
+      comparacao: r.comparacao ?? null,
+    }, 400);
+  }
   const errosNoEnvio = r.achados.filter((a) => a.gravidade === 'erro').map((a) => a.codigo);
   if (errosNoEnvio.length) {
     log.info('relatorio', 'enviado com pendencias', {

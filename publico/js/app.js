@@ -59,7 +59,9 @@ const DO_ODOMETRO_ACEITOS = ['.pdf', 'application/pdf', '.pptx', 'application/vn
 // Desde 02/10/2026 a lista e VAZIA, de proposito: erro nao impede o envio. A
 // pessoa manda como esta, a conferencia aponta, e ela corrige depois. O que
 // estiver vermelho aparece na confirmacao antes de enviar.
-const TRAVAM_O_ENVIO = new Set([]);
+// Excecao desde 05/11/2026: o aumento sem justificativa volta a travar, e a
+// caixa para explicar abre numa janela (a aba Conferencia esta escondida).
+const TRAVAM_O_ENVIO = new Set(['aumento_sem_justificativa']);
 
 // Achado que a pessoa resolve ESCREVENDO - o unico tipo que ganha o botao de
 // justificar na aba Conferencia. O resto (falta a nota, km invertido) se
@@ -1246,15 +1248,10 @@ async function enviarDeVerdade() {
   const avisam = erros.filter((e) => !trava(e));
 
   if (travam.some((e) => e.codigo === 'aumento_sem_justificativa')) {
-    // Nao basta mandar para a Conferencia: a caixa ja abre escrita e focada,
-    // com o cursor dentro. O caminho entre "nao deu para enviar" e "escrever a
-    // explicacao" tem que ser zero clique.
-    abrirJustificativa('mes');
-    return mostrarRecado(
-      'recado',
-      'Falta explicar o aumento deste mês. Abri a caixa na aba Conferência — escreva o motivo e clique em Enviar justificativa.',
-      'erro',
-    );
+    // A aba Conferencia esta escondida do colaborador: a pergunta abre numa
+    // janela, ja focada, e ao salvar o envio segue sozinho.
+    // abrirJustificativa('mes');
+    return pedirJustificativaDoMes(estado.previa?.comparacao);
   }
 
   if (travam.length) {
@@ -1283,6 +1280,9 @@ async function enviarDeVerdade() {
     await carregar();
   } catch (e) {
     const bloqueios = e.dados?.bloqueios;
+    if (bloqueios?.some((a) => a.codigo === 'aumento_sem_justificativa')) {
+      return pedirJustificativaDoMes(e.dados.comparacao || estado.previa?.comparacao);
+    }
     if (bloqueios?.length) {
       trocarAba('conferencia');
       // Pelo mesmo desenho da lista: se o servidor recusou por falta de
@@ -1294,6 +1294,74 @@ async function enviarDeVerdade() {
     }
     mostrarRecado('recado', e.message, 'erro');
   }
+}
+
+// Janela que pede o motivo do aumento sobre o mes anterior. Salva o texto
+// (minimo de 15 letras, a mesma conta do servidor) e tenta enviar de novo.
+function pedirJustificativaDoMes(c) {
+  document.getElementById('modal-justificativa')?.remove();
+  const fundo = document.createElement('div');
+  fundo.className = 'fundo-modal';
+  fundo.id = 'modal-justificativa';
+  fundo.innerHTML = `
+    <div class="modal caixa-justificativa" role="dialog" aria-modal="true" aria-labelledby="titulo-justificativa">
+      <h2 id="titulo-justificativa">Por que este mês ficou mais caro que o anterior?</h2>
+      ${c ? `<p class="conta">
+        Este mês: ${brl(c.total_atual)} · ${escapar(c.mes_anterior || 'mês anterior')}: ${brl(c.total_anterior)} ·
+        diferença: <strong>${brl(c.diferenca)}</strong>. A empresa pede explicação acima de ${brl(c.margem)}.
+      </p>` : ''}
+      <textarea id="texto-justificativa-mes" rows="4"
+        placeholder="Ex.: assumi a rota do litoral no lugar de um colega afastado, foram três viagens a Santos no mês.">${escapar(estado.relatorio.justificativa || '')}</textarea>
+      <p class="dica" id="dica-justificativa-mes"></p>
+      <p class="erro-caixa esconde" id="erro-justificativa-mes"></p>
+      <div class="linha-botoes" style="justify-content:flex-end">
+        <button class="secundario" id="cancelar-justificativa-mes">Cancelar</button>
+        <button id="salvar-justificativa-mes">Salvar e enviar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(fundo);
+
+  const campo = fundo.querySelector('#texto-justificativa-mes');
+  const dica = fundo.querySelector('#dica-justificativa-mes');
+  const erro = fundo.querySelector('#erro-justificativa-mes');
+  const contar = () => {
+    const faltam = 15 - campo.value.trim().length;
+    dica.textContent = faltam > 0
+      ? `Conte o que mudou na sua rota. Faltam ${faltam} letra${faltam === 1 ? '' : 's'} para o mínimo.`
+      : 'Pode enviar. Quem confere lê exatamente este texto.';
+    erro.classList.add('esconde');
+  };
+  campo.addEventListener('input', contar);
+  contar();
+  campo.focus();
+
+  fundo.querySelector('#cancelar-justificativa-mes').addEventListener('click', () => {
+    fundo.remove();
+    mostrarRecado('recado', 'O relatório não foi enviado: falta explicar o aumento deste mês.', 'erro');
+  });
+
+  const botao = fundo.querySelector('#salvar-justificativa-mes');
+  botao.addEventListener('click', async () => {
+    const texto = campo.value.trim();
+    if (texto.length < 15) {
+      erro.textContent = `Escreva pelo menos 15 letras — está com ${texto.length}. Quem confere precisa entender o motivo sem te ligar.`;
+      erro.classList.remove('esconde');
+      return;
+    }
+    botao.disabled = true;
+    try {
+      estado.relatorio.justificativa = texto;
+      sujo = true;
+      await salvar(false);
+      fundo.remove();
+      await enviar();
+    } catch (e) {
+      erro.textContent = e.message || 'Não foi possível salvar. Tente de novo.';
+      erro.classList.remove('esconde');
+    } finally {
+      botao.disabled = false;
+    }
+  });
 }
 
 // ------------------------------------------------------------ resumo do mes
