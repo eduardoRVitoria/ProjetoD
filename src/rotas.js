@@ -199,8 +199,11 @@ export async function tratarApi(req, res, url, usuario, seguro) {
       '/api/admin/bloco-liberar',
       '/api/admin/bloco-devolver',
       '/api/admin/comparativo',
-      '/api/admin/comparativo-diso',
     ];
+    // O da DISO tambem e de quem administra a DISO (o Gabriel faz essa planilha).
+    if (rota === '/api/admin/comparativo-diso' && !ehSuper(usuario) && usuario?.funcao !== 'Adm DISO') {
+      return erro(res, 'Esse comparativo e do dono do portal ou do Adm DISO.', 403);
+    }
     if (soSuper.includes(rota) && !ehSuper(usuario)) {
       return erro(
         res,

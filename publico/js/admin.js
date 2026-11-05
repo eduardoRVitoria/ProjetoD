@@ -360,6 +360,8 @@ try {
   // Coordenador so o Adm Promotor (e o dono) coloca. A rota recusa os outros.
   possoDarCoordenador = souSuper || dados.usuario.funcao === 'Adm Promotor';
   if (possoDarCoordenador) $('opcao-coordenador')?.classList.remove('esconde');
+  // Comparativo DISO: dono e Adm DISO. A rota recusa os outros.
+  if (souSuper || dados.usuario.funcao === 'Adm DISO') $('botao-comparativo-diso')?.classList.remove('esconde');
   marcarAmbiente(dados.ambiente);
   // Backup e restauracao sao do dono do sistema. As rotas ja recusam quem nao
   // e super; esconder o cartao evita oferecer um botao que so devolve 403.
@@ -370,7 +372,6 @@ try {
   // recusa os outros; esconder evita oferecer o que so devolveria 403.
   if (souSuper) {
     $('botao-comparativo')?.classList.remove('esconde');
-    $('botao-comparativo-diso')?.classList.remove('esconde');
     $('aba-tudo-botao')?.classList.remove('esconde');
     $('opcao-super')?.classList.remove('esconde');
   }
