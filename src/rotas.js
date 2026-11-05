@@ -1282,7 +1282,11 @@ function baixarAnexo(req, res, rota, usuario) {
     // frame-ancestors 'self': o visualizador do admin mostra o anexo num
     // iframe do proprio portal. Com o 'none'/DENY padrao o navegador recusava
     // ("se recusou a se conectar"). Site de fora continua sem poder embutir.
-    'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'; sandbox",
+    // Sem 'sandbox' no PDF: o leitor de PDF do Chrome/Edge se recusa a abrir
+    // documento em sandbox (fica a tela de "recusou a se conectar"). PDF nao
+    // roda script de pagina; o default-src 'none' continua trancando o resto.
+    'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'"
+      + (tipo === 'application/pdf' ? '' : '; sandbox'),
     'X-Frame-Options': 'SAMEORIGIN',
   });
   res.end(dados);

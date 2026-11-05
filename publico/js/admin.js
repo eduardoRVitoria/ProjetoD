@@ -3029,7 +3029,9 @@ function abrirVisor(lista, inicio) {
     fundo.querySelector('.visor-conta').textContent = `${atual + 1} de ${lista.length}`;
     fundo.querySelector('.visor-abrir').href = item.url;
     palco.innerHTML = item.pdf
-      ? `<iframe src="${item.url}" title="${escapar(item.nome)}"></iframe>`
+      // ?v=2: o navegador guardava por 1h a resposta antiga (com DENY) e
+      // continuava recusando mesmo depois da correcao no servidor.
+      ? `<iframe src="${item.url}${item.url.includes('?') ? '&' : '?'}v=2" title="${escapar(item.nome)}"></iframe>`
       : `<img src="${item.url}" alt="${escapar(item.nome)}">`;
     fundo.querySelector('.anterior').disabled = atual === 0;
     fundo.querySelector('.proxima').disabled = atual === lista.length - 1;
