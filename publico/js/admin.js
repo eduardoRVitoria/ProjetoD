@@ -84,8 +84,11 @@ async function escolherPlanilha() {
   });
 }
 
-async function pedirComparativo(acao, mesEscolhido, arquivo, decisoes) {
-  const r = await fetch(`/api/admin/comparativo?mes=${mesEscolhido}&acao=${acao}`, {
+// tipo: 'dso' (planilha ESSE CLAUDE) ou 'diso' (Relatorio de Despesas da DISO).
+const ROTA_COMPARATIVO = { dso: '/api/admin/comparativo', diso: '/api/admin/comparativo-diso' };
+
+async function pedirComparativo(acao, mesEscolhido, arquivo, decisoes, tipo = 'dso') {
+  const r = await fetch(`${ROTA_COMPARATIVO[tipo]}?mes=${mesEscolhido}&acao=${acao}`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'X-Decisoes': encodeURIComponent(JSON.stringify(decisoes)) },
@@ -98,21 +101,23 @@ async function pedirComparativo(acao, mesEscolhido, arquivo, decisoes) {
   return r;
 }
 
-async function abrirComparativo() {
+async function abrirComparativo(tipo = 'dso') {
   const escolha = await escolherPlanilha();
   if (!escolha) return;
   const mesEscolhido = mes;
   const decisoes = { nomes: {}, valores: {}, novos: {} };
   const espera = avisar('Lendo a planilha...', 'info', 0);
   try {
-    const r = await pedirComparativo('previa', mesEscolhido, escolha.arquivo, decisoes);
-    desenharComparativo(await r.json(), escolha, mesEscolhido, decisoes);
+    const r = await pedirComparativo('previa', mesEscolhido, escolha.arquivo, decisoes, tipo);
+    desenharComparativo(await r.json(), escolha, mesEscolhido, decisoes, tipo);
   } finally {
     espera.remove();
   }
 }
 
-function desenharComparativo(p, escolha, mesEscolhido, decisoes) {
+function desenharComparativo(p, escolha, mesEscolhido, decisoes, tipo = 'dso') {
+  const diso = tipo === 'diso';
+  const pessoasDoPortal = p.pessoas || p.pessoas_dso || [];
   document.getElementById('modal-comparativo')?.remove();
   const fundo = document.createElement('div');
   fundo.className = 'fundo-modal';
@@ -127,7 +132,7 @@ function desenharComparativo(p, escolha, mesEscolhido, decisoes) {
   };
   const opcoes = (marcado) => [
     '<option value="">Escolha quem é</option>',
-    ...p.pessoas_dso.map((u) => `<option value="${u.id}" ${u.id === marcado ? 'selected' : ''}>${escapar(u.nome)}</option>`),
+    ...pessoasDoPortal.map((u) => `<option value="${u.id}" ${u.id === marcado ? 'selected' : ''}>${escapar(u.nome)}</option>`),
   ].join('');
   const campoValor = (i) => {
     const digitado = decisoes.valores[i.chave];
@@ -141,9 +146,11 @@ function desenharComparativo(p, escolha, mesEscolhido, decisoes) {
 
   fundo.innerHTML = `
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="titulo-comparativo">
-      <h2 id="titulo-comparativo">Comparativo DSO: ${escapar(mesEscolhido)}</h2>
+      <h2 id="titulo-comparativo">Comparativo ${diso ? 'DISO' : 'DSO'}: ${escapar(mesEscolhido)}</h2>
       <p class="sub">
-        ${p.coluna_ja_existe
+        ${diso
+          ? `A planilha vai até ${escapar(p.ultimo_mes_da_planilha)}. ${escapar(mesEscolhido)} entra nos lançamentos e a tabela passa a mostrar os 4 últimos meses, com a justificativa em branco.`
+          : p.coluna_ja_existe
           ? 'Este mês já existe na planilha. Só as células vazias serão preenchidas; o que já tem valor fica como está.'
           : `A planilha vai até ${escapar(p.ultimo_mes_da_planilha)}. Serão criadas as colunas de ${escapar(mesEscolhido)}.`}
         ${prontos.length} aprovados entram sozinhos, somando ${brl(prontos.reduce((s, i) => s + (i.valor || 0), 0))}.
@@ -164,8 +171,8 @@ function desenharComparativo(p, escolha, mesEscolhido, decisoes) {
           ${campoValor(i)}
         </div>`).join('')}` : ''}
 
-      ${p.novos.length ? `<h3>Na DSO, mas fora da planilha (${p.novos.length})</h3>
-        <p class="sub">Só entra se você escolher o grupo. Na COMP PARA O DP ela vai para a ordem alfabética.</p>
+      ${p.novos.length ? `<h3>${diso ? 'Supervisor da DISO fora da planilha' : 'Na DSO, mas fora da planilha'} (${p.novos.length})</h3>
+        <p class="sub">${diso ? 'Só entra se você escolher DISO ou DISO-SP.' : 'Só entra se você escolher o grupo. Na COMP PARA O DP ela vai para a ordem alfabética.'}</p>
         ${p.novos.map((n) => `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
           <span style="flex:1 1 220px">${escapar(n.nome)}<br><span class="sub">${escapar(n.status)} (${brl(n.valor_portal)})</span></span>
           <select data-novo="${n.usuario_id}" style="margin:0;flex:1 1 220px">
@@ -207,8 +214,8 @@ function desenharComparativo(p, escolha, mesEscolhido, decisoes) {
       lerDecisoes();
       decisoes.nomes[s.dataset.nome] = Number(s.value);
       try {
-        const r = await pedirComparativo('previa', mesEscolhido, await arquivoAtual(escolha), decisoes);
-        desenharComparativo(await r.json(), escolha, mesEscolhido, decisoes);
+        const r = await pedirComparativo('previa', mesEscolhido, await arquivoAtual(escolha), decisoes, tipo);
+        desenharComparativo(await r.json(), escolha, mesEscolhido, decisoes, tipo);
       } catch (e) {
         fundo.querySelector('#comparativo-erro').textContent = e.message;
       }
@@ -227,13 +234,15 @@ function desenharComparativo(p, escolha, mesEscolhido, decisoes) {
       if (escolha.alca && await escolha.alca.requestPermission({ mode: 'readwrite' }) !== 'granted') {
         throw new Error('Sem permissão para gravar na planilha. Clique em Gravar e permita.');
       }
-      const r = await pedirComparativo('gerar', mesEscolhido, await arquivoAtual(escolha), decisoes);
+      const r = await pedirComparativo('gerar', mesEscolhido, await arquivoAtual(escolha), decisoes, tipo);
       const resumo = JSON.parse(decodeURIComponent(r.headers.get('X-Resumo') || '%7B%7D'));
       const blob = await r.blob();
       await salvarComparativo(blob, escolha);
       fundo.remove();
       avisar(
-        `Planilha gravada: ${resumo.lancados} valores lançados, ${resumo.sem_valor?.length ?? 0} em branco e ${resumo.justificativas} em Justificativas.`,
+        diso
+          ? `Planilha gravada: ${resumo.lancados + (resumo.novos || 0)} supervisores lançados, ${resumo.sem_valor?.length ?? 0} sem valor e ${resumo.justificativas} aumentaram (justificativa em branco).`
+          : `Planilha gravada: ${resumo.lancados} valores lançados, ${resumo.sem_valor?.length ?? 0} em branco e ${resumo.justificativas} em Justificativas.`,
         'ok',
         10,
       );
@@ -361,6 +370,7 @@ try {
   // recusa os outros; esconder evita oferecer o que so devolveria 403.
   if (souSuper) {
     $('botao-comparativo')?.classList.remove('esconde');
+    $('botao-comparativo-diso')?.classList.remove('esconde');
     $('aba-tudo-botao')?.classList.remove('esconde');
     $('opcao-super')?.classList.remove('esconde');
   }
@@ -399,7 +409,10 @@ $('botao-imprimir-mes').addEventListener('click', () => {
   baixar(`/api/admin/impressao?mes=${mes}`);
 });
 ligar('botao-comparativo', 'click', () => {
-  abrirComparativo().catch((e) => avisar(e.message || 'Não foi possível abrir a planilha.'));
+  abrirComparativo('dso').catch((e) => avisar(e.message || 'Não foi possível abrir a planilha.'));
+});
+ligar('botao-comparativo-diso', 'click', () => {
+  abrirComparativo('diso').catch((e) => avisar(e.message || 'Não foi possível abrir a planilha.'));
 });
 $('botao-criar-usuario').addEventListener('click', criarUsuario);
 

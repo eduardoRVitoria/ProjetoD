@@ -617,3 +617,12 @@ export async function gerarComparativo(buffer, mes, pessoas, decisoes = {}) {
   const arquivo = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
   return { arquivo, resumo };
 }
+
+// O comparativo da DISO (comparativo-diso.js) le e grava a planilha do mesmo
+// jeito, entao usa os mesmos ajudantes.
+export {
+  colNum, colLetra, escaparXml, desescaparXml, lerAtributos, escreverAtributos,
+  lerAba, escreverAba, valorDaCelula, pedacos, mesmoNome, serialDoMes, mesDoSerial,
+  mesAntes, centavos, celulaDeNumero, celulaDeFormula, celulaVazia, celulaDeTexto,
+  STATUS_APROVADO, MESES,
+};
