@@ -334,6 +334,18 @@
 
     <div class="cartao">
       <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:space-between">
+        <h2 style="margin:0" id="aumentos-titulo">Aumento sobre o mês anterior</h2>
+        <button class="secundario" id="botao-marcar-aumentos">Marcar quem falta justificar</button>
+      </div>
+      <p class="sub">
+        Quem gastou mais de R$ 100 acima do mês anterior precisa justificar. A lista é do mês escolhido no painel.
+        O botão marca os aparelhos de quem ainda não justificou e preenche a mensagem.
+      </p>
+      <div id="aumentos-lista"></div>
+    </div>
+
+    <div class="cartao">
+      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:space-between">
         <h2 style="margin:0">Aparelhos que recebem</h2>
         <label style="display:flex; gap:8px; align-items:center; margin:0">
           <input type="checkbox" id="n-todos" style="width:auto; margin:0"> Marcar todos

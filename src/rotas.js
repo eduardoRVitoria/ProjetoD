@@ -7,6 +7,7 @@ import {
   db, agora, valorDoKm, lerConfig, gravarConfig, PASTA_ANEXOS,
   EMPRESAS, FUNCOES, cracha, empresaDaFuncao, podeDarFuncao, CARROS, carroPadrao,
   PAPEIS, ehSuper, ehAdmin, escopoDe, podeMexerNoUsuario, podeVerUsuario, filtroSql,
+  MARGEM_AUMENTO,
 } from './banco.js';
 import {
   autenticar,
@@ -237,6 +238,7 @@ export async function tratarApi(req, res, url, usuario, seguro) {
     if (rota === '/api/admin/valor-pago' && metodo === 'POST') return gravarValorPago(req, res, usuario);
     if (rota === '/api/admin/usuario' && metodo === 'DELETE') return excluirUsuario(req, res, usuario);
     if (rota === '/api/admin/aparelhos' && metodo === 'GET') return listarAparelhos(res, usuario);
+    if (rota === '/api/admin/aumentos' && metodo === 'GET') return listarAumentos(res, url, usuario);
     if (rota === '/api/admin/notificar' && metodo === 'POST') return notificar(req, res, usuario);
     if (rota === '/api/admin/historico' && metodo === 'GET') return exportarHistorico(res, url, usuario);
     if (rota === '/api/admin/config' && metodo === 'GET') return pegarConfig(res);
@@ -3509,6 +3511,53 @@ function listarAparelhos(res, quem) {
       cracha: cracha(a.empresa, a.funcao),
     })),
   );
+}
+
+// Quem gastou mais de MARGEM_AUMENTO acima do mes anterior no mes escolhido e,
+// por isso, tem que justificar. Mesma conta da conferencia (conferencia.js,
+// item 8): km + pedagio + estacionamento + hotel + outros.
+function listarAumentos(res, url, quem) {
+  const mes = url.searchParams.get('mes') || mesAtual();
+  if (!mesValido(mes)) return erro(res, 'Mes invalido.');
+  const { sql: filtro, args } = filtroSql(quem);
+  const rels = db
+    .prepare(
+      `SELECT u.id AS usuario_id, u.nome, u.empresa, u.funcao, r.status, r.justificativa,
+              COALESCE(r.valor_km, 0) + COALESCE(r.pedagio_declarado, 0) + COALESCE(r.estac_declarado, 0)
+                + COALESCE(r.hotel_declarado, 0) + COALESCE(r.outros_declarado, 0) AS total
+         FROM relatorios r JOIN usuarios u ON u.id = r.usuario_id
+        WHERE r.mes_ref = ? AND u.ativo = 1 ${filtro}
+        ORDER BY u.nome`,
+    )
+    .all(mes, ...args);
+  const comAparelho = new Set(aparelhosNoAlcance(quem).map((a) => a.usuario_id));
+
+  const lista = [];
+  for (const r of rels) {
+    const antes = mesAnteriorDe(r.usuario_id, mes);
+    if (!antes || !(antes.total > 0)) continue;
+    const total = Number(Number(r.total).toFixed(2));
+    const diferenca = Number((total - antes.total).toFixed(2));
+    if (diferenca <= MARGEM_AUMENTO) continue;
+    const justificativa = String(r.justificativa || '').trim();
+    lista.push({
+      usuario_id: r.usuario_id,
+      nome: r.nome,
+      cracha: cracha(r.empresa, r.funcao),
+      empresa: r.empresa,
+      status: r.status,
+      rotulo_status: ROTULO_STATUS[r.status],
+      mes_anterior: antes.mesExtenso || antes.mes,
+      total_anterior: antes.total,
+      total,
+      diferenca,
+      justificada: justificativa.length >= 15,
+      justificativa: justificativa || null,
+      tem_aparelho: comAparelho.has(r.usuario_id),
+    });
+  }
+  lista.sort((a, b) => Number(a.justificada) - Number(b.justificada) || b.diferenca - a.diferenca);
+  responderJson(res, { mes, margem: MARGEM_AUMENTO, lista });
 }
 
 async function notificar(req, res, quem) {

@@ -83,6 +83,24 @@ try {
   const e2 = await chamar('POST', '/api/relatorio/enviar', { mes: '2026-10' });
   assert.equal(e2.status, 200, JSON.stringify(e2.dados));
 
+  // A lista da aba Notificacoes: aparece antes e depois de justificar.
+  const chefe = Number(db.prepare(
+    `INSERT INTO usuarios (login, nome, papel, senha_hash, senha_salt, criado_em, empresa, funcao)
+     VALUES ('chefe', 'CHEFE', 'super', 'x', 'x', ?, 'DSO', 'Vendedor')`,
+  ).run(agora).lastInsertRowid);
+  db.prepare('UPDATE sessoes SET usuario_id = ? WHERE token = ?').run(chefe, token);
+  const l1 = await chamar('GET', '/api/admin/aumentos?mes=2026-10');
+  assert.equal(l1.status, 200, JSON.stringify(l1.dados));
+  assert.equal(l1.dados.lista.length, 1);
+  assert.equal(l1.dados.lista[0].nome, 'VENDEDOR');
+  assert.equal(l1.dados.lista[0].justificada, true);
+  assert.equal(l1.dados.lista[0].total_anterior, 90);
+  db.prepare("UPDATE relatorios SET justificativa = NULL WHERE mes_ref = '2026-10'").run();
+  const l2 = await chamar('GET', '/api/admin/aumentos?mes=2026-10');
+  assert.equal(l2.dados.lista[0].justificada, false);
+  const l3 = await chamar('GET', '/api/admin/aumentos?mes=2026-09');
+  assert.equal(l3.dados.lista.length, 0, 'setembro nao tem mes anterior');
+
   console.log('aumento-trava-envio: ok');
 } catch (e) {
   console.error(saida);

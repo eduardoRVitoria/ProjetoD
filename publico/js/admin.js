@@ -397,6 +397,7 @@ $('mes').addEventListener('change', () => {
   mes = $('mes').value;
   try { localStorage.setItem('rdv-mes', mes); } catch {}
   carregarPainel();
+  if (!$('aba-notificacoes').classList.contains('esconde')) carregarAumentos();
 });
 $('botao-conferir-todos').addEventListener('click', () => conferirPendentes(false));
 $('botao-demo')?.addEventListener('click', () => conferirPendentes(true));
@@ -481,7 +482,7 @@ for (const b of document.querySelectorAll('.abas button')) {
     if (b.dataset.aba === 'config') carregarConfig();
     if (b.dataset.aba === 'valores') carregarValoresPagos();
     if (b.dataset.aba === 'tudo') carregarTudo();
-    if (b.dataset.aba === 'notificacoes') carregarAparelhos();
+    if (b.dataset.aba === 'notificacoes') carregarAparelhos().then(carregarAumentos);
     window.scrollTo({ top: 0 });
   });
 }
@@ -2966,7 +2967,7 @@ async function carregarAparelhos() {
     <thead><tr><th></th><th>Colaborador</th><th>Crachá</th><th>Aparelho</th><th>App instalado</th>
       <th>Último acesso</th><th>Último envio</th></tr></thead>
     <tbody>${aparelhos.map((a) => `<tr>
-      <td><input type="checkbox" data-aparelho="${a.id}" style="width:auto; margin:0"></td>
+      <td><input type="checkbox" data-aparelho="${a.id}" data-pessoa="${a.usuario_id}" style="width:auto; margin:0"></td>
       <td>${escapar(a.nome)}</td>
       <td><span class="emp ${escapar(a.empresa)}">${escapar(a.cracha || a.empresa)}</span></td>
       <td>${escapar(a.descricao || '—')}</td>
@@ -2978,6 +2979,67 @@ async function carregarAparelhos() {
     </tr>`).join('')}</tbody>
   </table></div>`;
 }
+
+// Quem passou da margem sobre o mes anterior no mes escolhido no painel.
+let aumentos = [];
+
+async function carregarAumentos() {
+  const alvo = $('aumentos-lista');
+  let r;
+  try {
+    r = await api(`/api/admin/aumentos?mes=${mes}`);
+  } catch (e) {
+    alvo.innerHTML = `<p class="sub" style="color:var(--vermelho)">${escapar(e.message)}</p>`;
+    return;
+  }
+  aumentos = r.lista;
+  const faltam = aumentos.filter((a) => !a.justificada).length;
+  $('aumentos-titulo').textContent = `Aumento sobre o mês anterior — ${mesPorExtensoCurto(r.mes)}`;
+  $('botao-marcar-aumentos').disabled = !aumentos.some((a) => !a.justificada && a.tem_aparelho);
+  if (!aumentos.length) {
+    alvo.innerHTML = `<p class="sub">Ninguém passou de ${brl(r.margem)} acima do mês anterior neste mês.</p>`;
+    return;
+  }
+  alvo.innerHTML = `
+    <p class="sub"><strong>${faltam}</strong> de ${aumentos.length} ainda sem justificativa.</p>
+    <div class="rolagem"><table>
+    <thead><tr><th>Colaborador</th><th>Crachá</th><th>Status</th><th>Mês anterior</th><th>Este mês</th>
+      <th>Diferença</th><th>Justificativa</th><th>Aparelho</th></tr></thead>
+    <tbody>${aumentos.map((a) => `<tr>
+      <td>${escapar(a.nome)}</td>
+      <td><span class="emp ${escapar(a.empresa)}">${escapar(a.cracha || a.empresa)}</span></td>
+      <td>${escapar(a.rotulo_status || a.status)}</td>
+      <td>${brl(a.total_anterior)} <span class="sub" style="margin:0">(${escapar(a.mes_anterior)})</span></td>
+      <td>${brl(a.total)}</td>
+      <td><strong>+${brl(a.diferenca)}</strong></td>
+      <td>${a.justificada
+        ? `<span title="${escapar(a.justificativa)}">Justificou: ${escapar(a.justificativa.length > 60 ? `${a.justificativa.slice(0, 60)}…` : a.justificativa)}</span>`
+        : '<strong style="color:var(--vermelho)">Falta justificar</strong>'}</td>
+      <td>${a.tem_aparelho ? 'Sim' : '<span class="sub" style="margin:0">Não</span>'}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+$('botao-marcar-aumentos').addEventListener('click', () => {
+  const ids = new Set(aumentos.filter((a) => !a.justificada).map((a) => a.usuario_id));
+  // O id do aparelho nao traz a pessoa: a linha da tabela de aparelhos traz.
+  let marcados = 0;
+  for (const c of document.querySelectorAll('[data-aparelho]')) {
+    c.checked = ids.has(Number(c.dataset.pessoa));
+    if (c.checked) marcados += 1;
+  }
+  if (!$('n-titulo').value.trim()) $('n-titulo').value = `Justifique o RDV de ${mesPorExtensoCurto(mes)}`;
+  if (!$('n-texto').value.trim()) {
+    $('n-texto').value = `Seu RDV de ${mesPorExtensoCurto(mes)} ficou mais de R$ 100 acima do mês anterior. Abra o portal e escreva o motivo do aumento.`;
+  }
+  const semAparelho = aumentos.filter((a) => !a.justificada && !a.tem_aparelho).length;
+  mostrarRecado(
+    'recado-notificacao',
+    `${marcados} aparelho(s) marcados.${semAparelho ? ` ${semAparelho} pessoa(s) sem aparelho cadastrado: cobre por fora.` : ''} Confira a mensagem e toque em Enviar.`,
+    'ok',
+  );
+  $('n-titulo').scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
 
 $('n-todos').addEventListener('change', (ev) => {
   for (const c of document.querySelectorAll('[data-aparelho]')) c.checked = ev.target.checked;
