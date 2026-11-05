@@ -1279,7 +1279,11 @@ function baixarAnexo(req, res, rota, usuario) {
     'X-Content-Type-Options': 'nosniff',
     // Segunda tranca: mesmo que algo escape da lista acima, o arquivo nao
     // executa script nem alcanca a API.
-    'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox",
+    // frame-ancestors 'self': o visualizador do admin mostra o anexo num
+    // iframe do proprio portal. Com o 'none'/DENY padrao o navegador recusava
+    // ("se recusou a se conectar"). Site de fora continua sem poder embutir.
+    'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'; sandbox",
+    'X-Frame-Options': 'SAMEORIGIN',
   });
   res.end(dados);
 }
