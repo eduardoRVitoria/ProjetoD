@@ -117,6 +117,8 @@ async function abrirComparativo(tipo = 'dso') {
 
 function desenharComparativo(p, escolha, mesEscolhido, decisoes, tipo = 'dso') {
   const diso = tipo === 'diso';
+  // Na DISO o mes vem da planilha (o seguinte ao ultimo lancado), nao do admin.
+  if (diso && p.mes) mesEscolhido = p.mes;
   const pessoasDoPortal = p.pessoas || p.pessoas_dso || [];
   document.getElementById('modal-comparativo')?.remove();
   const fundo = document.createElement('div');
@@ -149,7 +151,7 @@ function desenharComparativo(p, escolha, mesEscolhido, decisoes, tipo = 'dso') {
       <h2 id="titulo-comparativo">Comparativo ${diso ? 'DISO' : 'DSO'}: ${escapar(mesEscolhido)}</h2>
       <p class="sub">
         ${diso
-          ? `A planilha vai até ${escapar(p.ultimo_mes_da_planilha)}. ${escapar(mesEscolhido)} entra nos lançamentos e a tabela passa a mostrar os 4 últimos meses, com a justificativa em branco.`
+          ? `A planilha vai até ${escapar(p.ultimo_mes_da_planilha)}, então o próximo mês é ${escapar(mesEscolhido)}: ele entra nos lançamentos e a tabela passa a mostrar os 4 últimos meses, com a justificativa em branco.`
           : p.coluna_ja_existe
           ? 'Este mês já existe na planilha. Só as células vazias serão preenchidas; o que já tem valor fica como está.'
           : `A planilha vai até ${escapar(p.ultimo_mes_da_planilha)}. Serão criadas as colunas de ${escapar(mesEscolhido)}.`}

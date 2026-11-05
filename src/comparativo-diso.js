@@ -257,6 +257,17 @@ function montar(planilha, mes, pessoas, decisoes = {}) {
   return { ultimo, lanc, itens, novos };
 }
 
+/**
+ * O mes a lancar sai da propria planilha: o seguinte ao ultimo que ela ja tem.
+ * Assim nao importa qual mes esta aberto no admin.
+ */
+export async function mesParaLancarDiso(buffer) {
+  const planilha = await abrirPlanilha(buffer);
+  const ultimo = lerLancamentos(planilha.dados.aba, planilha.textos).map((l) => l.mes).sort().pop();
+  if (!ultimo) throw new Error('A aba de lancamentos esta vazia.');
+  return mesDepois(ultimo);
+}
+
 export async function previaDoComparativoDiso(buffer, mes, pessoas, decisoes) {
   const planilha = await abrirPlanilha(buffer);
   const m = montar(planilha, mes, pessoas, decisoes);

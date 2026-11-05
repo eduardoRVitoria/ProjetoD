@@ -36,7 +36,7 @@ import { conferirEmDemo } from './ia-demo.js';
 import { conferirPorCodigo } from './leitura-comprovantes.js';
 import { gerarPlanilha, gerarHistorico } from './planilha.js';
 import { previaDoComparativo, gerarComparativo, normalizarNome } from './comparativo.js';
-import { previaDoComparativoDiso, gerarComparativoDiso } from './comparativo-diso.js';
+import { previaDoComparativoDiso, gerarComparativoDiso, mesParaLancarDiso } from './comparativo-diso.js';
 import { enviarBackup, restaurarBackup, resumoDosDados, bancoFechadoPelaRestauracao } from './backup.js';
 import { montarImpressao } from './impressao.js';
 import { resumoDoArmazenamento, enviarBloco, liberarBloco, devolverBloco } from './arquivamento.js';
@@ -3331,11 +3331,16 @@ async function comparativo(req, res, url, quem) {
 // Comparativo da DISO, no modelo da planilha deles (lancamentos + tabela
 // dinamica dos 4 ultimos meses). Mesmo vai e volta do da DSO.
 async function comparativoDiso(req, res, url, quem) {
-  const mes = url.searchParams.get('mes') || '';
-  if (!mesValido(mes)) return erro(res, 'Mes invalido.');
-
   const arquivo = await lerCorpo(req, 20 * 1024 * 1024);
   if (!arquivo.length) return erro(res, 'Nenhuma planilha recebida.');
+
+  // O mes nao vem do admin: e o seguinte ao ultimo que a planilha ja tem.
+  let mes;
+  try {
+    mes = await mesParaLancarDiso(arquivo);
+  } catch (e) {
+    return erro(res, e.message || 'Não foi possível ler a planilha.');
+  }
 
   let decisoes = {};
   try {
